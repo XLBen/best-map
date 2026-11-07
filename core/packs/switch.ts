@@ -1,7 +1,7 @@
 import type { Command } from '../commands';
 import { dependencyClosure, linkTable, worldScope } from '../content/links';
 import { originSourceId, originTarget, recordedOrigin } from '../content/origin';
-import { sameContent } from '../content/refs';
+import { sameItem } from '../content/refs';
 import { type ContentKind, type ContentWorld, contentItems, itemId, kindByPackKey, kindOf, usageOf } from '../content/registry';
 import { type ContentRef, withoutItems } from '../content/unused';
 import { type Dimension, type Era, worldEra } from '../human/era';
@@ -77,7 +77,7 @@ function survivors(small: Small, groups: readonly string[]): Small {
   const { popGroups: _, ...rest } = small;
   return {
     ...rest,
-    ...(h ? { human: { ...h, era: '', groups: groups.map((id) => ({ id, weight: 1 })), hearths: h.hearths.filter((x) => x.locked && chosen.has(x.group)) } } : {}),
+    ...(h ? { human: { ...h, era: '', groups: [...groups], hearths: h.hearths.filter((x) => x.locked && chosen.has(x.group)) } } : {}),
     countries: Object.fromEntries(Object.entries(small.countries ?? {}).filter(([, c]) => c.locked)),
     cities: keepAuto(small.cities),
     landmarks: keepAuto(small.landmarks),
@@ -127,10 +127,11 @@ export function librarySwitchPlan(library: readonly PackRoot[], small: Small, fr
         continue;
       }
       if (rec.join('/') !== hit.path.join('/')) rehome.push({ kind: kindId, id, from: hit.path });
-      // 两个库的同一项内容不同（我的库改过），世界里的又和旧库一样：换成新库的。世界里改过的不动
-      if (from !== to && id === src && hit.item !== undefined && !sameContent(k, x, hit.item)) {
+      // 两个库的同一项内容不同（我的库改过），世界里的又和旧库一样：换成新库的。世界里改过的不动。
+      // 第七十七轮：逐字比（文化组的比重也比）：各组占多少是组的比重，同一组在两个库里比重不同时换成新库的（以前界面按新库小包的权重发命令）
+      if (from !== to && id === src && hit.item !== undefined && !sameItem(x, hit.item)) {
         const was = itemIn(library, from!, k, src);
-        if (was !== undefined && sameContent(k, x, was)) replace.push({ op: 'set_content', kind: kindId, id, item: hit.item as Record<string, unknown>, from: hit.path });
+        if (was !== undefined && sameItem(x, was)) replace.push({ op: 'set_content', kind: kindId, id, item: hit.item as Record<string, unknown>, from: hit.path });
       }
     }
   }

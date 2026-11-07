@@ -80,10 +80,6 @@ const TABLE: Record<string, readonly SegDef[]> = {
     { id: 'join', title: '附庸与联邦', keys: ['vassal', 'federation', 'fedMember', 'confedCentre', 'confedMember'] },
     { id: 'capital', title: '首都', keys: ['capitalIcon', 'capitalAlpha', 'capitalLabel', 'capitalBold'] },
   ],
-  countryLayout: [
-    { id: 'basic', title: BASIC, keys: ['name', 'description'] },
-    { id: 'weights', title: '各等级占多少', keys: ['weights'] },
-  ],
   // 第七十三轮：模块的参数只显示选着的模块的（字段表的 when）
   // 第七十五轮：基本一段的下面写选着的模块做什么、“多少”是什么意思（patternTip）
   countryPattern: [

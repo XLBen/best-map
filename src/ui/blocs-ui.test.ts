@@ -5,7 +5,6 @@ import type { Engine } from '../../core/engine';
 import { blocsCsv, countriesCsv, exportPart } from '../../core/export';
 import { ISLET_FRAG } from '../../core/features';
 import { autoBlocName, blocById, blocCells, blocList, blocOf, blocsOf, countryList } from '../../core/human';
-import { builtinPattern, eraOf } from '../../core/testing/eras';
 import { brushCells } from '../../core/select';
 import { continents, snapshot, humanExec, lastOf } from '../../core/testing/fixtures';
 import type { Bloc, World } from '../../core/world';
@@ -23,7 +22,7 @@ import {
   shownBloc,
   subjectCommand,
 } from './domain/blocs';
-import { countryAt, fragTitle, generateCountriesCommand, layoutOf, regenerateCountriesCommand } from './domain/countries';
+import { countryAt, generateCountriesCommand, regenerateCountriesCommand } from './domain/countries';
 import { humanViews, viewAvailable } from './defs/layers';
 import { setTool, startToolEffects } from './defs/tools';
 // 第六十九轮：每个工具做什么在 tools/bind.ts 登记，跟着状态变的几件事由 startToolEffects 开起来（应用里是 register-all、main.tsx）
@@ -62,13 +61,13 @@ const nations = (): Engine =>
   // 第三十五轮：大陆轮廓变了，默认的种子在这个世界上撒不出邦联、没有帝国（见 core/human/country-tiers.test.ts）：换种子 3
   snapshot('r26-ui-nations', () => {
     const eng = continents({ provinces: true });
-    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: { seed: 3 } });
+    humanExec(eng, { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: { seed: 3 } });
     return eng;
   });
 const moderns = (): Engine =>
   snapshot('r26-modern', () => {
     const eng = continents({ provinces: true });
-    humanExec(eng, { op: 'generate_human', era: 'modern', groups: GROUPS, countries: {}, settlements: { roads: false, landmarks: false } });
+    humanExec(eng, { op: 'generate_human', packs: [['modern']], groups: GROUPS, countries: {}, settlements: { roads: false, landmarks: false } });
     return eng;
   });
 // 删掉全部集团
@@ -296,32 +295,15 @@ describe('档案：从属与集团', () => {
   });
 });
 
-describe('格局', () => {
-  it('生成、重新生成国家带上格局；与现在的一样时不写', () => {
-    const w = nations().world;
-    expect(layoutOf(w)).toBe('era');
-    expect(generateCountriesCommand(0.5)).toEqual({ op: 'generate_countries' });
-    expect(generateCountriesCommand(0.5, 'petty')).toEqual({ op: 'generate_countries', layout: 'petty' });
-    expect(regenerateCountriesCommand(w, 0.5, true)).toEqual({ op: 'regenerate_countries' });
-    expect(regenerateCountriesCommand(w, 0.5, true, 'powers')).toEqual({ op: 'regenerate_countries', layout: 'powers' });
-    const eng = nations();
-    eng.exec(regenerateCountriesCommand(eng.world, 0.5, true, 'unified'));
-    expect(layoutOf(eng.world)).toBe('unified');
-    expect(regenerateCountriesCommand(eng.world, 0.5, true, 'unified')).toEqual({ op: 'regenerate_countries' });
-    expect(regenerateCountriesCommand(eng.world, 0.5, true, 'era')).toEqual({ op: 'regenerate_countries', layout: 'era' });
-    expect(defaultChoice(eng.world.small).countries.layout).toBe('unified');
-  });
-
-  it('生成人文：格局写进 countries（按时代时不写）', () => {
+// 第七十七轮：格局、“分裂 ↔ 统一”去掉了，国家多大、各等级占多少都按资源库里的时代
+describe('生成国家的命令只按时代', () => {
+  it('生成、重新生成国家不写参数；重新生成时锁定的不动是默认', () => {
+    expect(generateCountriesCommand()).toEqual({ op: 'generate_countries' });
+    expect(regenerateCountriesCommand(true)).toEqual({ op: 'regenerate_countries' });
+    expect(regenerateCountriesCommand(false)).toEqual({ op: 'regenerate_countries', keepLocked: false });
     const c = defaultChoice(null);
     expect((lastOf(generateCommand(c)!) as Extract<Command, { op: 'generate_human' }>).countries).toEqual({});
-    const mixed = lastOf(generateCommand({ ...c, countries: { ...c.countries, layout: 'mixed' } })!) as Extract<Command, { op: 'generate_human' }>;
-    expect(mixed.countries).toEqual({ layout: 'mixed' });
-  });
-
-  it('滑块的说明：会生成联邦的时代说一句成员邦另算', () => {
-    expect(fragTitle(eraOf('medieval'), builtinPattern)).not.toContain('联邦');
-    expect(fragTitle(eraOf('modern'), builtinPattern)).toContain('联邦的成员邦另算');
+    expect(c.countries).toEqual({ on: true });
   });
 });
 

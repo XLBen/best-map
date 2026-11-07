@@ -4,7 +4,7 @@ import type { Culture, Dimension, Era } from '../../../core/human/era';
 import type { SmallState } from '../../../core/world';
 import type { LibraryEntry } from '../../library';
 import type { Content, RegenBase, RegenScope } from '../../regen-track';
-import { beyondWeights, regenerateCommand, withPackImports } from '../domain/human';
+import { beyondGroupIds, regenerateCommand, withPackImports } from '../domain/human';
 import { worldLibrary } from '../domain/packChoice';
 
 // 面板顶上的“重新生成”（第六十二轮）：内容改了、地图还没用上时才出现。和上一次生成时的内容比（regen-track.ts 记着），
@@ -29,7 +29,7 @@ type Small = Pick<SmallState, 'content' | 'human' | 'settlementRules'>;
 type Store = Record<string, Record<string, unknown>>;
 
 const HUMAN: readonly string[] = ['era', 'popValue', 'valueGroup', 'cultureGroup', 'culture'];
-const GOV: readonly string[] = ['government', 'faction', 'countryTier', 'countryLayout', 'countryPattern'];
+const GOV: readonly string[] = ['government', 'faction', 'countryTier', 'countryPattern'];
 const SETTLE: readonly string[] = ['cityRank', 'landmarkType', 'pointType'];
 
 // 比较用的字：不看说明和颜色。按对象记（内容不改动）
@@ -81,11 +81,11 @@ function humanChanges(small: Small, base: Content, lib: readonly LibraryEntry[])
     const list = storeOf(small.content, kind) as Record<string, { dimension?: string }>;
     for (const id of changedIds(base, small.content, kind)) if (dims.has(String(list[id].dimension)) && !fresh(list[id].dimension)) out.push(`${kind}:${id}`);
   }
-  // 文化组：比重只看是不是 0；不参与的不算（参与的：上次选了的，和重新生成时会加进来的，同“文化 ⋯”的重新生成）
-  const chosen = new Set([...h.groups, ...beyondWeights(small as SmallState, worldLibrary(small as SmallState) ?? null, lib, h.groups)].map((g) => g.id));
+  // 文化组：不参与的不算（参与的：上次选了的，和重新生成时会加进来的，同“文化 ⋯”的重新生成）。
+  // 第七十七轮：比重就是各组占多少，改了也要重新生成（以前只看是不是 0）
+  const chosen = new Set([...h.groups, ...beyondGroupIds(small as SmallState, worldLibrary(small as SmallState) ?? null, lib, h.groups)]);
   const joins = (id: string) => chosen.has(id);
-  const bareGroup = (g: Record<string, unknown>) => genKey({ ...g, weight: g.weight === 0 ? 0 : 1 });
-  for (const id of changedIds(base, small.content, 'cultureGroup', (x, y) => bareGroup(x) === bareGroup(y))) if (joins(id) || storeOf(base, 'cultureGroup')[id]) out.push(`cultureGroup:${id}`);
+  for (const id of changedIds(base, small.content, 'cultureGroup')) if (joins(id) || storeOf(base, 'cultureGroup')[id]) out.push(`cultureGroup:${id}`);
   const cultures = storeOf(small.content, 'culture') as unknown as Record<string, Culture>;
   for (const id of changedIds(base, small.content, 'culture')) if (joins(cultures[id].group)) out.push(`culture:${id}`);
   return out;

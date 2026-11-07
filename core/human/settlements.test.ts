@@ -18,7 +18,7 @@ const GROUPS = [
   { id: 'chinese', weight: 3 },
   { id: 'altaic', weight: 1.5 },
 ];
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {}, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: {}, settlements: {} };
 
 // 有省份、人文、国家、城市、道路、地标的大陆世界（1.2 万格的地区）
 const settled = (): Engine =>
@@ -180,7 +180,7 @@ describe('城市', () => {
   it('城市化率高的时代城市多', () => {
     const count = (era: string) => {
       const eng = continents({ provinces: true });
-      humanExec(eng, { op: 'generate_human', era, groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: { roads: false, landmarks: false } });
+      humanExec(eng, { op: 'generate_human', packs: [[era]], groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: { roads: false, landmarks: false } });
       return cityIds(eng.world).length;
     };
     const ancient = count('antiquity');
@@ -212,13 +212,13 @@ describe('城市', () => {
 
   it('没写 settlements 时没有城市与道路（第二十三轮的世界不变）；换种子换一个样子', () => {
     const a = continents({ provinces: true });
-    humanExec(a, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} });
+    humanExec(a, { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: {} });
     for (const k of ['cities', 'roads', 'landmarks', 'points', 'settlementRules', 'nextSettlement'] as const) expect(a.world.small[k]).toBeUndefined();
     const eng = settled();
     eng.exec({ op: 'regenerate_settlements', seed: 99 });
     expect(digest(eng.world.small.cities)).not.toEqual(digest(settled().world.small.cities));
     // 再不带 settlements 生成人文：城市、道路去掉
-    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} });
+    humanExec(eng, { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: {} });
     expect(eng.world.small.cities).toBeUndefined();
     expect(eng.world.small.roads).toBeUndefined();
   });
@@ -624,7 +624,7 @@ describe('导出', () => {
 
   it('没有城市、道路、地标、点的世界：包里的文件与以前一样', () => {
     const eng = continents({ provinces: true });
-    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} });
+    humanExec(eng, { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: {} });
     const opts = { width: 256, height: 128, seaLevelGray: 95, maxElevation: 6000 };
     const pkg = exportPackage(eng.world, eng.toDoc(), opts);
     for (const f of ['cities.csv', 'roads.csv', 'roads.geojson', 'roads.bmp', 'landmarks.csv', 'points.csv', 'archive.md', 'archive.json']) expect(pkg.files).not.toContain(f);

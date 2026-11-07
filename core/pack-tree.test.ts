@@ -28,7 +28,7 @@ import { DEFAULT_SPECIES } from './packs/nature';
 // 第三十轮：生成只读世界里的内容（测试里 humanExec 先把时代包加进世界），清理不论是不是内置原样
 
 const top = (id: string) => builtinPacks().find((p) => p.id === id)!;
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {} };
+const GEN: HumanCommand = { op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {} };
 const peopled = () =>
   snapshot('r29:peopled', () => {
     const e = continents();
@@ -71,12 +71,17 @@ describe('内置资源包的树', () => {
         const want = BUILTIN_POP_VALUES.filter((v) => v.dimension === d.id && (!VALUE_ERAS.get(v.id) || VALUE_ERAS.get(v.id)!.includes(era.id))).map((v) => v.id);
         expect(ownItems<{ id: string }>(findPack(p, [d.id])!, 'popValues').map((v) => v.id)).toEqual(want);
       }
-      // 默认带的文化组每组一个小包：组、文化（except 里的不带）、地名风格；组是内置的那一份（引用）
-      for (const [g, , opt] of ERA_PACKS.get(era.id)!.cultures) {
+      // 默认带的文化组每组一个小包：组、文化（except 里的不带）、地名风格；组是内置的那一份（引用）。
+      // 第七十七轮：时代的权重不是 1 时组是带着这个比重的浅拷贝（各组占多少是组的比重），别的字段同一份
+      for (const [g, w, opt] of ERA_PACKS.get(era.id)!.cultures) {
         const node = findPack(p, ['cultures', String(g)])!;
         expect(ownItems<{ id: string }>(node, 'cultureGroups').map((x) => x.id)).toEqual([g]);
         expect(ownItems<{ id: string }>(node, 'cultures').map((c) => c.id)).toEqual(BUILTIN_CULTURES.filter((c) => c.group === g && !opt?.except.includes(c.id)).map((c) => c.id));
-        expect(ownItems(node, 'cultureGroups')[0]).toBe(BUILTIN_CULTURE_GROUPS.find((x) => x.id === g));
+        const plain = BUILTIN_CULTURE_GROUPS.find((x) => x.id === g)!;
+        const item = ownItems<{ weight?: number }>(node, 'cultureGroups')[0];
+        if (w === 1) expect(item).toBe(plain);
+        else expect(item).toEqual({ ...plain, weight: w });
+        expect(node.weight).toBe(w);
       }
     }
     // 中世纪 ▸ 政体：19 种全在（第四十三轮：EU4 的君主制、共和制、神权、部落）
@@ -295,7 +300,7 @@ describe('生成后内容都留着', () => {
     expect(eng.world.small.content!.government!['r29-mine']).toBeDefined();
     expect(eng.lastRemoved).toEqual([]);
     const govs = Object.keys(eng.world.small.content!.government ?? {});
-    humanExec(eng, { op: 'regenerate_human', era: 'industrial', countries: {} });
+    humanExec(eng, { op: 'regenerate_human', packs: [['industrial']], countries: {} });
     expect(eng.lastRemoved).toEqual([]);
     for (const id of govs) expect(eng.world.small.content!.government![id], id).toBeDefined();
     const plan = eng.planTidy();
@@ -333,22 +338,11 @@ describe('生成后内容都留着', () => {
     expect(w.small.origin?.government?.[idle]).toEqual(['medieval', 'governments']);
   });
 
-  it('点名的文化：只有点名的有人，组里别的文化留在世界里，整理才移出', () => {
-    const eng = continents();
-    const first = BUILTIN_CULTURES.find((c) => c.group === 'germanic')!;
-    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 1, cultures: [first.id] }] });
-    expect(new Set(Object.values(eng.world.small.popGroups!).map((t) => t.culture))).toEqual(new Set([first.id]));
-    expect(Object.keys(eng.world.small.content!.culture!)).toContain(first.id);
-    expect(Object.keys(eng.world.small.content!.culture!).length).toBeGreaterThan(1);
-    eng.exec(eng.planTidy().command!);
-    expect(Object.keys(eng.world.small.content!.culture!)).toEqual([first.id]);
-  });
-
   it('自己做的时代（世界里只有它一个时代）：规则用它；政体只用世界里的，没有时不生成国家，加了包里的政体就有', () => {
     const eng = continents();
     const era = { ...BUILTIN_ERAS.find((e) => e.id === 'medieval')!, id: 'r29-era', name: '我的时代' } as Record<string, unknown>;
     eng.exec({ op: 'set_content', kind: 'era', id: 'r29-era', item: era });
-    humanExec(eng, { op: 'generate_human', era: 'r29-era', groups: [{ id: 'germanic', weight: 1 }], countries: {} });
+    humanExec(eng, { op: 'generate_human', packs: [['r29-era']], groups: [{ id: 'germanic', weight: 1 }], countries: {} });
     expect(eng.world.small.human!.era).toBe('r29-era');
     expect(eng.world.small.countries).toBeUndefined();
     expect(eng.lastSkipped).toContain('没有政体：没有生成国家');

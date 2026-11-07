@@ -21,7 +21,7 @@ const ROOTS = LIB.map((p) => ({ key: p.id, pack: p }));
 const defaults = (lib: string) =>
   packItems<{ id: string; weight?: number }>(LIB.find((p) => p.id === lib)!, 'cultureGroups')
     .filter((g) => g.weight !== 0)
-    .map((g) => ({ id: g.id, weight: 1 }));
+    .map((g) => g.id);
 
 let bare: Engine;
 beforeAll(() => {
@@ -36,7 +36,7 @@ function worldOf(lib: string, groups = defaults(lib), opts: { countries?: boolea
   for (const c of newWorldContentCommands(ROOTS, worldPartsOf(lib))) e.exec(c);
   // 整个库的组都带进世界（和“全部添加”一样），生成时只选几个：世界里留着很多没用到的
   for (const c of packImportCommands(ROOTS, { packs: [[lib]], groups: packItems<{ id: string }>(LIB.find((p) => p.id === lib)!, 'cultureGroups').map((g) => g.id) }, e.world)) e.exec(c);
-  e.exec({ op: 'generate_human', packs: [[lib]], groups, ...(opts.countries ? { countries: {} } : {}), ...(opts.settlements ? { settlements: {} } : {}) } as Command);
+  e.exec({ op: 'generate_human', packs: [[lib]], groups, ...(opts.countries ? { countries: {} } : {}), ...(opts.settlements ? { settlements: {} } : {}) });
   e.update();
   return e;
 }
@@ -72,7 +72,7 @@ describe('范围', () => {
     for (const c of packImportCommands(ROOTS, { packs: [['medieval']], groups: ['germanic'] }, e.world)) e.exec(c);
     e.update();
     expect(cleanableContent(e.world)).toEqual([]);
-    e.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }] } as Command);
+    e.exec({ op: 'generate_human', packs: [['medieval']], groups: ['germanic'] });
     e.update();
     const kinds = new Set(cleanableContent(e.world).map((r) => r.kind));
     expect(kinds.has('government')).toBe(false);
@@ -180,7 +180,7 @@ describe('明确删除（第六十二轮：内容留在世界里）', () => {
     e.update();
     expect(e.world.small.human).toBeUndefined();
     expect(cleanableContent(e.world)).toEqual([]);
-    e.exec({ op: 'generate_human', packs: [['medieval']], groups, countries: {}, settlements: {} } as Command);
+    e.exec({ op: 'generate_human', packs: [['medieval']], groups, countries: {}, settlements: {} });
     e.update();
     expect(humanDigest(e.world)).toMatchObject(first);
   });

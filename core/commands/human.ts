@@ -177,7 +177,6 @@ export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunRe
       const h = generateHuman(world, d, {
         packs: cmd.packs,
         groups: cmd.groups,
-        totalPop: cmd.totalPop,
         seed: cmd.seed,
         ...(cmd.countries ? { countries: cmd.countries } : {}),
         ...(cmd.settlements ? { settlements: cmd.settlements } : {}),
@@ -195,9 +194,9 @@ export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunRe
       if (blockers.length) throw new CommandError(blockers[0]);
       const d = ctx.ensureDerived();
       const left = cmd.switchLibrary ? leaveLibrary(world, cmd.switchLibrary) : Dirty.None;
-      // 换了库：总人口没写时按新时代的默认（和新世界一样），不留旧时代的
+      // 换了库：总人口按新时代的默认（和新世界一样），不留旧时代的；没换时用记着的（改过总人口的留着）
       const era = cmd.switchLibrary && cmd.packs ? ruleEra(small, cmd.packs) : undefined;
-      const patch = { packs: cmd.packs, groups: cmd.groups, totalPop: cmd.totalPop ?? (era ? defaultTotalPop(world, d, era) : undefined), seed: cmd.seed, countries: cmd.countries };
+      const patch = { packs: cmd.packs, groups: cmd.groups, totalPop: era ? defaultTotalPop(world, d, era) : undefined, seed: cmd.seed, countries: cmd.countries };
       regenerateHuman(world, d, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)), { keepManual: cmd.keepManual ?? true });
       afterCountries(world);
       const skipped = missingNotes(small, ['world', ...(small.human?.countryRules ? (['countries'] as const) : [])]);
@@ -208,18 +207,13 @@ export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunRe
       const h = small.human;
       if (!h) throw new CommandError('还没有生成人文');
       if (cmd.op === 'regenerate_countries' && !h.countryRules) throw new CommandError('还没有生成国家');
-      const blockers = humanBlockers(world, { packs: cmd.packs ?? stampedPacks(small).map((p) => [...p]), groups: cmd.groups ?? h.groups });
+      const blockers = humanBlockers(world, { packs: stampedPacks(small).map((p) => [...p]), groups: h.groups });
       if (blockers.length) throw new CommandError(blockers[0]);
       const d = ctx.ensureDerived();
-      const rules = {
-        ...(cmd.fragmentation !== undefined ? { fragmentation: cmd.fragmentation } : {}),
-        ...(cmd.seed !== undefined ? { seed: cmd.seed } : {}),
-        ...(cmd.layout !== undefined ? { layout: cmd.layout } : {}),
-      };
+      const rules = cmd.seed !== undefined ? { seed: cmd.seed } : {};
       // 生成：整个换掉（参数从默认起）；重新生成：按记着的参数，锁定的留着
       if (cmd.op === 'generate_countries') delete h.countryRules;
-      const more = { ...(cmd.packs ? { packs: cmd.packs } : {}), ...(cmd.groups ? { groups: cmd.groups } : {}) };
-      regenerateHuman(world, d, { countries: rules, ...more }, { keepManual: true, keepLocked: cmd.op === 'regenerate_countries' ? (cmd.keepLocked ?? true) : false });
+      regenerateHuman(world, d, { countries: rules }, { keepManual: true, keepLocked: cmd.op === 'regenerate_countries' ? (cmd.keepLocked ?? true) : false });
       afterCountries(world);
       const k = Object.keys(small.countries ?? {}).length;
       const skipped = missingNotes(small, ['countries']);

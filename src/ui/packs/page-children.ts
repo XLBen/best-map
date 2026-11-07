@@ -53,7 +53,6 @@ function rowHint(rel: ArrangeRelation, parent: Obj, child: Obj, src: SourceRef, 
     const n = cul ? (itemsOf(src, cul, ctx) as readonly Obj[]).filter((c) => c.group === parent.id && c.nameStyle === child.id).length : 0;
     return `${n} 个文化写着`;
   }
-  if (rel.child === 'countryLayout') return `占 ${String((child.weights as Record<string, number>)[String(parent.id)])}`;
   if (rel.child === 'landmarkType' && others > 0) return `还在另外 ${others} ${rel.parent === 'government' ? '个政体' : '组'}`;
   return undefined;
 }

@@ -164,7 +164,7 @@ function build(id: string): Engine {
   eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
   const groups = groupsOf(id);
   for (const c of packImportCommands(LIB, { packs: [[id]], groups: groups.map((g) => g.id) }, eng.world)) eng.exec(c);
-  eng.exec({ op: 'generate_human', packs: [[id]], groups, countries: {}, settlements: {} });
+  eng.exec({ op: 'generate_human', packs: [[id]], groups: groups.map((g) => g.id), countries: {}, settlements: {} });
   return eng;
 }
 const world = (id: string): Engine => snapshot(`closure-gates:${id}`, () => build(id));

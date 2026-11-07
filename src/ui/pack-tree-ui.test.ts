@@ -37,7 +37,7 @@ const BUILTIN: LibraryEntry[] = builtinPacks().map((p) => entry(p.id, p, { built
 const pack = (id: string, extra: Partial<ResourcePack>): ResourcePack => ({ format: PACK_FORMAT, version: PACK_VERSION, id, name: id, ...extra });
 const topName = (id: string) => builtinPacks().find((p) => p.id === id)!.name;
 
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} };
 const peopled = () =>
   snapshot('r29-ui:peopled', () => {
     const e = continents();
@@ -209,7 +209,7 @@ describe('选择器、向导按包分组', () => {
       ],
     } as Partial<ResourcePack>);
     const lib = [...BUILTIN, entry('lib', p, { mine: true })];
-    const cmds = humanImportCommands({ library: 'lib', groups: [{ id: 'my-group', weight: 1 }] }, null, lib).flatMap((c) => (c.op === 'batch' ? c.commands : [c])) as (Command & { kind: string; id: string; from?: string[] })[];
+    const cmds = humanImportCommands({ library: 'lib', groups: ['my-group'] }, null, lib).flatMap((c) => (c.op === 'batch' ? c.commands : [c])) as (Command & { kind: string; id: string; from?: string[] })[];
     // 第三十轮：一个 batch（core/packs/import.ts）；只有一项的种类不排先后
     expect(cmds.map((c) => [c.kind, c.id, c.from])).toEqual([
       ['nameStyle', 'my-style', ['lib', 'g']],

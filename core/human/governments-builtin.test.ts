@@ -263,7 +263,7 @@ function generate(eraId: string): World {
   let w = generated.get(eraId);
   if (!w) {
     const eng = continents();
-    humanExec(eng, { op: 'generate_human', era: eraId, groups: defaults(eraOf(eraId)), countries: {} });
+    humanExec(eng, { op: 'generate_human', packs: [[eraId]], groups: defaults(eraOf(eraId)), countries: {} });
     generated.set(eraId, (w = eng.world));
   }
   return w;
@@ -331,7 +331,7 @@ describe('内置的政体与派系：每个时代生成国家', () => {
         let w = only ? undefined : generate(eraId);
         if (seed || only) {
           const eng = continents();
-          humanExec(eng, { op: 'generate_human', era: eraId, groups: only ?? defaults(eraOf(eraId)), countries: { seed } });
+          humanExec(eng, { op: 'generate_human', packs: [[eraId]], groups: only ?? defaults(eraOf(eraId)), countries: { seed } });
           w = eng.world;
         }
         if (!w) continue;
@@ -365,7 +365,7 @@ describe('内置的政体与派系：每个时代生成国家', () => {
   it('同样的参数同样的结果', () => {
     for (const id of ['antiquity', 'scifi']) {
       const eng = continents();
-      humanExec(eng, { op: 'generate_human', era: id, groups: defaults(eraOf(id)), countries: {} });
+      humanExec(eng, { op: 'generate_human', packs: [[id]], groups: defaults(eraOf(id)), countries: {} });
       const a = generate(id);
       expect(digest(eng.world.causes.country)).toBe(digest(a.causes.country));
       expect(digest(eng.world.small.countries)).toBe(digest(a.small.countries));

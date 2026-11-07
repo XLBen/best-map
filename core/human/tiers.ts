@@ -4,9 +4,9 @@ import { typeIdSchema } from '../type-id';
 import type { CountryMeta, SmallState } from '../world';
 import type { Era } from './era';
 
-// 国家等级与格局（第四十二轮）：以前写死在 countries.ts 的五档（城邦、小国、中等国家、大国、帝国）与四种格局，
-// 改成资源包里的两种内容：国家等级（countryTier，包里的段 countryTiers）、格局（countryLayout，段 countryLayouts），
-// 内置的在每个库的“国家等级”（packs/country-tiers.json，新建世界默认带上）。都放在 small.content，命令是 set_content。
+// 国家等级（第四十二轮）：以前写死在 countries.ts 的五档（城邦、小国、中等国家、大国、帝国）与四种格局，
+// 改成资源包里的两种内容：国家等级（countryTier，包里的段 countryTiers）、格局（countryLayout；第七十七轮去掉了：生成只按时代的 tiers），
+// 内置的在每个库的“国家等级”（packs/countries/tiers.json，新建世界默认带上）。都放在 small.content，命令是 set_content。
 // 等级按 order 从小到大排（一样时按 id）：生成挑等级的先后、“比这一级高 / 低”都按这个先后，几档都行（加、删、改名都照常生成）。
 // 以前写死的几条规则都是等级的字段：
 //   - 面积倍数 area、时代没写比例时的比例 weight、与政体的 size 相配 govSize；
@@ -30,7 +30,7 @@ export const countryTierSchema = z.object({
   order: z.number().min(-1000).max(1000),
   // 面积倍数（1 是平均的国家）
   area: z.number().min(0.001).max(1000),
-  // 时代没写比例、格局按时代时这一级占多少（省略为 1）
+  // 时代没写比例时这一级占多少（省略为 1）
   weight: z.number().min(0).max(100).optional(),
   // 典型的政体大小：挑等级时政体的 size 离它越近越容易挑中
   govSize: z.number().min(0.01).max(100),
@@ -50,21 +50,6 @@ export const countryTierSchema = z.object({
   capitalBold: z.boolean().optional(),
 });
 export type CountryTierDef = z.output<typeof countryTierSchema>;
-
-export const countryLayoutSchema = z.object({
-  id: typeIdSchema,
-  name: z.string().min(1).max(12),
-  // 悬停的说明
-  description: z.string().max(120).optional(),
-  // 各等级（id）占多少；没写的等级为 0，世界里没有的等级不算
-  weights: z.record(typeIdSchema, z.number().min(0).max(100)),
-});
-export type CountryLayoutDef = z.output<typeof countryLayoutSchema>;
-
-// 格局里的“按时代”（不是内容：按时代的 tiers）
-export const ERA_LAYOUT = 'era';
-export const ERA_LAYOUT_NAME = '按时代';
-export const ERA_LAYOUT_HINT = '各等级的国家按时代的比例';
 
 // 世界里一档都没有时
 export const FALLBACK_TIER: CountryTierDef = { id: '', name: '一般', order: 0, area: 1, govSize: 1 };
@@ -94,24 +79,11 @@ export const tierById = (small: TierSmall, id: string | undefined): CountryTierD
 export const tierOfCountry = (small: TierSmall, m: Pick<CountryMeta, 'tier'>): CountryTierDef | undefined => tierById(small, m.tier);
 export const tierShort = (t: Pick<CountryTierDef, 'name' | 'short'>): string => t.short ?? t.name;
 
-// 世界里的格局（按加进世界的先后）
-const layoutCache = new WeakMap<object, readonly CountryLayoutDef[]>();
-export function worldLayouts(small: TierSmall): readonly CountryLayoutDef[] {
-  const own = small.content?.countryLayout;
-  if (!own) return EMPTY;
-  let l = layoutCache.get(own);
-  if (!l) layoutCache.set(own, (l = Object.values(own) as CountryLayoutDef[]));
-  return l;
-}
-export const layoutById = (small: TierSmall, id: string | undefined): CountryLayoutDef | undefined => (id && id !== ERA_LAYOUT ? contentItems<CountryLayoutDef>(small, 'countryLayout')[id] : undefined);
-
-// 生效的等级比例（按 tiers 的先后一个一个数）：格局写了（不是 era、世界里有）时按格局，否则按时代的 tiers，
-// 时代没写（或世界里的等级全是 0）时按各等级的 weight。没写到的等级为 0；全是 0 时往下一种退
-export function tierWeights(tiers: readonly CountryTierDef[], era: Pick<Era, 'tiers'> | undefined, layout: CountryLayoutDef | undefined): number[] {
+// 生效的等级比例（按 tiers 的先后一个一个数）：按时代的 tiers，时代没写（或世界里的等级全是 0）时按各等级的 weight。
+// 没写到的等级为 0。第七十七轮去掉了每个世界选的格局（countryLayout）：只按时代
+export function tierWeights(tiers: readonly CountryTierDef[], era: Pick<Era, 'tiers'> | undefined): number[] {
   const from = (w: Readonly<Record<string, number>> | undefined) => (w ? tiers.map((t) => w[t.id] ?? 0) : null);
   const any = (l: number[] | null): l is number[] => !!l && l.some((v) => v > 0);
-  const byLayout = from(layout?.weights);
-  if (any(byLayout)) return byLayout;
   const byEra = from(era?.tiers);
   if (any(byEra)) return byEra;
   return tiers.map((t) => t.weight ?? 1);

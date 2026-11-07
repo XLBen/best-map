@@ -97,11 +97,10 @@ function cultureUsage(w: W, id: string): ContentUsage | null {
   const ctry = countries(w).filter((c) => c.primaryCulture === id);
   const h = w.small.human;
   const hearths = h?.hearths.filter((x) => x.culture === id).length ?? 0;
-  const listed = h?.groups.some((g) => g.cultures?.includes(id)) ? 1 : 0;
   const auto = !cells.length && autoUses(w, is) ? 1 : 0;
   return result(
-    [...part(cells.length, '格有这种文化的人'), ...part(ctry.length, '个国家的主流文化'), ...part(hearths, '个发源地'), ...(listed ? ['生成人文时选了它'] : []), ...(auto ? ['自动的人口里有它'] : [])],
-    cells.length + ctry.length + hearths + listed + auto,
+    [...part(cells.length, '格有这种文化的人'), ...part(ctry.length, '个国家的主流文化'), ...part(hearths, '个发源地'), ...(auto ? ['自动的人口里有它'] : [])],
+    cells.length + ctry.length + hearths + auto,
     cells.length ? cells : countryCells(w, ctry.map((c) => c.id)),
   );
 }
@@ -131,7 +130,7 @@ function groupUsage(w: W, id: string): ContentUsage | null {
   const cells = mine.size ? popCells(w, (t) => mine.has(t.culture)) : [];
   const ctry = countries(w).filter((c) => c.acceptedGroups.includes(id));
   const h = w.small.human;
-  const chosen = h?.groups.some((g) => g.id === id) ? 1 : 0;
+  const chosen = h?.groups.includes(id) ? 1 : 0;
   const hearths = h?.hearths.filter((x) => x.group === id && !x.culture).length ?? 0;
   return result(
     [...part(cultures.length, '个文化属于它'), ...part(cells.length, '格有这一组的人'), ...part(ctry.length, '个国家'), ...(chosen ? ['生成人文时选了它'] : []), ...part(hearths, '个发源地')],

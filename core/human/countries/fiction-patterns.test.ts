@@ -27,7 +27,7 @@ const runs = new Map<string, CountryRun>();
 function peopled(era: string): { eng: Engine; run: CountryRun } {
   const eng = snapshot(`fiction-patterns:${era}`, () => {
     const e = continents();
-    humanExec(e, { op: 'generate_human', era, groups: groupsOf(era), countries: {} });
+    humanExec(e, { op: 'generate_human', packs: [[era]], groups: groupsOf(era), countries: {} });
     runs.set(era, last!);
     return e;
   });
@@ -224,7 +224,7 @@ describe('科幻：殖民据点', () => {
     const off = regenAmount(eng, 'scifi', 'outposts', 0);
     expect(countryList(off.world.small).filter((m) => m.role === OUTPOSTS || m.subject === 'company')).toEqual([]);
     const b = continents();
-    humanExec(b, { op: 'generate_human', era: 'scifi', groups: groupsOf('scifi'), countries: {} });
+    humanExec(b, { op: 'generate_human', packs: [['scifi']], groups: groupsOf('scifi'), countries: {} });
     expect(digest(b.world.small.countries)).toBe(digest(eng.world.small.countries));
     const again = Engine.fromDoc(eng.toDoc(), eng.world.mesh);
     expect(digest(again.world.small.countries)).toBe(digest(eng.world.small.countries));

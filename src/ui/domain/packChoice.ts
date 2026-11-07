@@ -16,6 +16,7 @@ import type { LibraryEntry } from '../../library';
 // - 一个世界用一个库。用户定的：时代有自己的库，想要别的自己加进世界（奇幻世界里加意识形态和社会主义政体）。所以这里没有勾选的树：
 //   内置的六个库和我的库里够完整的（isLibrary）列出来，选一个。
 // - 文化组从这个库里列：小包写了权重的是默认带的，比重是 0 的收在“还有 N 个文化组（这个库默认不带）”里，勾上就参与。
+//   第七十七轮：只选哪几组；各组占多少是组的比重（内置的组带着这个时代的比重，见 core/packs/builtin-tree.ts 的 groupPack），在资源库里改。
 //   世界里自己的、从别的库加来的组也列着，默认参与（beyondGroups）。
 // - 加进世界的命令（core/packs/import.ts 的 packImportCommands，每项带 from）：
 //   新建世界：库里世界的底子放在新建的那一步里（生成之前：生态、地形类别、地名风格要在生成时就有），时代、政体、选的文化组……与 generate_human 一起作为第二步。
@@ -96,8 +97,8 @@ export function defaultLibrary(lib: readonly LibraryEntry[]): string | null {
 export interface PackChoice {
   // 选的库（资源库里的键）；一个能选的都没有时 null
   library: string | null;
-  // 选的文化组与权重
-  groups: { id: string; weight: number }[];
+  // 选的文化组（id；第七十七轮起不带权重：各组占多少是世界里组的比重）
+  groups: string[];
 }
 
 // 生成的命令里写的 packs（core 里还是路径的列表，世界文件的格式没变）
@@ -121,7 +122,7 @@ export function libraryRule(library: string | null, lib: readonly LibraryEntry[]
   return undefined;
 }
 
-// 库里的文化组（同一组只列一次）。weight：小包写的默认权重（0 是这个库默认不带的）
+// 库里的文化组（同一组只列一次）。weight：小包写的权重（写了大于 0 的是默认带的，0 是这个库默认不带的）
 export interface GroupOption {
   group: CultureGroup;
   weight?: number;
@@ -144,15 +145,15 @@ export function packGroups(library: string | null, lib: readonly LibraryEntry[])
   return out;
 }
 
-// 选上一个库时默认带的文化组：小包写了权重的；一个都没写权重时是库里的全部组（权重 1）。组自己的比重是 0 的不算（第五十轮：不参与生成）
-export function defaultGroupsOf(node: PackNode): { id: string; weight: number }[] {
-  const weighted: { id: string; weight: number }[] = [];
-  const all: { id: string; weight: number }[] = [];
+// 选上一个库时默认带的文化组：小包写了权重的；一个都没写权重时是库里的全部组。组自己的比重是 0 的不算（第五十轮：不参与生成）
+export function defaultGroupsOf(node: PackNode): string[] {
+  const weighted: string[] = [];
+  const all: string[] = [];
   walkPacks(node, (n) => {
     for (const g of ownItems<CultureGroup>(n, 'cultureGroups')) {
-      if (g.weight === 0 || all.some((x) => x.id === g.id)) continue;
-      all.push({ id: g.id, weight: 1 });
-      if (typeof n.weight === 'number' && n.weight > 0) weighted.push({ id: g.id, weight: n.weight });
+      if (g.weight === 0 || all.includes(g.id)) continue;
+      all.push(g.id);
+      if (typeof n.weight === 'number' && n.weight > 0) weighted.push(g.id);
     }
   });
   return weighted.length ? weighted : all;
@@ -172,7 +173,7 @@ export function switchPlanOf(c: PackChoice, small: Small | null | undefined, lib
   if (!small || !c.library) return null;
   const from = worldLibrary(small);
   if (!from || from === c.library) return null;
-  const ids = c.groups.map((g) => g.id);
+  const ids = c.groups;
   const key = JSON.stringify([from, c.library, ids]);
   const m = switchMemo;
   if (m.small !== small || m.content !== small.content || m.origin !== small.origin || m.countries !== small.countries) {
@@ -223,8 +224,7 @@ export function worldContentCommands(c: Pick<PackChoice, 'library'>, lib: readon
 // 生成人文之前加的内容（库里生成要用的、选的文化组）。small 为 null：新建世界；已有的世界只补世界里没有的 id
 // （世界里改过的不算撞名，以前生成后会清理掉多出来的 id-2，第五十轮不清理了）
 export function humanImportPicks(c: PackChoice, small: Small | null | undefined): ImportPicks {
-  const groups = c.groups.map((g) => g.id);
-  return { packs: choicePacks(c), groups, ...(small ? { onlyMissing: true } : {}) };
+  return { packs: choicePacks(c), groups: [...c.groups], ...(small ? { onlyMissing: true } : {}) };
 }
 export function humanImportCommands(c: PackChoice, small: Small | null | undefined, lib: readonly LibraryEntry[]): Command[] {
   return packImportCommands(libRoots(lib), humanImportPicks(c, small), small ? worldOf(small) : undefined);

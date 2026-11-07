@@ -19,7 +19,6 @@ import {
   chooseLibrary,
   defaultChoice,
   densityText,
-  estimateLandKm2,
   generateCommand,
   popAt,
   popPos,
@@ -53,7 +52,7 @@ const GROUPS = [
   { id: 'chinese', weight: 3 },
   { id: 'altaic', weight: 1.5 },
 ];
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS };
+const GEN: HumanCommand = { op: 'generate_human', packs: [['medieval']], groups: GROUPS };
 const peopled = (): Engine =>
   snapshot('ui:peopled', () => {
     const eng = continents();
@@ -90,12 +89,13 @@ describe('加一个变量（第五十四轮）', () => {
 });
 
 describe('新建向导的“人文”', () => {
-  it('默认生成：中世纪与近世、它默认的文化组；总人口不动时不写（按真的陆地面积）', () => {
+  // 第七十七轮：总人口、各组的“占”去掉了（人口密度在时代里，各组占多少是组的比重），命令只写组的 id
+  it('默认生成：中世纪与近世、它默认的文化组；命令里没有总人口和权重', () => {
     const c = defaultChoice(null);
     const era = choiceEra(c)!;
     expect(era.id).toBe('medieval');
-    expect(c).toMatchObject({ on: true, pop: null });
-    expect(c.groups).toEqual(defaultsOf(era));
+    expect(c).toMatchObject({ on: true });
+    expect(c.groups).toEqual(defaultsOf(era).map((g) => g.id));
     // 第三十轮：先把库里的内容加进世界，再生成（一整步）；生成的命令带上这个库
     const cmd = lastOf(generateCommand(c)!);
     // 第二十三轮：默认同时生成国家（分裂 ↔ 统一在正中时不写，按时代）；第二十四轮：默认同时生成城市、道路、地标
@@ -103,32 +103,26 @@ describe('新建向导的“人文”', () => {
     expect('totalPop' in cmd).toBe(false);
     // 关掉、一个组都没勾：没有命令
     expect(generateCommand({ ...c, on: false })).toBeNull();
-    expect(generateCommand(c.groups.reduce((x, g) => toggleGroup(x, g.id, false), c))).toBeNull();
-    // 动了总人口：写进命令（取整）
-    expect(lastOf(generateCommand({ ...c, pop: 123456789.4 })!)).toMatchObject({ totalPop: 123456789 });
+    expect(generateCommand(c.groups.reduce((x, g) => toggleGroup(x, g, false), c))).toBeNull();
+    expect(c.groups.every((g) => typeof g === 'string')).toBe(true);
   });
 
-  it('第五十二轮：换时代是选另一个库；总人口回到自动，文化组换成那个库默认带的', () => {
-    const c = { ...defaultChoice(null), pop: 5e8 };
+  it('第五十二轮：换时代是选另一个库；文化组换成那个库默认带的', () => {
+    const c = defaultChoice(null);
     for (const id of ['antiquity', 'industrial', 'modern', 'fantasy', 'scifi']) {
       const d = chooseLibrary(c, id);
       expect(choiceEra(d)!.id).toBe(id);
-      expect(d.pop).toBeNull();
-      expect(d.groups).toEqual(defaultsOf({ id }));
+      expect(d.groups).toEqual(defaultsOf({ id }).map((g) => g.id));
     }
   });
 
-  it('总人口的滑块：默认的 1/10 到 10 倍，按对数，两位有效数字；估的陆地面积按地图（星球）大小 × 陆地多少', () => {
+  it('总人口的滑块（已有人文时改总人口）：默认的 1/10 到 10 倍，按对数，两位有效数字', () => {
     const def = 4e8;
     expect(popAt(popPos(def, def), def)).toBe(def);
     expect(popAt(0, def)).toBe(4e7);
     expect(popAt(1, def)).toBe(4e9);
     expect(popPos(4e7, def)).toBeCloseTo(0);
     expect(String(popAt(0.37, def)).replace(/0+$/, '').length).toBeLessThanOrEqual(2);
-    const earth = estimateLandKm2({ globe: true, radiusKm: 6371, landFraction: 0.3 });
-    expect(earth / 1e6).toBeGreaterThan(140);
-    expect(earth / 1e6).toBeLessThan(160);
-    expect(estimateLandKm2({ globe: false, mapKm: 5000, landFraction: 0.5 })).toBe(5000 * 2500 * 0.5);
     expect(densityText(2.7)).toBe('2.7 人/km²');
     expect(densityText(0)).toBe('无人');
   });
@@ -444,14 +438,14 @@ describe('仓库与“文化 ⋯”', () => {
   it('换时代、文化组重新生成：regenerate_human（同一个时代保留手改的）；没变时没有命令', () => {
     const w = peopled().world;
     const c = defaultChoice(w.small);
-    expect(c).toMatchObject({ library: 'medieval', pop: null });
+    expect(c).toMatchObject({ library: 'medieval' });
     expect(choiceEra(c, [], w.small)!.id).toBe('medieval');
-    expect(c.groups).toEqual(GROUPS);
+    expect(c.groups).toEqual(GROUPS.map((g) => g.id));
     expect(regenerateWith(c, w.small)).toBeNull();
     const less = toggleGroup(c, 'altaic', false);
-    expect(lastOf(regenerateWith(less, w.small)!)).toEqual({ op: 'regenerate_human', packs: [['medieval']], groups: GROUPS.slice(0, 2), keepManual: true });
+    expect(lastOf(regenerateWith(less, w.small)!)).toEqual({ op: 'regenerate_human', packs: [['medieval']], groups: GROUPS.slice(0, 2).map((g) => g.id), keepManual: true });
     const eng = peopled();
     eng.exec(regenerateWith(less, w.small)!);
-    expect(eng.world.small.human!.groups.map((g) => g.id)).toEqual(['germanic', 'chinese']);
+    expect(eng.world.small.human!.groups).toEqual(['germanic', 'chinese']);
   });
 });

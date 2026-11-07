@@ -26,7 +26,7 @@ const frame = { cw: 1000, ch: 700, dpr: 1 };
 const peoples = () =>
   snapshot('r48:peoples', () => {
     const e = continents();
-    humanExec(e, { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} });
+    humanExec(e, { op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} });
     return e;
   }).world;
 

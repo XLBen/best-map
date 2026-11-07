@@ -48,7 +48,6 @@ function fullPack(id = 'src', tweak: (key: string, x: Record<string, unknown>) =
     ],
     factions: [{ id: 'f1', name: '派系', color: '#999999', amount: 1, drivers: [{ dimension: 'religion', value: 'v1', culture: 'c1', cultureGroup: 'g1', weight: 1 }, { faith: 'heretic', weight: 1 }] }],
     countryTiers: [{ id: 't1', name: '大', order: 1, area: 2, govSize: 1 }, { id: 't2', name: '小', order: 0, area: 1, govSize: 1 }],
-    countryLayouts: [{ id: 'lay1', name: '格局', weights: { t1: 1, t2: 2 } }],
     cityRanks: [{ id: 'cr1', name: '城', icon: 'dot', level: 1, minShare: 0.1, label: 1 }],
     landmarkTypes: [{ id: 'lm1', name: '地标', category: 'manmade', icon: 'temple', cultureGroups: ['g1'], governments: ['monarchy'], label: { c1: '文化碑', g1: '组碑', default: '{city}碑' } }],
     pointTypes: [{ id: 'pt1', name: '点', color: '#999999', actsAsCity: { rank: 'cr1' } }],
@@ -154,7 +153,7 @@ describe('覆盖：引用表管到了所有种类和字段', () => {
     expect(danglingLinks(table).map((b) => `${b.from.kind}:${b.from.id} → ${b.link.kinds}:${b.link.id}`)).toEqual([]);
     // 每种有引用的都走到了
     const kinds = new Set([...table.out].filter(([, l]) => l.length).map(([k]) => k.split('\u0000')[0]));
-    expect([...kinds].sort()).toEqual(['biome', 'countryLayout', 'culture', 'cultureGroup', 'era', 'faction', 'government', 'lakeType', 'landmarkType', 'popValue', 'resource', 'riverType', 'valueGroup'].sort());
+    expect([...kinds].sort()).toEqual(['biome', 'culture', 'cultureGroup', 'era', 'faction', 'government', 'lakeType', 'landmarkType', 'popValue', 'resource', 'riverType', 'valueGroup'].sort());
   });
 
   it('内置的库里去不掉的引用都是 hard（导入时只有它们跟着来）', () => {
@@ -299,7 +298,6 @@ describe('一项里的引用', () => {
     ]);
     expect(of('era', 'e1').map(brief)).toEqual(['tiers.t1→countryTier:t1:strip', 'tiers.t2→countryTier:t2:strip']);
     expect(of('pointType', 'pt1').map(brief)).toEqual(['actsAsCity.rank→cityRank:cr1:auto']);
-    expect(of('countryLayout', 'lay1').map((l) => l.cls)).toEqual(['auto', 'auto']);
   });
 
   it('条件和脚本里的：river:、lake:、field:，field() 不算内置变量，biome() 和比较的字面量', () => {
@@ -481,11 +479,12 @@ describe('故意撞名的导入：引用跟着改名，不留下找不到的', (
       }
     }
     expect(nowWrong).toEqual([]);
-    // 这几个数记在 docs/dev/history/第49轮.md：以前 59 条引用里有 40 条没跟着改（第五十三轮的派系名单多一条：60 条、41 条）
+    // 这几个数记在 docs/dev/history/第49轮.md：以前 59 条引用里有 40 条没跟着改（第五十三轮的派系名单多一条：60 条、41 条；
+    // 第七十七轮去掉了格局，样例里少了它的两条：58 条、39 条）
     expect({ total, wrong: Object.values(oldWrong).reduce((a, b) => a + b, 0), oldWrong }).toEqual({
-      total: 60,
-      wrong: 41,
-      oldWrong: { riverType: 1, cultureGroup: 6, culture: 5, popValue: 2, government: 13, faction: 3, era: 2, countryLayout: 2, landmarkType: 3, terrainClass: 1, resource: 2, pointType: 1 },
+      total: 58,
+      wrong: 39,
+      oldWrong: { riverType: 1, cultureGroup: 6, culture: 5, popValue: 2, government: 13, faction: 3, era: 2, landmarkType: 3, terrainClass: 1, resource: 2, pointType: 1 },
     });
   });
 

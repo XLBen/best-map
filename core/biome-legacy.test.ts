@@ -9,7 +9,7 @@ import { newWorldContentCommands, packImportCommands } from './packs/import';
 import { digest } from './digest';
 import { mulberry32 } from './rng';
 import { type Tolerance, trapezoid } from './species';
-import { NO_CURRENTS, engineFor, humanDigest, importPacks, withoutHeights } from './testing/fixtures';
+import { NO_CURRENTS, engineFor, humanDigest, importPacks, setGroupWeights, withoutHeights } from './testing/fixtures';
 import { type InvadeTable, invadeBoost, suitability, vegShares } from './vegetation';
 
 // 第五十五轮：内置生态写了高度范围，同一个种子的世界和以前不同，金标准重录了一次。
@@ -22,6 +22,7 @@ import { type InvadeTable, invadeBoost, suitability, vegShares } from './vegetat
 // 第七十五轮：奇幻的国家有意改了（种族王国），重录 r29.fantasy 人文的几项；r29.medieval、r29.modern、libraries.medieval 只重录 countries：
 // 档案多了格局里的角色（role），核对过不写 role 时与原来的值逐个相同
 // 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
+// 第七十七轮：生成的命令不再写权重、“分裂 ↔ 统一”、格局，human 只记组的 id、countryRules 只有种子，组带着库里的比重，没有格局。重录 golden-full 的 small、r29 的 human、libraries 的 human、content、origin；核对过两边的世界只差这几样（见 docs/dev/history/第77轮.md）
 describe('没写高度范围的生态和第五十四轮逐值相同', () => {
   const plain = () => withoutHeights(newWorldContentCommands());
 
@@ -59,7 +60,9 @@ describe('没写高度范围的生态和第五十四轮逐值相同', () => {
       const e = base.clone();
       const groups = sc.groups.map(([id, weight]) => ({ id, weight }));
       importPacks(e, { packs: [[sc.era]], groups: groups.map((g) => g.id) });
-      e.exec({ op: 'generate_human', packs: [[sc.era]], groups, countries: {}, settlements: {} });
+      // 第七十七轮：权重写进世界里的组（命令只写 id）
+      setGroupWeights(e, groups);
+      e.exec({ op: 'generate_human', packs: [[sc.era]], groups: groups.map((g) => g.id), countries: {}, settlements: {} });
       expect(humanDigest(e.world), sc.id).toEqual(r29[sc.id]);
     }
   });
@@ -72,7 +75,8 @@ describe('没写高度范围的生态和第五十四轮逐值相同', () => {
     const ids = ERA_PACKS.get('fantasy')!.resources!;
     expect(ids.length).toBe(5);
     e.exec({ op: 'batch', commands: ids.map((id): Command => ({ op: 'set_content', kind: 'resource', id, item: null })) });
-    e.exec({ op: 'generate_human', packs: [['fantasy']], groups, countries: {}, settlements: {} });
+    setGroupWeights(e, groups);
+    e.exec({ op: 'generate_human', packs: [['fantasy']], groups: groups.map((g) => g.id), countries: {}, settlements: {} });
     expect(humanDigest(e.world)).toEqual((saved.r29 as Record<string, unknown>).fantasy);
   });
 
@@ -86,7 +90,7 @@ describe('没写高度范围的生态和第五十四轮逐值相同', () => {
     eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
     eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
     for (const c of packImportCommands(LIB, { packs: [[id]], groups: groups.map((g) => g.id) }, eng.world)) eng.exec(c);
-    eng.exec({ op: 'generate_human', packs: [[id]], groups, countries: {}, settlements: {} });
+    eng.exec({ op: 'generate_human', packs: [[id]], groups: groups.map((g) => g.id), countries: {}, settlements: {} });
     const { small } = eng.world;
     expect({ ...humanDigest(eng.world), content: digest(small.content ?? null), origin: digest(small.origin ?? null) }).toEqual((saved.libraries as Record<string, unknown>)[id]);
   });

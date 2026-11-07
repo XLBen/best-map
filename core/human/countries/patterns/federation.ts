@@ -26,7 +26,7 @@ export const federation: PatternModule = {
     const fresh = (m: CountryMeta) => !m.locked;
     const nFed = countOf(use.amount, rand());
     if (!(nFed > 0)) return;
-    const T = averageCountryKm2(ctx.era, g.plan.rules.fragmentation);
+    const T = averageCountryKm2(ctx.era);
     const cells = new Map<number, number>();
     const c = world.causes.country!;
     for (let i = 0; i < c.length; i++) if (c[i] >= 0) cells.set(c[i], (cells.get(c[i]) ?? 0) + 1);

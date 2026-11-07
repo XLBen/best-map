@@ -47,12 +47,9 @@ describe('下面有哪些', () => {
     expect(ids(parentsOf(rel, pyramid, of))).toEqual(pyramid.cultureGroups);
   });
 
-  it('派系由政体写的 factions 决定，按政体写的先后；格局按比例大于 0 的等级；取值按 group', () => {
+  it('派系由政体写的 factions 决定，按政体写的先后；取值按 group', () => {
     const gov = items('government')[0] as { factions: string[] };
     expect(ids(sec(PRESET_ARRANGE, 'government', gov, 'faction').items)).toEqual(gov.factions);
-    const empire = items('countryTier').find((t) => (t as { id: string }).id === 'empire');
-    const lay = ids(sec(PRESET_ARRANGE, 'countryTier', empire, 'countryLayout').items);
-    expect(lay).not.toContain('petty'); // 小邦林立里帝国的比例是 0
     const vg = items('valueGroup')[0] as { id: string };
     expect(ids(sec(PRESET_ARRANGE, 'valueGroup', vg, 'popValue').items)).toEqual(ids(items('popValue').filter((v) => (v as { group?: string }).group === vg.id)));
   });
@@ -110,11 +107,8 @@ describe('加、移出改的是内容自己，方向没弄反', () => {
     expect(r.link!({ id: 'g', nameStyle: 's' }, { id: 't' })).toEqual({ side: 'parent', next: { id: 'g', nameStyle: 't' } });
   });
 
-  it('格局改自己的 weights；取值要同一维；新建的格局只写这一级', () => {
-    const r = rel('countryLayout', 'countryTier');
-    expect(r.link!({ id: 'big' }, { id: 'l', weights: { small: 2 } })).toEqual({ side: 'child', next: { id: 'l', weights: { small: 2, big: 1 } } });
-    expect(r.unlink!({ id: 'big' }, { id: 'l', weights: { small: 2, big: 1 } })).toEqual({ side: 'child', next: { id: 'l', weights: { small: 2 } } });
-    expect(r.fresh!({ id: 'big' }, { id: 'l', weights: { medium: 1 } })).toEqual({ id: 'l', weights: { big: 1 } });
+  // 第七十七轮去掉了格局（countryLayout → countryTier 的融入）
+  it('取值要同一维；新建的取值写上这一组', () => {
     const v = rel('popValue', 'valueGroup');
     expect(v.fits!({ dimension: 'a' }, { dimension: 'b' })).toBe(false);
     expect(v.fresh!({ id: 'g', dimension: 'a' }, { id: 'v', dimension: 'religion' })).toEqual({ id: 'v', dimension: 'a', group: 'g' });
@@ -146,7 +140,7 @@ describe('哪些组合可以', () => {
 
   it('讲得通的才行', () => {
     expect(canMerge('faction', 'government')).toBe(true);
-    expect(canMerge('countryLayout', 'countryTier')).toBe(true);
+    expect(canMerge('countryLayout', 'countryTier')).toBe(false);
     expect(canMerge('landmarkType', 'government')).toBe(true);
     expect(canMerge('culture', 'government')).toBe(false);
     expect(canMerge('mapStyle', 'government')).toBe(false);
@@ -220,13 +214,13 @@ describe('门槛：安排不改变任何摘要', () => {
   // 用这个库新建世界、生成人文：和没写安排的库逐值相同
   function worldOf(pack: ResourcePack): Engine {
     const lib = LIB.map((p) => (p.id === pack.id ? pack : p));
-    const groups = [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }];
+    const groups = ['germanic', 'chinese'];
     const eng = engineFor({ cells: 3000, seed: 2, latNorth: 70, latSouth: 15 }, { bare: true });
     for (const c of packImportCommands(lib, { packs: worldPartsOf(pack.id), groups: [] }, eng.world)) eng.exec(c);
     eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
     eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
-    for (const c of packImportCommands(lib, { packs: [[pack.id]], groups: groups.map((g) => g.id) }, eng.world)) eng.exec(c);
+    for (const c of packImportCommands(lib, { packs: [[pack.id]], groups }, eng.world)) eng.exec(c);
     eng.exec({ op: 'generate_human', packs: [[pack.id]], groups, countries: {}, settlements: {} });
     return eng;
   }

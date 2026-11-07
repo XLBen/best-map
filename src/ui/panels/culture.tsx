@@ -7,28 +7,22 @@ import { Seg } from '../common';
 import { Slider } from '../components/Slider';
 import { OptionSlider } from '../shell/OptionSlider';
 import { Toggle } from '../components/Toggle';
-import { fragAt, fragPos, fragText, fragTitle } from '../domain/countries';
-import { LayoutPick } from './countries';
+import { EraRulesNote } from '../shell/EraRulesNote';
 import { LibraryLink, TypePicker, TypePickerButton } from '../shell/TypePicker';
 import type { SliderDef } from '../defs/types';
 import {
   type HumanChoice,
-  WEIGHT_RANGE,
   chooseLibrary,
   choiceEra,
-  choicePattern,
   choiceProblem,
   defaultChoice,
   densityText,
   generateCommand,
-  groupShares,
   popAt,
   popPos,
   popText,
   regenerateCommand,
   regenerateWith,
-  roundWeight,
-  setGroupWeight,
   shareText,
   switchNote,
   toggleGroup,
@@ -233,61 +227,17 @@ export function HearthBar() {
 
 // ---------- 生成人文的选择（向导、“文化 ⋯”共用） ----------
 
-// “国家”（第二十三轮）：生成国家、分裂 ↔ 统一、格局（第二十六轮）。estimate：大约几个国家（有世界时才知道）
+// “国家”（第二十三轮）：生成国家。第七十七轮去掉了“分裂 ↔ 统一”、格局：国家多大、各等级占多少按资源库里的时代
 // settlements（第二十四轮）：带上“生成城市与道路”“地标”（要有国家）
-export function CountryChoice({
-  choice,
-  onChange,
-  disabled,
-  estimate,
-  settlements = true,
-}: {
-  choice: HumanChoice;
-  onChange: (c: HumanChoice) => void;
-  disabled?: boolean;
-  estimate?: (f: number) => number | null;
-  settlements?: boolean;
-}) {
+export function CountryChoice({ choice, onChange, disabled, settlements = true }: { choice: HumanChoice; onChange: (c: HumanChoice) => void; disabled?: boolean; settlements?: boolean }) {
   const c = choice.countries;
   const setS = (patch: Partial<HumanChoice['settlements']>) => onChange({ ...choice, settlements: { ...choice.settlements, ...patch } });
-  const [draft, setDraft] = useState<number | null>(null);
-  const f = draft ?? c.fragmentation;
-  const n = estimate?.(f);
-  const set = (patch: Partial<HumanChoice['countries']>) => onChange({ ...choice, countries: { ...c, ...patch } });
   return (
     <div class="human-countries">
       <h5>国家</h5>
-      <Toggle on={c.on} disabled={disabled} onChange={(on) => set({ on })}>
+      <Toggle on={c.on} disabled={disabled} onChange={(on) => onChange({ ...choice, countries: { on } })}>
         生成国家
       </Toggle>
-      {c.on && (
-        <Slider
-          stacked
-          label="分裂 ↔ 统一"
-          pos={fragPos(f)}
-          text={fragText(f)}
-          changed={c.fragmentation !== 0.5}
-          disabled={disabled}
-          title={fragTitle(choiceEra(choice, library.value, world.value?.small), choicePattern(choice, library.value, world.value?.small))}
-          note={
-            <>
-              {n ? `约 ${n} 个国家` : '正中按时代'}
-              {c.fragmentation !== 0.5 && (
-                <button class="link" onClick={() => set({ fragmentation: 0.5 })}>
-                  恢复自动
-                </button>
-              )}
-            </>
-          }
-          onDraft={(p) => setDraft(fragAt(p))}
-          onCommit={(p) => {
-            setDraft(null);
-            set({ fragmentation: fragAt(p) });
-          }}
-          onCancel={() => setDraft(null)}
-        />
-      )}
-      {c.on && <LayoutPick w={world.value} value={c.layout ?? 'era'} disabled={disabled} onChange={(layout) => set({ layout })} />}
       {settlements && (
         <>
           <h5>城市</h5>
@@ -303,68 +253,48 @@ export function CountryChoice({
   );
 }
 
-// defaultPop：按规则的时代的默认密度算的总人口（向导里是估的）
 // compact：弹出面板里（窄）：组旁不写有几个文化
 // countries：带上“国家”（生成人文时；重新生成时不带）
 // picker（第五十二轮）：带上选库（“文化 ⋯”里；新建向导的选库是单独的一步，这里不带）
+// 第七十七轮：只选库、文化组，生成的参数（国家大小、人口密度、各组占多少）在资源库里改（EraRulesNote；向导里不带打开的按钮）
 export function HumanChoices({
   choice,
   onChange,
   small,
-  defaultPop,
   disabled,
   compact,
   countries,
-  estimate,
   picker = true,
 }: {
   choice: HumanChoice;
   onChange: (c: HumanChoice) => void;
   small: World['small'] | null;
-  defaultPop: number;
   disabled?: boolean;
   compact?: boolean;
   countries?: boolean;
-  estimate?: (f: number) => number | null;
   picker?: boolean;
 }) {
   const lib = library.value;
-  const era = choiceEra(choice, lib, small);
   // 文化组：库里的；世界里自己的、从别的库加来的列在最后
   const offered = packGroups(choice.library, lib);
-  const shares = groupShares(choice);
-  const pop = choice.pop ?? defaultPop;
-  const [draft, setDraft] = useState<number | null>(null);
-  const v = draft ?? pop;
-  const landKm2 = defaultPop / Math.max(1e-9, era?.popDensity ?? 1);
   const groupRow = (o: Pick<GroupOption, 'group' | 'weight' | 'cultures'>) => {
     const g = o.group;
-    const sel = choice.groups.find((x) => x.id === g.id);
+    const sel = choice.groups.includes(g.id);
     const n = o.cultures;
     return (
       <div class="human-group">
         <label class="check" title={compact ? `${g.description ? `${g.description}\n` : ''}${n} 个文化` : g.description}>
-          <input type="checkbox" checked={!!sel} disabled={disabled} onChange={() => onChange(toggleGroup(choice, g.id, !sel, o.weight || 1))} />
+          <input type="checkbox" checked={sel} disabled={disabled} onChange={() => onChange(toggleGroup(choice, g.id, !sel))} />
           <span class="swatch" style={{ background: g.color }} />
           {g.name}
           {!compact && n > 0 && <span class="hint">{n} 个文化</span>}
         </label>
-        {sel && (
-          <Slider
-            label="占"
-            pos={Math.log(sel.weight / WEIGHT_RANGE[0]) / Math.log(WEIGHT_RANGE[1] / WEIGHT_RANGE[0])}
-            text={shareText(shares.get(g.id) ?? 0)}
-            disabled={disabled}
-            onDraft={(p) => onChange(setGroupWeight(choice, g.id, roundWeight(WEIGHT_RANGE[0] * (WEIGHT_RANGE[1] / WEIGHT_RANGE[0]) ** p)))}
-            onCommit={(p) => onChange(setGroupWeight(choice, g.id, roundWeight(WEIGHT_RANGE[0] * (WEIGHT_RANGE[1] / WEIGHT_RANGE[0]) ** p)))}
-          />
-        )}
       </div>
     );
   };
   const problem = choiceProblem(choice, small, lib);
   // 第五十一轮：库里比重是 0 的组（这个库默认不带的）收着，勾上了才列在上面
-  const isSpare = (o: GroupOption) => o.weight === 0 && !choice.groups.some((x) => x.id === o.group.id);
+  const isSpare = (o: GroupOption) => o.weight === 0 && !choice.groups.includes(o.group.id);
   const spare = offered.filter(isSpare);
   const rows = offered.filter((o) => !isSpare(o));
   const own = beyondGroups(small, choice.library, lib).map((group) => ({ group, cultures: small ? worldCultures(small).filter((c) => c.group === group.id).length : 0 }));
@@ -393,31 +323,8 @@ export function HumanChoices({
           <div class="human-groups">{spare.map(groupRow)}</div>
         </details>
       )}
-      <Slider
-        stacked
-        label="总人口"
-        pos={popPos(v, defaultPop)}
-        text={`${choice.pop === null && draft === null ? '约 ' : ''}${popText(v)}`}
-        changed={choice.pop !== null}
-        disabled={disabled}
-        note={
-          <>
-            {landKm2 > 0 ? `约 ${densityText(v / landKm2)}` : ''}
-            {choice.pop !== null && (
-              <button class="link" onClick={() => onChange({ ...choice, pop: null })}>
-                恢复自动
-              </button>
-            )}
-          </>
-        }
-        onDraft={(p) => setDraft(popAt(p, defaultPop))}
-        onCommit={(p) => {
-          setDraft(null);
-          onChange({ ...choice, pop: popAt(p, defaultPop) });
-        }}
-        onCancel={() => setDraft(null)}
-      />
-      {countries && <CountryChoice choice={choice} onChange={onChange} disabled={disabled} estimate={estimate} />}
+      {countries && <CountryChoice choice={choice} onChange={onChange} disabled={disabled} />}
+      <EraRulesNote libraryKey={choice.library} small={small} seg={countries ? 'state' : 'people'} button={!!small} />
       {problem && <p class="hint warn">{problem}</p>}
     </div>
   );
@@ -448,12 +355,10 @@ function RestyleOffer({ w }: { w: World }) {
 function GenerateBox({ w, onDone }: { w: World; onDone: () => void }) {
   const lib = library.value;
   const [choice, setChoice] = useState<HumanChoice>(() => defaultChoice(w.small, true, lib));
-  const era = choiceEra(choice, lib, w.small);
-  const def = era ? defaultTotalPop(w, w.derived, era) : 0;
   const cmd = generateCommand(choice, w.small, lib);
   return (
     <>
-      <HumanChoices choice={choice} onChange={setChoice} small={w.small} defaultPop={def} compact countries />
+      <HumanChoices choice={choice} onChange={setChoice} small={w.small} compact countries />
       <button
         class="primary"
         disabled={!cmd}
@@ -508,10 +413,9 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
   if (edit) {
     const cmd = regenerateWith(edit, w.small, library.value);
     const editEra = choiceEra(edit, library.value, w.small);
-    const editDef = editEra ? defaultTotalPop(w, w.derived, editEra) : def;
     return (
       <>
-        <HumanChoices choice={edit} onChange={setEdit} small={w.small} defaultPop={editDef} compact />
+        <HumanChoices choice={edit} onChange={setEdit} small={w.small} compact />
         {editEra && editEra.id !== w.small.human!.era && manual && <p class="hint">换了库，手改过的格也重新生成</p>}
         <div class="row">
           <button

@@ -48,7 +48,7 @@ export function regenLine(p: ImportPreview, target: ImportTarget): string | null
   const out: string[] = [];
   if (values) out.push(VALUE_NOTE);
   if (small.human && (has('era', 'cultureGroup', 'culture') || (has('popValue', 'valueGroup') && !values))) out.push('重新生成人文后才用上');
-  else if (!out.length && has('government', 'faction', 'countryTier', 'countryLayout', 'countryPattern') && small.human?.countryRules) out.push('重新生成国家后才用上');
+  else if (!out.length && has('government', 'faction', 'countryTier', 'countryPattern') && small.human?.countryRules) out.push('重新生成国家后才用上');
   if (has('cityRank', 'landmarkType', 'pointType') && small.settlementRules) out.push('重新生成城市后才放到地图上');
   return out.length ? out.join('；') : null;
 }

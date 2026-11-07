@@ -15,7 +15,7 @@ import { FANTASY_LAKE_TYPES } from './fantasy-lakes';
 import { FANTASY_RIVER_TYPES } from './fantasy-rivers';
 import { FANTASY_NEW_RIVER_TYPES } from './fantasy-water';
 import { BUILTIN_MAP_STYLES } from './map-styles';
-import { BUILTIN_COUNTRY_LAYOUTS, BUILTIN_COUNTRY_PATTERNS, BUILTIN_COUNTRY_TIERS } from './countries';
+import { BUILTIN_COUNTRY_PATTERNS, BUILTIN_COUNTRY_TIERS } from './countries';
 import { BUILTIN_FACTIONS, BUILTIN_GOVERNMENTS, GOV_ERAS } from './governments';
 import { BUILTIN_STYLES } from './names';
 import { DEFAULT_SPECIES } from './nature';
@@ -49,7 +49,7 @@ import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ER
 //     names ▸ <地区>    别的地名风格按地区分（地区表见 STYLE_REGIONS，没列的放“其他”）
 //     forms             星球形态：以前向导里写死的六种星球（packs/planet-forms.ts），奇幻的另有几种
 //     styles            画风（第三十八轮）：写实、地图册（packs/map-styles.ts）
-//     tiers             国家等级（第四十二轮）：五档等级与四种格局（packs/countries/tiers.json）
+//     tiers             国家等级（第四十二轮）：五档等级（packs/countries/tiers.json；第七十七轮去掉了四种格局：各级占多少只写在时代里）
 //     water             水系（第五十七轮）：七种现实的河、七种现实的湖（packs/water.ts）
 //
 // 没被任何时代列出的政体、派系归到最贴切的时代：先看它自己写的 eras（第一个是内置时代的），再按政体的类别（CATEGORY_ERA，
@@ -173,7 +173,9 @@ function stylesFor(groups: readonly CultureGroup[], cultures: readonly Culture[]
 }
 
 // 库里一个文化组的小包：组、组里的文化（except 里的不带）、这些文化的地名风格（第三十轮起中文·默认也带上：它不再总在世界里）。
-// weight：这个时代默认带这一组时的权重（新建向导默认的权重）。组与文化引用同一份，不复制
+// weight：这个时代默认带这一组时的权重。第七十七轮起各组占多少只来自世界里组的比重（生成的命令不再写权重）：
+// 不是 1 时组是加了这个比重的浅拷贝（和 sparePack 的比重 0 一样，别的字段同一份；比重不算这一项的内容，见 sameIgnore），
+// 新世界从这个库带来的组就带着这个时代的比重，生成的结果与以前界面按小包的权重发命令时逐值相同。文化引用同一份，不复制
 function groupPack(g: CultureGroup, weight?: number, except: readonly string[] = []): PackNode {
   const cultures = BUILTIN_CULTURES.filter((c) => c.group === g.id && !except.includes(c.id));
   const styles = stylesFor([g], cultures);
@@ -181,7 +183,7 @@ function groupPack(g: CultureGroup, weight?: number, except: readonly string[] =
     id: g.id,
     name: g.name,
     ...(weight !== undefined ? { weight } : {}),
-    cultureGroups: asItems([g]),
+    cultureGroups: asItems([weight !== undefined && weight !== 1 ? { ...g, weight } : g]),
     cultures: asItems(cultures),
     ...(styles.length ? { nameStyles: asItems(styles) } : {}),
   };
@@ -233,9 +235,8 @@ function baseNodes(): { base: PackNode; nature: PackNode; names: PackNode; forms
     tiers: {
       id: 'tiers',
       name: '国家等级',
-      description: '国家分几级（帝国级、王国级、公国级、侯国级、城邦级行政）和几种格局。新建世界时默认带上；生成国家时按它们挑大小',
+      description: '国家分几级（帝国级、王国级、公国级、侯国级、城邦级行政）。新建世界时默认带上；生成国家时按它们挑大小，各级占多少写在时代里',
       countryTiers: asItems(BUILTIN_COUNTRY_TIERS),
-      countryLayouts: asItems(BUILTIN_COUNTRY_LAYOUTS),
     },
     water: {
       id: 'water',

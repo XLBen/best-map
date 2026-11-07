@@ -8,13 +8,14 @@ import { worldDigest } from '../digest';
 import { Engine } from '../engine';
 import { type PackNode, planPack } from '../packs';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES } from '../packs/eras';
-import { NO_CURRENTS, engineFor, humanDigest, importPacks } from '../testing/fixtures';
+import { NO_CURRENTS, engineFor, humanDigest, importPacks, setGroupWeights } from '../testing/fixtures';
 import { mapDiff } from '../tidy';
 import { cultureGroupById, worldCultureGroups, worldCultures, worldEras } from './era';
 import { humanBlockers } from './generate';
 import { r29Digest } from '../testing/r29';
 
-// 第五十轮：世界保留全部内容。生成后不再移出没用到的；清理（整理）覆盖文化、文化组、地名风格、时代；文化组的比重决定参不参与生成
+// 第五十轮：世界保留全部内容。生成后不再移出没用到的；清理（整理）覆盖文化、文化组、地名风格、时代；文化组的比重决定参不参与生成。
+// 第七十七轮：比重也是各组占多少（命令里不再写权重）。以前命令写的权重在这里写进世界里的组（setGroupWeights），结果逐值相同
 
 const r29 = new Proxy({}, { get: (_, key: string) => r29Digest(key) }) as Record<string, unknown>;
 const GROUPS = [['germanic', 3], ['chinese', 3], ['levantine', 2], ['hindustani', 2], ['east-slavic', 1.5], ['altaic', 1.5]] as const;
@@ -33,7 +34,8 @@ beforeAll(() => {
 const generate = (era: string, groups: { id: string; weight: number }[], imported: string[] = groups.map((g) => g.id)): Engine => {
   const e = base.clone();
   importPacks(e, { packs: [[era]], groups: imported });
-  e.exec({ op: 'generate_human', packs: [[era]], groups, countries: {}, settlements: {} });
+  setGroupWeights(e, groups);
+  e.exec({ op: 'generate_human', packs: [[era]], groups: groups.map((g) => g.id), countries: {}, settlements: {} });
   e.update();
   return e;
 };
@@ -87,8 +89,9 @@ describe('保留和重新导入结果相同', () => {
   it('生成不碰内容：是同一个对象，撤销记录里没有内容', () => {
     const e = base.clone();
     importPacks(e, { packs: [['medieval']], groups: MEDIEVAL.map((g) => g.id) });
+    setGroupWeights(e, MEDIEVAL);
     const before = e.world.small.content;
-    e.exec({ op: 'generate_human', packs: [['medieval']], groups: MEDIEVAL, countries: {}, settlements: {} });
+    e.exec({ op: 'generate_human', packs: [['medieval']], groups: MEDIEVAL.map((g) => g.id), countries: {}, settlements: {} });
     expect(e.world.small.content).toBe(before);
     const steps = (e as unknown as { done: { undo: { small?: string } }[] }).done;
     expect(steps[steps.length - 1].undo.small ?? '').not.toContain(BUILTIN_CULTURES[0].name);
@@ -129,7 +132,8 @@ describe('清理：文化、文化组、地名风格、时代都算，地图不�
   it('换过时代：旧的时代与旧时代没用到的内容能清理掉，地图不变', () => {
     const eng = generate('medieval', MEDIEVAL);
     importPacks(eng, { packs: [['modern']], groups: MEDIEVAL.map((g) => g.id) });
-    eng.exec({ op: 'regenerate_human', packs: [['modern']], groups: MEDIEVAL, keepManual: false, countries: {} });
+    setGroupWeights(eng, MEDIEVAL);
+    eng.exec({ op: 'regenerate_human', packs: [['modern']], groups: MEDIEVAL.map((g) => g.id), keepManual: false, countries: {} });
     eng.update();
     expect(worldEras(eng.world.small).map((e) => e.id).sort()).toEqual(['medieval', 'modern']);
     const before = humanDigest(eng.world);
@@ -168,16 +172,18 @@ describe('文化组的比重', () => {
   const run = (weight: Record<string, number>, groups: { id: string; weight: number }[] = MEDIEVAL, imported = MEDIEVAL.map((g) => g.id)) => {
     const e = base.clone();
     importPacks(e, { packs: [['medieval']], groups: imported });
+    setGroupWeights(e, groups);
     withWeights(e, weight);
-    e.exec({ op: 'generate_human', packs: [['medieval']], groups, countries: {}, settlements: {} });
+    e.exec({ op: 'generate_human', packs: [['medieval']], groups: groups.map((g) => g.id), countries: {}, settlements: {} });
     e.update();
     return e;
   };
 
-  it('内置的文化组都没写比重；没写和写了不是 0 的，结果都与第二十九轮逐字节相同（各组占多少仍是命令写的权重）', () => {
+  // 第七十七轮：以前比重不是 0 时和没写一样，各组占多少是命令写的权重；现在比重就是各组占多少
+  it('内置的文化组本身没写比重；比重写成以前命令里的权重时与第二十九轮逐字节相同，改了比重人口就不同', () => {
     expect(BUILTIN_CULTURE_GROUPS.every((g) => g.weight === undefined)).toBe(true);
     expect(humanDigest(run({}).world)).toEqual(r29.medieval);
-    expect(humanDigest(run({ germanic: 7, altaic: 0.5 }).world)).toEqual(r29.medieval);
+    expect(humanDigest(run({ germanic: 7, altaic: 0.5 }).world).pop).not.toEqual((r29.medieval as Record<string, string>).pop);
   });
 
   it('0 的组不参与生成：与命令里没选它（但它在世界里）逐字节相同；组和文化留在世界里', () => {
@@ -189,7 +195,7 @@ describe('文化组的比重', () => {
     // 比重写在内容里，人文、地图都与没选它一样
     expect(a).toEqual(b);
     const small = zero.world.small;
-    expect(small.human!.groups.map((g) => g.id)).toEqual(rest.map((g) => g.id));
+    expect(small.human!.groups).toEqual(rest.map((g) => g.id));
     expect(small.human!.hearths.some((h) => h.group === 'altaic')).toBe(false);
     const altaic = new Set(worldCultures(small).filter((c) => c.group === 'altaic').map((c) => c.id));
     expect(altaic.size).toBeGreaterThan(0);
@@ -204,14 +210,14 @@ describe('文化组的比重', () => {
     e.exec({ op: 'move_hearth', group: 'altaic', cell });
     withWeights(e, { altaic: 0 });
     e.exec({ op: 'regenerate_human' });
-    expect(e.world.small.human!.groups.some((g) => g.id === 'altaic')).toBe(false);
+    expect(e.world.small.human!.groups.includes('altaic')).toBe(false);
     expect(e.world.small.human!.hearths.some((h) => h.group === 'altaic')).toBe(false);
 
     const all = base.clone();
     importPacks(all, { packs: [['medieval']], groups: ['germanic'] });
     withWeights(all, { germanic: 0 });
-    const cmd: Command = { op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }] };
-    expect(humanBlockers(all.world, { packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }] })[0]).toMatch(/^没有文化/);
+    const cmd: Command = { op: 'generate_human', packs: [['medieval']], groups: ['germanic'] };
+    expect(humanBlockers(all.world, { packs: [['medieval']], groups: ['germanic'] })[0]).toMatch(/^没有文化/);
     all.exec(cmd);
     expect(all.world.small.human).toBeUndefined();
     expect(all.lastSkipped[0]).toMatch(/^没有文化/);

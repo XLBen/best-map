@@ -283,24 +283,20 @@ export interface HumanState {
   // 规则用的时代（small.content.era 里的 id）：生成时按命令的 packs 定下（第五十一轮起生成用的包记在 small.genStamp）
   era: string;
   seed: number;
-  // 文化组与权重；cultures 是只用组里的这几个文化（省略时用世界里这一组的全部）
-  groups: { id: string; weight: number; cultures?: string[] }[];
+  // 文化组的 id（第七十七轮起只记 id：各组占多少是世界里组的比重，重新生成时按那时的比重）
+  groups: string[];
   totalPop: number;
   // 每一份“生成权重”（km² × 宜居度^sparsity）合多少人：新长出的陆地按它补上人口（见 population.ts 的 fillCell）
   perWeight: number;
   hearths: HumanHearth[];
   // 下一个人口群体的编号
   nextGroup: number;
-  // 国家的生成参数（第二十三轮）：生成过国家才有。fragmentation 是“统一 ↔ 分裂”（0 统一、1 分裂，0.5 按时代的默认）
+  // 国家的生成参数（第二十三轮）：生成过国家才有。第七十七轮起只有种子：国家多大、各等级占多少都按时代
   countryRules?: CountryRules;
 }
 export interface CountryRules {
-  fragmentation: number;
   seed: number;
-  // 格局（第二十六轮）：国家大小怎么分布。省略（或 'era'）按时代的 tiers；别的是世界里格局（countryLayout，第四十二轮起是内容，见 human/tiers.ts）的 id
-  layout?: CountryLayout;
 }
-export type CountryLayout = string;
 
 // 国家之间的集团（第二十六轮，见 human/blocs.ts）：帝国（邦联：成员各自一色，外沿一道帝国的边线）、
 // 联邦（成员邦在地图上是一种颜色）、军事同盟。一个国家最多在一个帝国或联邦里、一个同盟里

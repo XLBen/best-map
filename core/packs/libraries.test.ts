@@ -19,6 +19,7 @@ import { writeFileSync } from 'node:fs';
 // 和它们的来源时与原来的值逐个相同）；六个库的人文几项（人口、国家、集团、城市……）因为国家有意改了（历史格局、民族主义）；:strip 一个没变
 // 第七十五轮重录：奇幻、科幻两个库的 content、origin（时代换了格局、多了种族王国、殖民据点两种）与人文的几项（国家有意改了）；
 // 古典、中世纪、近现代、现代只重录 countries（档案多了 role，核对过不写 role 时与原来的值相同）；:strip 一个没变
+// 第七十七轮：生成的命令不再写权重、“分裂 ↔ 统一”、格局，human 只记组的 id、countryRules 只有种子，组带着库里的比重，没有格局。六个库只重录 human、content、origin；核对过两边的世界只差这几样（见 docs/dev/history/第77轮.md）
 
 const LIB = builtinPacks();
 const top = (id: string): PackNode => LIB.find((p) => p.id === id)!;
@@ -36,7 +37,7 @@ function libraryWorld(id: string, groups = defaultsOf(id)): Engine {
   eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
   eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
   for (const c of packImportCommands(LIB, { packs: [[id]], groups: groups.map((g) => g.id) }, eng.world)) eng.exec(c);
-  eng.exec({ op: 'generate_human', packs: [[id]], groups, countries: {}, settlements: {} });
+  eng.exec({ op: 'generate_human', packs: [[id]], groups: groups.map((g) => g.id), countries: {}, settlements: {} });
   return eng;
 }
 
@@ -117,7 +118,7 @@ describe('每个库单独够用', () => {
       expect(small.genStamp!.packs).toEqual([[p.id]]);
       const want = ERA_PACKS.get(p.id)!.cultures.map(([g]) => g);
       expect(worldCultureGroups(small).map((g) => g.id)).toEqual(want);
-      expect(small.human!.groups.map((g) => g.id)).toEqual(want);
+      expect(small.human!.groups).toEqual(want);
       expect(Object.keys(small.countries!).length).toBeGreaterThan(0);
       // 世界的底子都从这个库来
       for (const [kind, id] of [['biome', 'taiga'], ['terrainClass', 'plains'], ['nameStyle', 'zh-default'], ['mapStyle', 'realistic'], ['countryTier', 'city']] as const) expect(small.origin?.[kind]?.[id]?.[0], `${kind}:${id}`).toBe(p.id);
@@ -173,8 +174,8 @@ describe('比重 0 的组', () => {
     for (const c of packImportCommands(LIB, { packs: [['medieval', 'cultures', zero]] }, b.world)) b.exec(c);
     expect(cultureGroupById(b.world.small, zero)!.weight).toBe(0);
     for (const c of packImportCommands(LIB, { packs: [['medieval']], groups: groups.map((g) => g.id) }, b.world)) b.exec(c);
-    b.exec({ op: 'generate_human', packs: [['medieval']], groups: [...groups, { id: zero, weight: 5 }], countries: {}, settlements: {} });
-    expect(b.world.small.human!.groups.map((g) => g.id)).toEqual(groups.map((g) => g.id));
+    b.exec({ op: 'generate_human', packs: [['medieval']], groups: [...groups.map((g) => g.id), zero], countries: {}, settlements: {} });
+    expect(b.world.small.human!.groups).toEqual(groups.map((g) => g.id));
     const bad = new Set(worldCultures(b.world.small).filter((c) => c.group === zero).map((c) => c.id));
     expect(bad.size).toBeGreaterThan(0);
     expect(Object.values(b.world.small.popGroups!).some((t) => bad.has(t.culture))).toBe(false);
@@ -199,7 +200,7 @@ describe('生成用的包记在 small.genStamp（第五十一轮，以前是 hum
     expect(small().human!.era).toBe('modern');
     // 换了包：记新的
     for (const c of packImportCommands(LIB, { packs: [['fantasy']], groups: ['elven'] }, eng.world)) eng.exec(c);
-    eng.exec({ op: 'regenerate_human', packs: [['fantasy'], ['modern']], groups: [{ id: 'elven', weight: 1 }] });
+    eng.exec({ op: 'regenerate_human', packs: [['fantasy'], ['modern']], groups: ['elven'] });
     expect(small().genStamp).toEqual({ packs: [['fantasy'], ['modern']] });
     expect(small().human!.era).toBe('fantasy');
     eng.exec({ op: 'remove_human' });

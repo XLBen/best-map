@@ -1,5 +1,4 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { Command } from '../commands';
 import { type ContentKind, allKinds, enableCommand, itemId, kindOf } from '../content/registry';
 import { digest } from '../digest';
 import type { Engine } from '../engine';
@@ -33,9 +32,9 @@ function worldOf(lib: string, libs: readonly DiffLib[] = LIBS, more: { countries
   for (const c of newWorldContentCommands(roots, worldPartsOf(lib, root))) e.exec(c);
   const g = packItems<{ id: string; weight?: number }>(root, 'cultureGroups')
     .filter((x) => x.weight !== 0)
-    .map((x) => ({ id: x.id, weight: 1 }));
-  for (const c of packImportCommands(roots, { packs: [[lib]], groups: g.map((x) => x.id) }, e.world)) e.exec(c);
-  e.exec({ op: 'generate_human', packs: [[lib]], groups: g, ...(more.countries ? { countries: {} } : {}) } as Command);
+    .map((x) => x.id);
+  for (const c of packImportCommands(roots, { packs: [[lib]], groups: g }, e.world)) e.exec(c);
+  e.exec({ op: 'generate_human', packs: [[lib]], groups: g, ...(more.countries ? { countries: {} } : {}) });
   e.update();
   return e;
 }
@@ -115,7 +114,7 @@ describe('改过的标', () => {
 describe('比重不算', () => {
   it('只改 weight 不标', () => {
     const e = worldOf('medieval');
-    const id = e.world.small.human!.groups[0].id;
+    const id = e.world.small.human!.groups[0];
     edit(e, 'cultureGroup', id, { weight: 0 });
     expect(diffOf(e, 'cultureGroup', id).t).toBe('same');
     edit(e, 'cultureGroup', id, { weight: 7 });
@@ -260,7 +259,7 @@ describe('用库里的版本', () => {
 
   it('文化组留着世界的比重', () => {
     const e = worldOf('medieval');
-    const id = e.world.small.human!.groups[0].id;
+    const id = e.world.small.human!.groups[0];
     edit(e, 'cultureGroup', id, { name: '改过', weight: 0 });
     const next = usedSourceItem(kindOf('cultureGroup')!, id, item(e, 'cultureGroup', id), e.world, LIBS)!;
     expect(next.weight).toBe(0);
@@ -323,7 +322,7 @@ describe('存回我的库', () => {
     const mine = copyLib('medieval', 'my-med');
     const libs = [...LIBS, mine];
     const e = worldOf('my-med', libs);
-    const id = e.world.small.human!.groups[0].id;
+    const id = e.world.small.human!.groups[0];
     const k = kindOf('cultureGroup')!;
     const libWeight = packItems<{ id: string; weight?: number }>(mine.pack, 'cultureGroups').find((x) => x.id === id)!.weight;
     edit(e, 'cultureGroup', id, { name: '改过', weight: 5 });

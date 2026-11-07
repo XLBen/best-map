@@ -7,7 +7,7 @@
 //   描格：先不描，再描鼠标下的格与钉住的格，换一格，再不描——新的渲染器后三次都只重画描格那几块（第三十九轮的“描格那一遍”），
 //   旧的整张重画；两边逐字节相同。
 // 结果写进页面的 <pre id="o">（一行一组：不同的字节数）；最后一行 “DONE 共 N 组，不同 M 组”。
-import { continents, humanExec, seededEngine } from '../core/testing/fixtures';
+import { continents, fragKm2, humanExec, seededEngine } from '../core/testing/fixtures';
 import type { Engine } from '../core/engine';
 import { dropWaterTypes } from './r40-world';
 import { scissors } from '../core/seams';
@@ -76,12 +76,13 @@ function cutBig(eng: Engine) {
   return null;
 }
 
-// 人文、国家（领海：离岸 seaKm 以内的海归国家；同 src/render/near.test.ts），再横切一个大省
+// 人文、国家（领海：离岸 seaKm 以内的海归国家；同 src/render/near.test.ts），再横切一个大省。
+// fragmentation：以前重新生成国家时的“分裂 ↔ 统一”，第七十七轮起换成时代的国家大小（fragKm2，平均的国家面积逐值相同，画面也相同）
 function peopled(e: Engine, seaKm: number, fragmentation?: number): number[] | null {
-  humanExec(e, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: { seed: 3 } });
+  humanExec(e, { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: { seed: 3 } });
   const era = structuredClone(BUILTIN_ERAS.find((x) => x.id === 'medieval')!);
-  e.exec({ op: 'set_content', kind: 'era', id: 'medieval', item: { ...era, seaClaimKm: seaKm } });
-  humanExec(e, { op: 'regenerate_countries', ...(fragmentation !== undefined ? { fragmentation } : {}) });
+  e.exec({ op: 'set_content', kind: 'era', id: 'medieval', item: { ...era, seaClaimKm: seaKm, ...(fragmentation !== undefined ? { countryKm2: fragKm2('medieval', fragmentation) } : {}) } });
+  humanExec(e, { op: 'regenerate_countries' });
   return cutBig(e);
 }
 

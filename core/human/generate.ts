@@ -7,7 +7,7 @@ import { snapshotCountries, snapshotPop } from './auto';
 import { claimsStage } from './claims';
 import { culturesStage } from './cultures';
 import { type CountryPlan, blocsStage, clearCountries, countriesStage, countryMixStage } from './countries';
-import { type Era, cultureById, cultureGroupById, worldCultures, worldEras } from './era';
+import { type Era, cultureGroupById, worldCultures, worldEras } from './era';
 import { compactGroups } from './groups';
 import { compilePrefs, preferenceFactors } from './habitability';
 import { ensurePopArrays, populationStage } from './population';
@@ -27,12 +27,13 @@ import { clearCities } from './settlements';
 export interface HumanParams {
   // 用的资源包（资源库里的路径，按勾选的先后）：规则取第一个带时代的包（见 ruleEra）
   packs: string[][];
-  groups: { id: string; weight: number; cultures?: string[] }[];
-  // 总人口（省略时按时代的默认密度 × 陆地面积）
+  // 文化组的 id（第七十七轮：各组占多少是世界里组的比重 cultureGroup.weight，省略为 1）
+  groups: string[];
+  // 总人口（省略时按时代的默认密度 × 陆地面积）。命令里不再写（第七十七轮）：重新生成时用记着的（改过总人口的留着），换库时按新时代的默认
   totalPop?: number;
   // 省略时用世界的种子
   seed?: number;
-  // 国家（第二十三轮）：写了就生成国家（fragmentation 省略为 0.5，seed 省略为人文的种子）；省略时没有国家
+  // 国家（第二十三轮）：写了就生成国家（seed 省略为人文的种子）；省略时没有国家
   countries?: Partial<CountryRules>;
   // 城市、道路、地标（第二十四轮）：写了就在最后一步一起生成（seed 省略为人文的种子，roads、landmarks 省略为 true）；
   // 省略时没有城市与道路（已有的去掉；地标、自定义点留着）
@@ -87,22 +88,14 @@ export function ruleEra(small: Pick<SmallState, 'content' | 'origin'>, packs: re
   return eras[0];
 }
 
-// 生成要用的文化组（世界里有的、比重不是 0 的、组里有文化的；点名的文化只留世界里有的）。
-// 比重（cultureGroup.weight，第五十轮）只决定参不参与：0 不参与，别的和没写一样，各组占多少仍是命令写的权重
-function usableGroups(world: World, groups: HumanParams['groups']): HumanParams['groups'] {
+// 生成要用的文化组（世界里有的、比重不是 0 的、组里有文化的）。
+// 比重（cultureGroup.weight）：第五十轮起 0 不参与；第七十七轮起也是各组占多少（省略为 1），以前是命令写的权重
+function usableGroups(world: World, groups: readonly string[]): string[] {
   const small = world.small;
-  const out: HumanParams['groups'] = [];
-  for (const g of groups) {
-    const group = cultureGroupById(small, g.id);
-    if (!group || group.weight === 0) continue;
-    if (g.cultures?.length) {
-      const named = g.cultures.filter((id) => cultureById(small, id));
-      if (named.length) out.push({ ...g, cultures: named });
-      continue;
-    }
-    if (worldCultures(small).some((c) => c.group === g.id)) out.push(g);
-  }
-  return out;
+  return groups.filter((id) => {
+    const group = cultureGroupById(small, id);
+    return !!group && group.weight !== 0 && worldCultures(small).some((c) => c.group === id);
+  });
 }
 
 // 生成人文之前：缺了时代、文化（选的文化组世界里都没有，或组里没有文化）时不生成，写明缺什么
@@ -132,14 +125,12 @@ export function generateHuman(
   const classIds = classes.map((c) => c.id);
   const x = cellInputs(world, d);
   const cls = d.terrainClass;
-  const groups: GenGroup[] = used.map((p) => {
-    const group = cultureGroupById(small, p.id)!;
-    const list = p.cultures?.length ? p.cultures.map((id) => cultureById(small, id)) : worldCultures(small).filter((c) => c.group === p.id);
-    const cultures = list.map((c, k) => {
-      if (!c) throw new CommandError(`没有文化 "${p.cultures![k]}"`);
-      return { culture: c, weight: c.weight ?? 1 };
-    });
-    return { group, weight: p.weight, cultures };
+  const groups: GenGroup[] = used.map((id) => {
+    const group = cultureGroupById(small, id)!;
+    const cultures = worldCultures(small)
+      .filter((c) => c.group === id)
+      .map((c) => ({ culture: c, weight: c.weight ?? 1 }));
+    return { group, weight: group.weight ?? 1, cultures };
   });
   const cultures = groups.flatMap((g) => g.cultures.map((c) => c.culture));
   const cultureGroup = Int32Array.from(groups.flatMap((g, k) => g.cultures.map(() => k)));
@@ -161,8 +152,7 @@ export function generateHuman(
   const seed = (params.seed ?? WORLD_SEED(world)) >>> 0;
   let countries: CountryPlan | undefined;
   if (params.countries) {
-    const layout = params.countries.layout;
-    const rules: CountryRules = { fragmentation: params.countries.fragmentation ?? 0.5, seed: (params.countries.seed ?? seed) >>> 0, ...(layout && layout !== 'era' ? { layout } : {}) };
+    const rules: CountryRules = { seed: (params.countries.seed ?? seed) >>> 0 };
     countries = { mode: opts.countryMode ?? 'generate', rules, keepLocked: opts.keepLocked ?? false };
   } else clearCountries(world);
   const ctx: GenContext = {
@@ -189,7 +179,7 @@ export function generateHuman(
   const state: HumanState = {
     era: era.id,
     seed,
-    groups: used.map((g) => ({ id: g.id, weight: g.weight, ...(g.cultures?.length ? { cultures: [...g.cultures] } : {}) })),
+    groups: [...used],
     totalPop: ctx.totalPop,
     perWeight: ctx.perWeight ?? 0,
     hearths: ctx.hearths,
@@ -230,7 +220,7 @@ export function regenerateHuman(world: World, d: Derived, patch: Partial<HumanPa
     ...(world.small.settlementRules ? { settlements: world.small.settlementRules } : {}),
   };
   // 换了时代、文化组时，不在新的组里的发源地不要了
-  const ids = new Set(params.groups.map((g) => g.id));
+  const ids = new Set(params.groups);
   const hearths = h.hearths.filter((x) => x.locked && ids.has(x.group));
   return generateHuman(world, d, params, { keepManual: opts.keepManual, hearths, countryMode: fresh ? 'generate' : 'keep', keepLocked: opts.keepLocked ?? true, regenerate: true });
 }

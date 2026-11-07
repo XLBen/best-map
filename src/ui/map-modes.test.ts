@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Engine } from '../../core/engine';
 import { cityList, worldCultures } from '../../core/human';
-import { continents, snapshot, humanExec, type HumanCommand } from '../../core/testing/fixtures';
+import { continents, snapshot, humanExec, type HumanCommand, fragKm2 } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { QUIET_ROAD_WIDTH, ROAD_WIDTH, roadStyle } from '../render/settle-draw';
 import { exec, hereOpen, mode, nameMode, parsePrefs, pinCell, pinnedCell, pinnedPart, prefs, selectedCountry, selectedSettle, setPrefs, sheet, tool, world } from '../state';
@@ -39,26 +39,28 @@ afterEach(() => {
 
 const GEN: HumanCommand = {
   op: 'generate_human',
-  era: 'medieval',
+  packs: [['medieval']],
   groups: [
     { id: 'germanic', weight: 3 },
     { id: 'chinese', weight: 3 },
     { id: 'altaic', weight: 1.5 },
   ],
-  countries: { fragmentation: 1 },
+  countries: {},
   settlements: {},
 };
+// 以前的“很分裂”（fragmentation 1）：第七十七轮起是时代的国家大小（平均的国家面积逐值相同）
+const MANY = { countryKm2: fragKm2('medieval', 1) };
 const towns = (): Engine =>
   snapshot('r25:towns', () => {
     const eng = continents();
-    humanExec(eng, GEN);
+    humanExec(eng, GEN, MANY);
     return eng;
   });
 // 有人文、没有国家
 const peoples = (): Engine =>
   snapshot('r25:peoples', () => {
     const eng = continents();
-    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: GEN.op === 'generate_human' ? GEN.groups : [] });
+    humanExec(eng, { op: 'generate_human', packs: [['medieval']], groups: GEN.op === 'generate_human' ? GEN.groups : [] });
     return eng;
   });
 

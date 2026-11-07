@@ -56,7 +56,6 @@ export const KIND_LINKS: Readonly<Record<string, KindLinks>> = {
       ),
   },
   countryTier: { note: '没有引用' },
-  countryLayout: { note: '各等级占多少的键在字段表里' },
   countryPattern: { note: '没有引用：module 是代码里的格局模块（countries/patterns.ts），不是内容；参数都是数' },
   cityRank: { note: '没有引用' },
   landmarkType: { note: '文化组（dep: gate）、名字写法的键在字段表里。governments 是政体的类别（标签）；icon 是图标名' },

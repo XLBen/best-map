@@ -45,7 +45,7 @@ describe('档案的格局一行', () => {
   it('生成的奇幻世界：精灵、矮人、兽人的国家都有一行', () => {
     const eng = snapshot('patterns-ui:fantasy', () => {
       const e = continents();
-      humanExec(e, { op: 'generate_human', era: 'fantasy', groups: ERA_PACKS.get('fantasy')!.cultures.map(([id, weight]) => ({ id, weight })), countries: {} });
+      humanExec(e, { op: 'generate_human', packs: [['fantasy']], groups: ERA_PACKS.get('fantasy')!.cultures.map(([id, weight]) => ({ id, weight })), countries: {} });
       return e;
     });
     const lines = Object.values(eng.world.small.countries!).map((m) => patternLine(eng.world, m));

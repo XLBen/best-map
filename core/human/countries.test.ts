@@ -7,7 +7,7 @@ import { exportPackage } from '../export';
 import { BUILTIN_ERAS, ERA_PACKS } from '../packs/eras';
 import { BUILTIN_GOVERNMENTS } from '../packs/governments';
 import { BUILTIN_COUNTRY_TIERS } from '../packs/countries';
-import { continents, engineFor, snapshot, humanExec, type HumanCommand, importPacks } from '../testing/fixtures';
+import { continents, engineFor, fragKm2, snapshot, humanExec, type HumanCommand, importPacks } from '../testing/fixtures';
 import type { World } from '../world';
 import {
   allCountryStats,
@@ -24,7 +24,6 @@ import {
   govTitles,
   pickTitle,
   titleContext,
-  sizeFactor,
 } from './index';
 import { claimsStage } from './claims';
 import { humanStages, registerHumanStage, unregisterHumanStage } from './generate';
@@ -37,7 +36,7 @@ const GROUPS = [
   { id: 'chinese', weight: 3 },
   { id: 'altaic', weight: 1.5 },
 ];
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} };
+const GEN: HumanCommand = { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: {} };
 
 // 有省份、生成过人文与国家的大陆世界（1.2 万格的地区）
 const nations = (): Engine =>
@@ -129,7 +128,7 @@ describe('生成国家', () => {
     // 第五十轮：生成后内容都留着（按内置的先后）
     expect(Object.keys(w.small.content?.government ?? {})).toEqual(medievalGovs());
     expect(Object.keys(w.small.content?.faction ?? {})).toEqual(medievalFactions());
-    expect(w.small.human?.countryRules).toEqual({ fragmentation: 0.5, seed: w.small.human!.seed });
+    expect(w.small.human?.countryRules).toEqual({ seed: w.small.human!.seed });
     const list = countryList(w.small);
     expect(list.length).toBeGreaterThan(5);
     const names = new Set<string>();
@@ -201,16 +200,16 @@ describe('生成国家', () => {
     expect(humanStages()).toContain('claims');
   });
 
-  it('“统一 ↔ 分裂”：分裂时国家多、统一时少', () => {
+  // 第七十七轮：以前的“统一 ↔ 分裂”（0、0.5、1）去掉了，国家多大只看时代的 countryKm2（以前的几档换成 × 8、× 1、÷ 8，fragKm2）
+  it('时代的国家大小：小了国家多、大了国家少', () => {
     const counts = [0, 0.5, 1].map((f) => {
       const eng = nations();
-      humanExec(eng, { op: 'regenerate_countries', fragmentation: f });
+      humanExec(eng, { op: 'regenerate_countries' }, { countryKm2: fragKm2('medieval', f) });
       return ids(eng.world).length;
     });
     expect(counts[0]).toBeLessThan(counts[1]);
     expect(counts[1]).toBeLessThan(counts[2]);
-    expect(sizeFactor(0)).toBe(8);
-    expect(sizeFactor(1)).toBeCloseTo(1 / 8);
+    expect([0, 0.5, 1].map((f) => fragKm2('medieval', f))).toEqual([1.2e7, 1.5e6, 187500]);
   });
 
   it('时代的无主地多时国家占的地方少；领海按 seaClaimKm', () => {
@@ -261,7 +260,7 @@ describe('生成国家', () => {
 
   it('没有国家的人文与以前一样（第二十二轮的金标准不变）；换种子换一个样子', () => {
     const a = continents();
-    humanExec(a, { op: 'generate_human', era: 'medieval', groups: GROUPS });
+    humanExec(a, { op: 'generate_human', packs: [['medieval']], groups: GROUPS });
     expect(a.world.causes.country).toBeUndefined();
     expect(a.world.small.countries).toBeUndefined();
     expect(a.world.small.human!.countryRules).toBeUndefined();
@@ -336,7 +335,7 @@ describe('生成国家', () => {
     humanExec(eng, { op: 'regenerate_human' });
     expect(digest(w.causes.country)).toBe(before);
     expect(digest(w.small.countries)).toBe(metas);
-    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: GROUPS });
+    humanExec(eng, { op: 'generate_human', packs: [['medieval']], groups: GROUPS });
     expect(w.small.countries).toBeUndefined();
     expect(w.causes.country!.every((v) => v === -1)).toBe(true);
     expect(w.derived.country).toBeUndefined();
@@ -351,7 +350,7 @@ describe('生成国家', () => {
     // 外交里指向重新生成掉的国家的去掉，别的不动
     const strip = ({ allies: _a, rivals: _r, overlord: _o, ...rest }: Record<string, unknown>) => rest;
     const meta = strip({ ...w.small.countries![id] });
-    humanExec(eng, { op: 'regenerate_countries', fragmentation: 0.9 });
+    humanExec(eng, { op: 'regenerate_countries' }, { countryKm2: fragKm2('medieval', 0.9) });
     expect(countryCells(w, id)).toEqual(cells);
     expect(strip({ ...w.small.countries![id] })).toEqual(meta);
     for (const a of w.small.countries![id].allies) expect(w.small.countries![a]).toBeDefined();
@@ -364,7 +363,7 @@ describe('生成国家', () => {
     for (const era of BUILTIN_ERAS) {
       const eng = continents();
       const groups = ERA_PACKS.get(era.id)!.cultures.map(([id, weight]) => ({ id, weight }));
-      humanExec(eng, { op: 'generate_human', era: era.id, groups, countries: {} });
+      humanExec(eng, { op: 'generate_human', packs: [[era.id]], groups, countries: {} });
       const w = eng.world;
       expect(ids(w).length, era.id).toBeGreaterThan(0);
       for (const m of countryList(w.small)) expect(governmentById(w.small, m.government), era.id).toBeDefined();
@@ -645,7 +644,7 @@ describe('给界面的', () => {
     const summary = strFromU8(files['provinces_summary.csv']).split('\n');
     expect(summary[0].endsWith(',religion,country')).toBe(true);
     const peopled = continents({ provinces: true });
-    humanExec(peopled, { op: 'generate_human', era: 'medieval', groups: GROUPS });
+    humanExec(peopled, { op: 'generate_human', packs: [['medieval']], groups: GROUPS });
     const plain = exportPackage(peopled.world, peopled.toDoc(), opts);
     expect(plain.files).not.toContain('countries.bmp');
     expect(plain.files).not.toContain('blocs.csv');

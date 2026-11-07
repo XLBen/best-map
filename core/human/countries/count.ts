@@ -1,32 +1,16 @@
-import type { Derived, World } from '../../world';
+import type { World } from '../../world';
 import type { Era } from '../era';
 import { cellKm2 } from '../space';
-import { genTiers, layoutById, tierWeights } from '../tiers';
-import { COUNTRY_KM2, MAX_COUNTRIES, sizeFactor } from './base';
+import { genTiers, tierWeights } from '../tiers';
+import { COUNTRY_KM2, MAX_COUNTRIES } from './base';
 import type { CountryRun } from './state';
 
 // 几个国家（第二十三轮；第二十六轮按“文化 × 陆块”分）。第七十三轮从 countries.ts 搬来（原样）
 
-// 一个国家平均占多少 km² 能住人的陆地
-export const averageCountryKm2 = (era: Pick<Era, 'countryKm2'>, fragmentation: number): number => (era.countryKm2 ?? COUNTRY_KM2) * sizeFactor(fragmentation);
+// 一个国家平均占多少 km² 能住人的陆地：时代的 countryKm2（第七十七轮去掉了“分裂 ↔ 统一”，以前它在正中时就是这个数）
+export const averageCountryKm2 = (era: Pick<Era, 'countryKm2'>): number => era.countryKm2 ?? COUNTRY_KM2;
 // 几个新的国家：能住人的干陆地面积 ÷ 平均的国家面积（有地方时至少 1 个，最多 MAX_COUNTRIES）
 export const plannedCountries = (area: number, T: number): number => Math.min(MAX_COUNTRIES, Math.max(area > 0 ? 1 : 0, Math.round(area / T)));
-
-// 大约几个国家（界面的估计；与生成的第一步是同一个算法，各文化正好分完，起点都放得下时就是生成出来的个数）。
-// keepLocked：锁定的国家的地方不算，锁定的国家另外算上
-export function estimateCountryCount(world: World, d: Pick<Derived, 'habitability' | 'lake'>, era: Era, fragmentation: number, keepLocked = false): number {
-  const hab = d.habitability;
-  const minH = era.unclaimed.minHabitability;
-  const locked = new Set(keepLocked ? Object.values(world.small.countries ?? {}).filter((m) => m.locked).map((m) => m.id) : []);
-  const country = world.causes.country;
-  let area = 0;
-  for (let i = 0; i < world.mesh.n; i++) {
-    if (!world.causes.land[i] || d.lake[i] === 1 || hab[i] < minH) continue;
-    if (locked.size && country && locked.has(country[i])) continue;
-    area += cellKm2(world, i);
-  }
-  return plannedCountries(area, averageCountryKm2(era, fragmentation)) + locked.size;
-}
 
 // 按 mass 分 total 个（最大余数法：加起来正好是 total；mass 是 0 的不分）
 export function apportion(total: number, mass: Float64Array): Int32Array {
@@ -99,13 +83,13 @@ export function countCountries(g: CountryRun) {
     areaC[c] += a;
     massC[c] += a * hab[i];
   }
-  const T = averageCountryKm2(era, g.plan.rules.fragmentation);
+  const T = averageCountryKm2(era);
   const total = plannedCountries(area, T);
   let massSum = 0;
   for (let c = 0; c < K; c++) massSum += massC[c];
   // 世界里的等级（按 order 从小到大）与生效的比例（第四十二轮）
   const tierList = genTiers(small);
-  g.tierW = tierWeights(tierList, era, layoutById(small, g.plan.rules.layout));
+  g.tierW = tierWeights(tierList, era);
   g.tierList = tierList;
   g.tierIndex = new Map(tierList.map((t, k) => [t, k]));
   g.K = K;

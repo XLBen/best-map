@@ -10,7 +10,7 @@ import { addDimensionCommand } from '../../../core/packs/add-dimension';
 import { builtinPacks, worldPartsOf } from '../../../core/packs/builtin-tree';
 import { importCommand } from '../../../core/packs/closure';
 import { newWorldContentCommands, packImportCommands } from '../../../core/packs/import';
-import { NO_CURRENTS, engineFor, humanDigest } from '../../../core/testing/fixtures';
+import { NO_CURRENTS, engineFor, humanDigest, setGroupWeights } from '../../../core/testing/fixtures';
 import { type LibraryEntry, library } from '../../library';
 import { RegenTrack } from '../../regen-track';
 import { useSourceCommand, repointCommand } from './page-actions';
@@ -46,7 +46,9 @@ function worldOf(lib = 'medieval', count = 3, more: Record<string, unknown> = { 
   const groups = all.filter((g) => g.weight !== 0).slice(0, count).map((g) => ({ id: g.id, weight: 1 }));
   // 和新建向导一样只加选的组（第六十七轮以前加的是全部组：库里默认不带的组比重写成没写，第六十七轮起这种组会参与重新生成）
   for (const c of packImportCommands(ROOTS, { packs: [[lib]], groups: groups.map((g) => g.id) }, e.world)) e.exec(c);
-  e.exec({ op: 'generate_human', packs: [[lib]], groups, ...more } as Command);
+  // 第七十七轮：以前命令写的权重写进世界里的组（命令只写 id），结果不变
+  setGroupWeights(e, groups);
+  e.exec({ op: 'generate_human', packs: [[lib]], groups: groups.map((g) => g.id), ...more } as Command);
   e.update();
   return e;
 }
@@ -85,7 +87,7 @@ describe('列表上的标记', () => {
     // 河湖、生态不变淡
     for (const kind of ['riverType', 'lakeType', 'biome']) expect(allRows(listPage(WORLD_SOURCE, { p: 'list', kind }, ctx)).some((r) => r.mark?.faint)).toBe(false);
     // 文化组的页面上，融入的文化一样变淡
-    const group = e.world.small.human!.groups[0].id;
+    const group = e.world.small.human!.groups[0];
     const page = itemPage(WORLD_SOURCE, { p: 'item', kind: 'cultureGroup', id: group }, ctx)!;
     const sec = page.children.find((s) => s.key === 'culture')!;
     for (const r of sec.rows) expect(!!r.mark?.faint, r.id).toBe(clean.has(`culture:${r.id}`));
@@ -259,7 +261,7 @@ describe('重新生成的按钮', () => {
     const e = worldOf();
     const t = trackOf(e);
     expect(need(e, t)).toBeNull();
-    const id = itemId(kindOf('culture')!, kindOf('culture')!.inWorld(e.world).find((c) => e.world.small.human!.groups.some((g) => g.id === (c as { group: string }).group))!);
+    const id = itemId(kindOf('culture')!, kindOf('culture')!.inWorld(e.world).find((c) => e.world.small.human!.groups.includes((c as { group: string }).group))!);
     edit(e, 'culture', id, { name: '改过' });
     t.step(1, e.world.small.content);
     expect(need(e, t)).toMatchObject({ label: '重新生成人文', count: 1 });
@@ -289,7 +291,7 @@ describe('重新生成的按钮', () => {
     t.step(1, e.world.small.content);
     expect(need(e, t)!.label).toBe('重新生成国家');
     // 再改一个文化：两样都要
-    const cid = e.world.small.human!.groups[0].id;
+    const cid = e.world.small.human!.groups[0];
     edit(e, 'cultureGroup', cid, { name: '改组' });
     t.pending = { op: 'set_content', kind: 'cultureGroup', id: cid, item: null };
     t.step(2, e.world.small.content);
@@ -333,18 +335,19 @@ describe('重新生成的按钮', () => {
     expect(need(n, t2)).toBeNull();
   });
 
-  it('只改说明、颜色不出现（重新生成后摘要也相同），比重只看是不是 0', () => {
+  // 第七十七轮：比重是各组占多少，改了也要重新生成（以前只看是不是 0）
+  it('只改说明、颜色不出现（重新生成后摘要也相同）；改了比重要重新生成', () => {
     const e = worldOf();
     const t = trackOf(e);
-    const group = e.world.small.human!.groups[0].id;
+    const group = e.world.small.human!.groups[0];
     const culture = itemId(kindOf('culture')!, kindOf('culture')!.inWorld(e.world).find((c) => (c as { group: string }).group === group)!);
     const gov = Object.values(e.world.small.countries!)[0].government;
     edit(e, 'culture', culture, { color: '#123456' });
-    edit(e, 'cultureGroup', group, { color: '#654321', weight: 9 });
+    edit(e, 'cultureGroup', group, { color: '#654321' });
     edit(e, 'government', gov, { description: '说明', color: '#112233' });
     t.step(1, e.world.small.content);
     expect(need(e, t)).toBeNull();
-    // 重新生成的结果和没改时一样：真的不需要（比重 1 → 9 也一样）
+    // 重新生成的结果和没改时一样：真的不需要
     const plain = worldOf();
     plain.exec({ op: 'regenerate_countries' });
     plain.update();
@@ -356,10 +359,15 @@ describe('重新生成的按钮', () => {
     expect(restA).toEqual(restB);
     const bare = (w: Engine) => Object.values(w.world.small.countries!).map(({ color: _c, flag: _f, ...m }) => m);
     expect(a === b || JSON.stringify(bare(e)) === JSON.stringify(bare(plain))).toBe(true);
+    // 比重改成 9：各组占多少变了，要重新生成
+    edit(e, 'cultureGroup', group, { weight: 9 });
+    t.pending = null;
+    t.step(3, e.world.small.content);
+    expect(need(e, t)!.label).toBe('重新生成人文');
     // 比重改成 0：退出生成，要重新生成
     edit(e, 'cultureGroup', group, { weight: 0 });
     t.pending = null;
-    t.step(3, e.world.small.content);
+    t.step(4, e.world.small.content);
     expect(need(e, t)!.label).toBe('重新生成人文');
   });
 
@@ -410,7 +418,7 @@ describe('重新生成的按钮', () => {
   it('开着面板时世界里的改动也算（比的是世界，不是这一页）：就地展开改的项走同一条', () => {
     const e = worldOf();
     const t = trackOf(e);
-    const group = e.world.small.human!.groups[0].id;
+    const group = e.world.small.human!.groups[0];
     const page = itemPage(WORLD_SOURCE, { p: 'item', kind: 'cultureGroup', id: group }, ctxOf(e.world))!;
     const child = page.children.find((s) => s.key === 'culture')!.rows[0];
     edit(e, 'culture', child.id, { name: '展开里改的' });

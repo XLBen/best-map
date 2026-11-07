@@ -17,7 +17,7 @@ import { biomeMovement } from './terrain-class';
 import { worldEra, worldDimensions } from './era';
 import { eraGovernments } from './government';
 import { BUILTIN_CLASSES, GENERAL_RESOURCES } from '../packs/base';
-import { NO_CURRENTS, engineFor, humanDigest, importPacks, meshFor, seedCommands } from '../testing/fixtures';
+import { NO_CURRENTS, engineFor, humanDigest, importPacks, meshFor, seedCommands, setGroupWeights } from '../testing/fixtures';
 import type { World } from '../world';
 import { writeFileSync } from 'node:fs';
 import { r29Digest } from '../testing/r29';
@@ -39,6 +39,7 @@ const BUILTIN_RESOURCES_IDS = () => GENERAL_RESOURCES.map((r) => r.id);
 // 第七十五轮重录：奇幻（种族王国）、科幻（殖民据点）的国家有意改了，这两种设置里人文的几项跟着变；古典、中世纪、近现代、现代只重录 countries：
 // 档案多了格局里的角色（role），核对过不写 role 时这四个时代的 14 项与原来的值逐个相同。
 // R29_RECORD=1 npx vitest run core/human/era-packs.test.ts（只在有意改变结果时）
+// 第七十七轮：生成的命令不再写权重、“分裂 ↔ 统一”、格局，human 只记组的 id、countryRules 只有种子，组带着库里的比重，没有格局。只重录 13 项的 human（人口、国家、城市、地名……一个没变）；核对过两边的世界只差这几样（见 docs/dev/history/第77轮.md）
 const record = !!process.env.R29_RECORD;
 const old: Record<string, unknown> = record ? {} : saved;
 const check = (got: unknown, key: string) => {
@@ -74,14 +75,14 @@ const groupsOf = (g: readonly (readonly [string, number])[]) => g.map(([id, weig
 describe('生成只读世界里的内容', () => {
   it('不先加时代包：不生成人文，结果里写明缺时代（命令照样能执行，不报错）', () => {
     const eng = world();
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }] });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: ['germanic'] });
     expect(eng.world.small.human).toBeUndefined();
     expect(eng.lastSkipped[0]).toMatch(/^没有时代/);
     // 有时代、没有文化：也不生成，写明缺文化
     importPacks(eng, { packs: [['medieval']], groups: [] });
     expect(eng.world.small.content?.era?.medieval).toBeDefined();
     expect(eng.world.small.content?.culture).toBeUndefined();
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }] });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: ['germanic'] });
     expect(eng.world.small.human).toBeUndefined();
     expect(eng.lastSkipped[0]).toMatch(/^没有文化/);
   });
@@ -93,7 +94,9 @@ describe('生成只读世界里的内容', () => {
       const e = base.clone();
       const groups = groupsOf(sc.groups);
       importPacks(e, { packs: [[sc.era]], groups: groups.map((g) => g.id) });
-      e.exec({ op: 'generate_human', packs: [[sc.era]], groups, ...(sc.countries ? { countries: {} } : {}), ...(sc.settlements ? { settlements: {} } : {}) });
+      // 第七十七轮：各组占多少是世界里组的比重（以前是命令写的权重）：写进世界里的组，命令只写 id，结果逐值相同
+      setGroupWeights(e, groups);
+      e.exec({ op: 'generate_human', packs: [[sc.era]], groups: groups.map((g) => g.id), ...(sc.countries ? { countries: {} } : {}), ...(sc.settlements ? { settlements: {} } : {}) });
       check(humanDigest(e.world), sc.id);
       expect(e.world.small.genStamp?.packs).toEqual([[sc.era]]);
       if (!sc.countries) continue;
@@ -117,7 +120,7 @@ describe('生成只读世界里的内容', () => {
     expect(o.nameStyle[DEFAULT_STYLE]).toEqual(['medieval', 'names', 'zh']);
     const govs = Object.keys(eng.world.small.content!.government!);
     expect(govs).toEqual(ERA_PACKS.get('medieval')!.governments);
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }], countries: {} });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: ['germanic'], countries: {} });
     expect(Object.keys(eng.world.small.content!.government!)).toEqual(govs);
     expect(eng.lastRemoved).toEqual([]);
     // 整理才移出（界面判断是不是内置原样，内置原样的不另存）
@@ -132,7 +135,8 @@ describe('几个包合起来生成', () => {
     const eng = world();
     const groups = ['germanic', 'elven'];
     importPacks(eng, { packs, groups });
-    eng.exec({ op: 'generate_human', packs, groups: groups.map((id) => ({ id, weight: 1 })), countries: {} });
+    setGroupWeights(eng, groups.map((id) => ({ id, weight: 1 })));
+    eng.exec({ op: 'generate_human', packs, groups, countries: {} });
     return eng;
   };
 
@@ -235,7 +239,7 @@ describe('基础、自然、地名都是普通内容：缺了跳过并写明', (
     expect(Object.values(w.small.provinces).every((p) => p.name === '')).toBe(true);
     // 生成人文：时代包照样能用（没有地形类别时宜居按平地算）；没有城市等级、地标类型时不放城市、地标
     importPacks(eng, { packs: [['medieval']], groups: ['germanic'] });
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }], countries: {}, settlements: {} });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: ['germanic'], countries: {}, settlements: {} });
     expect(w.small.human).toBeDefined();
     expect(Object.keys(w.small.cities ?? {})).toEqual([]);
     expect(eng.lastSkipped).toContain('没有城市等级：没有放城市和道路');
@@ -264,7 +268,7 @@ describe('基础、自然、地名都是普通内容：缺了跳过并写明', (
     importPacks(eng, { packs: [['medieval']], groups: ['germanic'] });
     const marks = Object.keys(eng.world.small.content!.landmarkType!);
     eng.exec({ op: 'batch', commands: marks.map((id) => ({ op: 'set_content', kind: 'landmarkType', id, item: null }) as Command) });
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }], countries: {}, settlements: {} });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: ['germanic'], countries: {}, settlements: {} });
     expect(eng.world.small.countries).toBeDefined();
     expect(Object.keys(eng.world.small.cities ?? {})).toEqual([]);
     expect(Object.keys(eng.world.small.landmarks ?? {})).toEqual([]);
@@ -276,7 +280,7 @@ describe('基础、自然、地名都是普通内容：缺了跳过并写明', (
     importPacks(eng, { packs: [['medieval']], groups: ['germanic'] });
     const govs = Object.keys(eng.world.small.content!.government!);
     eng.exec({ op: 'batch', commands: govs.map((id) => ({ op: 'set_content', kind: 'government', id, item: null }) as Command) });
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }], countries: {} });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: ['germanic'], countries: {} });
     expect(eng.world.small.human).toBeDefined();
     expect(eng.world.small.countries).toBeUndefined();
     expect(eng.lastSkipped).toContain('没有政体：没有生成国家');
@@ -285,7 +289,7 @@ describe('基础、自然、地名都是普通内容：缺了跳过并写明', (
   it('档案里换成世界里没有的政体：报错，说先从资源库添加（引擎不再从内置的复制）', () => {
     const eng = world();
     importPacks(eng, { packs: [['medieval']], groups: ['germanic'] });
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }], countries: {} });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: ['germanic'], countries: {} });
     const id = Number(Object.keys(eng.world.small.countries!)[0]);
     const unused = BUILTIN_GOVERNMENTS.find((g) => !eng.world.small.content!.government![g.id])!;
     expect(() => eng.exec({ op: 'set_country', id, patch: { government: unused.id } })).toThrow('先从资源库添加它');

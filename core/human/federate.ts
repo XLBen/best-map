@@ -160,7 +160,7 @@ export function federate(ctx: GenContext, m: CountryMeta, parts: number, seed: n
   const gov = governmentById(small, m.government);
   const culture = cultureById(small, m.primaryCulture);
   const fedArea = (cs: number[]) => cs.reduce((s, i) => s + (dry(i) ? cellKm2(world, i) : 0), 0);
-  const T = averageCountryKm2(era, ctx.countries!.rules.fragmentation);
+  const T = averageCountryKm2(era);
   // 成员邦的等级按面积（第四十二轮：等级的 fedMember，内置的是 0.7 倍以上公国级、0.2 倍以上侯国级、其余城邦级）
   const tiers = genTiers(small);
   const tierOf = (a: number): string | undefined => fedMemberTier(tiers, a, T).id || undefined;

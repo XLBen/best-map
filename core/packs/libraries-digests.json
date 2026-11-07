@@ -13,7 +13,7 @@
  "antiquity": {
   "pop": "ece46145c92f3fd1",
   "popGroups": "cdcd496cf9110967",
-  "human": "0977e00c5cf08ac5",
+  "human": "f0ccd449f3077e62",
   "country": "2793b881d5600aee",
   "countries": "b230016ee05d1355",
   "blocs": "b49e9f709932de20",
@@ -25,8 +25,8 @@
   "habitability": "da4181c5b449d990",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "c03fc57c6d5df643",
-  "content": "e9ac1f516bea3d78",
-  "origin": "fb225bf891197bcd"
+  "content": "fb3bb69eba3f80b3",
+  "origin": "dcecb8e4060b7d83"
  },
  "medieval:strip": {
   "cultureGroup→dimension": 142,
@@ -41,7 +41,7 @@
  "medieval": {
   "pop": "78f92908cc5a562c",
   "popGroups": "bf8e98effbae3f32",
-  "human": "8443780f3021ff66",
+  "human": "5895a0a5ecb21f54",
   "country": "18e0b455a54d4f02",
   "countries": "e228eb6e98da1979",
   "blocs": "ce7ff625ab0bb48a",
@@ -53,8 +53,8 @@
   "habitability": "da4181c5b449d990",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "c03fc57c6d5df643",
-  "content": "34ec02f91da32a46",
-  "origin": "f084d109d0bf1648"
+  "content": "18842fa41abf8571",
+  "origin": "33d93f9ea6ba538a"
  },
  "industrial:strip": {
   "cultureGroup→dimension": 71,
@@ -71,7 +71,7 @@
  "industrial": {
   "pop": "62b5c7ba99c4d85a",
   "popGroups": "e44e501f4d1c852f",
-  "human": "f24982c215419825",
+  "human": "d3393890a6c8785c",
   "country": "976a8adc6cb125a4",
   "countries": "42bfefb4d46f8f30",
   "blocs": "684790537c27792d",
@@ -83,8 +83,8 @@
   "habitability": "da4181c5b449d990",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "c03fc57c6d5df643",
-  "content": "faa60c78691bba48",
-  "origin": "75be0e2ddf0fad92"
+  "content": "53106ff1bf9faa50",
+  "origin": "7f3527f1415f5702"
  },
  "modern:strip": {
   "cultureGroup→era": 142,
@@ -99,7 +99,7 @@
  "modern": {
   "pop": "945546bc4a09ff34",
   "popGroups": "6b4fe39371e44da4",
-  "human": "902e13a2709ef2a4",
+  "human": "8101db86a0019716",
   "country": "a7dbd8f5a293c471",
   "countries": "2d2e72fc76d984a4",
   "blocs": "73338a88f2e80e94",
@@ -111,8 +111,8 @@
   "habitability": "da4181c5b449d990",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "c03fc57c6d5df643",
-  "content": "cc88c39c7a21a866",
-  "origin": "849da94a388ad5e3"
+  "content": "99c8c9b51acd4ce8",
+  "origin": "56c71ce91022fd0b"
  },
  "fantasy:strip": {
   "landmarkType→culture": 14
@@ -120,7 +120,7 @@
  "fantasy": {
   "pop": "1e378f3831dc6389",
   "popGroups": "3e60371ef7615fe1",
-  "human": "aafc82c3eb38a455",
+  "human": "9081c0ce2389e052",
   "country": "54a0525df86fce45",
   "countries": "c56e98271fa5b29a",
   "blocs": "b57c0fd4b84e8ed5",
@@ -132,14 +132,14 @@
   "habitability": "2501096e337b46b7",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "dc46cedac9713830",
-  "content": "3b3b4176eafc0e05",
-  "origin": "2856e54f132ea217"
+  "content": "f44795579b29050e",
+  "origin": "46dc273bc8ae6b63"
  },
  "scifi:strip": {},
  "scifi": {
   "pop": "809bc95c48cae5d8",
   "popGroups": "f7a4a0faa5eedcb9",
-  "human": "d863d5cd6cafebdc",
+  "human": "cde7e5d689e7a6a6",
   "country": "c35fc7db290d89db",
   "countries": "a9d222026b02edf9",
   "blocs": "f5d2d5ffe0a27baf",
@@ -151,7 +151,7 @@
   "habitability": "da4181c5b449d990",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "c03fc57c6d5df643",
-  "content": "9ad164e78e1c7449",
-  "origin": "5379973dad998d6e"
+  "content": "ccdd1a4853c61e0a",
+  "origin": "0ae7821839254a68"
  }
 }

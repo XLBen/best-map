@@ -51,8 +51,7 @@ import {
   settleShow,
   textPatch,
 } from './domain/settlements';
-import { fragTitle, layoutChoices, tierLabel } from './domain/countries';
-import { builtinPattern, eraOf } from '../../core/testing/eras';
+import { tierLabel } from './domain/countries';
 import { modeDef } from './map/modes';
 import { type Pointer, cityTool, landmarkTool, pointTool, roadTool } from './tools';
 
@@ -74,7 +73,7 @@ afterEach(() => {
 
 const GEN: HumanCommand = {
   op: 'generate_human',
-  era: 'medieval',
+  packs: [['medieval']],
   groups: [
     { id: 'germanic', weight: 3 },
     { id: 'chinese', weight: 3 },
@@ -117,7 +116,7 @@ describe('新建向导的“城市与道路”“地标”', () => {
     expect(lastOf(generateCommand({ ...c, settlements: { on: true, landmarks: false } })!)).toMatchObject({ settlements: { landmarks: false } });
     expect('settlements' in lastOf(generateCommand({ ...c, settlements: { on: false, landmarks: true } })!)).toBe(false);
     // 城市要有国家
-    expect('settlements' in lastOf(generateCommand({ ...c, countries: { on: false, fragmentation: 0.5 } })!)).toBe(false);
+    expect('settlements' in lastOf(generateCommand({ ...c, countries: { on: false } })!)).toBe(false);
   });
 });
 
@@ -546,17 +545,12 @@ describe('城市与首都分轻重（第四十二轮）', () => {
     expect(cityMark(cap, 'zh')).not.toHaveProperty('alpha');
   });
 
-  it('界面的字按数据里的名字：档案的等级、格局的选项；“分裂 ↔ 统一”不提小国、大国', () => {
+  it('界面的字按数据里的名字：档案的等级', () => {
     const w = towns().world;
     const m = Object.values(w.small.countries!).find((x) => x.tier === 'empire') ?? Object.values(w.small.countries!)[0];
     expect(['帝国级', '王国级', '公国级', '侯国级', '城邦级']).toContain(tierLabel(w, m));
     expect(tierLabel(w, { tier: undefined })).toBe('');
     expect(tierLabel(w, { tier: 'gone' })).toBe('');
-    expect(layoutChoices(w.small).map((c) => c.name)).toEqual(['按时代', '混合', '诸侯林立', '大一统', '列强并立']);
-    expect(layoutChoices(w.small, 'gone').map((c) => c.id)).toEqual(['era', 'mixed', 'petty', 'unified', 'powers', 'gone']);
-    expect(layoutChoices(undefined).map((c) => c.id)).toEqual(['era']);
-    for (const era of ['medieval', 'modern']) expect(fragTitle(eraOf(era), builtinPattern)).not.toMatch(/小国|大国|城邦|帝国|中等国家/);
-    for (const c of layoutChoices(w.small)) expect(c.hint).not.toMatch(/小国|大国|中等国家/);
   });
 });
 

@@ -57,7 +57,7 @@ const mineEntry = (pack: ResourcePack, key = pack.id): LibraryEntry => ({ key, p
 const medieval = builtinPacks().find((p) => p.id === 'medieval')!;
 const fantasy = builtinPacks().find((p) => p.id === 'fantasy')!;
 
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} };
 const peopled = () =>
   snapshot('r59:peopled', () => {
     const e = continents();

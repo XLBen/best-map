@@ -36,7 +36,7 @@ const pack = (id: string, extra: Partial<ResourcePack>): ResourcePack => ({ form
 const addCmd = (e: LibraryEntry, kind: ContentKind, id: string, w: PackWorld): Command => importCommand({ source: e.pack, target: { t: 'world', world: w }, picks: [{ kind: kind.id, id }] }, { path: [e.key] }).command!;
 const MEDIEVAL = entry('medieval', builtinPacks().find((p) => p.id === 'medieval')!, { builtin: true, installedAt: 0 });
 
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} };
 const peopled = () =>
   snapshot('r28-ui:peopled', () => {
     const e = continents();
@@ -83,7 +83,7 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
     expect(packGroups('medieval', []).filter((g) => g.weight !== 0).map((g) => g.group.id)).toEqual(defaultsOf(eraOf('medieval')).map((g) => g.id));
     const c = defaultChoice(w.small);
     expect(choicePacks(c)).toEqual(w.small.genStamp!.packs);
-    expect(c.groups.map((g) => g.id).sort()).toEqual(['chinese', 'germanic']);
+    expect(c.groups.sort()).toEqual(['chinese', 'germanic']);
   });
 
   it('向导选了资源包里的时代、文化组：生成之前先添加到本世界（文化组带上包里的文化和地名风格），一整步', () => {
@@ -94,7 +94,7 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
     const lib = [...LIB, entry('mine', pack('mine', { eras: [era], cultureGroups: [group], cultures: [culture], nameStyles: [style] } as Partial<ResourcePack>), { mine: true })];
     // 选这个库（没写权重时库里的组都勾上）；生成要用的内容一次加进来，生成的命令带上这个库
     const choice = chooseLibrary(defaultChoice(null, true, lib), 'mine', lib);
-    expect(choice.groups).toEqual([{ id: 'my-group', weight: 1 }]);
+    expect(choice.groups).toEqual(['my-group']);
     const imports = humanImportCommands(choice, null, lib);
     const inner = imports.flatMap((x) => (x.op === 'batch' ? x.commands : [x]));
     expect(inner.map((x) => (x as { kind: string }).kind)).toEqual(['nameStyle', 'era', 'cultureGroup', 'culture']);

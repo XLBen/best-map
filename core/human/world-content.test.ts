@@ -15,7 +15,7 @@ import { DEFAULT_SPECIES } from '../packs/nature';
 
 // 第二十八轮的核心：新世界只带用得上的内容；生成人文后内容都留着（第五十轮）；在用的内容不能移出世界（引擎也拦）
 
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} };
 const peopled = () =>
   snapshot('r28:peopled', () => {
     const e = continents();
@@ -63,10 +63,10 @@ describe('新世界只带用得上的', () => {
     const eng = peopled();
     const w = eng.world;
     const before = JSON.stringify(w.small.content);
-    humanExec(eng, { op: 'regenerate_human', era: 'antiquity', groups: [{ id: 'germanic', weight: 1 }], keepManual: false, countries: {} });
+    humanExec(eng, { op: 'regenerate_human', packs: [['antiquity']], groups: ['germanic'], keepManual: false, countries: {} });
     expect(w.small.human!.era).toBe('antiquity');
     expect(worldEras(w.small).map((e) => e.id)).toEqual(['medieval', 'antiquity']);
-    expect(w.small.human!.groups.map((g) => g.id)).toEqual(['germanic']);
+    expect(w.small.human!.groups).toEqual(['germanic']);
     expect(worldCultureGroups(w.small).map((g) => g.id).sort()).toEqual(['chinese', 'germanic']);
     // 东方的文化没人了（人口里没有），世界里还在
     const groupOf = new Map(worldCultures(w.small).map((c) => [c.id, c.group]));

@@ -80,7 +80,7 @@ describe('走资源库的改法', () => {
   beforeAll(() => {
     library.value = BUILTIN;
     eng = engineFor({ cells: 2000, seed: 2 });
-    humanExec(eng, { op: 'generate_human', era: 'fantasy', groups: [{ id: 'elven', weight: 1 }, { id: 'westmark', weight: 1 }], countries: {} });
+    humanExec(eng, { op: 'generate_human', packs: [['fantasy']], groups: [{ id: 'elven', weight: 1 }, { id: 'westmark', weight: 1 }], countries: {} });
   });
   const ctxOf = (): PageCtx => ({ world: { ...eng.world }, lib: BUILTIN });
   const eraOf = () => eng.world.small.content!.era!.fantasy as unknown as Obj;

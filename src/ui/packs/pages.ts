@@ -324,11 +324,6 @@ function hintFor(k: ContentKind, src: SourceRef, ctx: PageCtx): (r: ItemRow) => 
     const f = (r.item as { factions?: readonly string[] }).factions;
     return f?.length ? `${f.length} 个派系` : undefined;
   };
-  if (k.id === 'countryTier') {
-    const rel = relationOf('countryLayout', 'countryTier')!;
-    const t = linkView(src, ctx).table(rel);
-    return (r) => `${t.byParent.get(r.id)?.length ?? 0} 个格局`;
-  }
   if (k.id === 'riverType' || k.id === 'lakeType') return (r) => {
     const t = r.item as WaterType;
     return t.natural === false ? '不自然生成' : t.scripts?.match ? '规则' : undefined;

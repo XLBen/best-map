@@ -12,7 +12,7 @@ const GROUPS = [
   { id: 'germanic', weight: 3 },
   { id: 'chinese', weight: 3 },
 ];
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} };
+const GEN: HumanCommand = { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: {} };
 
 const nations = (): Engine =>
   snapshot('r27-nations', () => {

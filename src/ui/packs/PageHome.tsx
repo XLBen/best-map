@@ -28,7 +28,6 @@ const ICONS: Record<string, Icon> = {
   government: Crown,
   faction: Scale,
   countryTier: Layers,
-  countryLayout: Grid3x3,
   countryPattern: Handshake,
   cityRank: Castle,
   landmarkType: Landmark,

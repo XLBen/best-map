@@ -13,6 +13,7 @@ import golden from './golden-full.json';
 // 去掉内置生态的高度范围时全部回到以前的值，见 biome-legacy.test.ts）
 // 第五十七轮：新世界默认带现实的水系：derived.riverType、derived.lakeType、derived.features（类型的标签）、small 重录，别的一项不变（核对过去掉这些类型时全部回到以前的值）
 // 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
+// 第七十七轮：去掉了格局（countryLayout），新世界的小数据里没有内置的四种格局，只重录 small 两项；核对过旧的提交上新世界的内容去掉格局时得到同样的值（见 docs/dev/history/第77轮.md）
 describe('整个世界逐值不变（加长的操作序列）', () => {
   it('一块地区', () => {
     expect(extendedHashes('region')).toEqual(golden.region);

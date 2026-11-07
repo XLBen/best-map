@@ -33,7 +33,7 @@ function build(id: string): Engine {
   eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
   const groups = groupsOf(id);
   for (const c of packImportCommands(LIB, { packs: [[id]], groups: groups.map((g) => g.id) }, eng.world)) eng.exec(c);
-  eng.exec({ op: 'generate_human', packs: [[id]], groups, countries: {}, settlements: {} });
+  eng.exec({ op: 'generate_human', packs: [[id]], groups: groups.map((g) => g.id), countries: {}, settlements: {} });
   return eng;
 }
 const world = (id: string): Engine => snapshot(`add-dimension:${id}`, () => build(id));
@@ -445,7 +445,7 @@ describe('换库碰到世界加的变量', () => {
   const switchTo = (eng: Engine, to: string) => {
     const groups = groupsOf(to);
     const plan = librarySwitchPlan(ROOTS, eng.world.small, worldLibrary(eng.world.small), to, groups.map((g) => g.id));
-    eng.exec({ op: 'batch', label: '换库', commands: [...plan.imports, { op: 'regenerate_human', packs: [[to]], groups, keepManual: false, countries: {}, switchLibrary: { drop: plan.drop, rehome: plan.rehome } }] });
+    eng.exec({ op: 'batch', label: '换库', commands: [...plan.imports, { op: 'regenerate_human', packs: [[to]], groups: groups.map((g) => g.id), keepManual: false, countries: {}, switchLibrary: { drop: plan.drop, rehome: plan.rehome } }] });
     return plan;
   };
   const flat = (cmds: readonly Command[]): Command[] => cmds.flatMap((c) => (c.op === 'batch' ? flat(c.commands) : [c]));

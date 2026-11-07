@@ -75,6 +75,7 @@ function arrays(eng: Eng): Record<string, string> {
 }
 
 // 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
+// 第七十七轮：生成的命令不再写权重、“分裂 ↔ 统一”、格局，human 只记组的 id、countryRules 只有种子，组带着库里的比重，没有格局。重录 class-only 的世界摘要（每一步的 .step 不变）；核对过两边的世界只差这几样（见 docs/dev/history/第77轮.md）
 describe('力度 0：逐位和第五十七轮相同', () => {
   // class-only-digests.json 是 f01e102（第五十七轮）的代码跑 core/testing/class-only.ts 记下的：每一步之后全部推导、原因、
   // 小数据（典型高度不算），每一步的撤销记录，再一步一步撤销回去。
@@ -401,7 +402,7 @@ describe('内容', () => {
       const eng = new Engine(settings);
       for (const c of content) eng.exec(c);
       eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
-      humanExec(eng, { op: 'generate_human', era: 'medieval', groups: [{ id: 'british', weight: 1 }] } as HumanCommand);
+      humanExec(eng, { op: 'generate_human', packs: [['medieval']], groups: [{ id: 'british', weight: 1 }] } as HumanCommand);
       return eng;
     };
     const a = build(seedCommands());

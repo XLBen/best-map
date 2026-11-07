@@ -18,7 +18,7 @@
  "medieval": {
   "pop": "e4e3c8248a43847c",
   "popGroups": "a51dd90163f7d798",
-  "human": "fb3ae6e62dc816f3",
+  "human": "e7023daf36425503",
   "country": "5c44ffc7c5f10e77",
   "countries": "c0a7d7f77430d08b",
   "blocs": "5dbef5702fac7510",
@@ -34,7 +34,7 @@
  "medieval:again": {
   "pop": "c7c71d7a5831df33",
   "popGroups": "b791b2d885b64b49",
-  "human": "513b1db57527ece1",
+  "human": "b11b03144ed8fced",
   "country": "0324554aac99a12e",
   "countries": "a17e7d5b014f44a1",
   "blocs": "ce7ff625ab0bb48a",
@@ -50,7 +50,7 @@
  "antiquity": {
   "pop": "5f5d163f3e847c06",
   "popGroups": "a7b8402e3038be5a",
-  "human": "a1cb5235386139d8",
+  "human": "07db2fb84ee01aec",
   "country": "8f199a24859f8460",
   "countries": "0f7c6a0c08bef83d",
   "blocs": "88da669776dab985",
@@ -66,7 +66,7 @@
  "antiquity:again": {
   "pop": "827d9096571852b8",
   "popGroups": "c6a4c41ea00d96bb",
-  "human": "eea995adee602481",
+  "human": "3d8a1e1e84ec9416",
   "country": "98fe0e8505d2870e",
   "countries": "8ac609b1ff468717",
   "blocs": "59c2a8d20b830b9f",
@@ -82,7 +82,7 @@
  "industrial": {
   "pop": "b8cd7e9f85fda017",
   "popGroups": "c32c66c64425d8a0",
-  "human": "f445acc8c80ad054",
+  "human": "d37b66772c5be637",
   "country": "19341319c18cfe5e",
   "countries": "cf0b951c223ba41c",
   "blocs": "f1ec72039acaf5ae",
@@ -98,7 +98,7 @@
  "industrial:again": {
   "pop": "af5a9e685f0bafcf",
   "popGroups": "39da2705e7e61f4f",
-  "human": "f3596ad6b786581f",
+  "human": "ba1cb7a33ff83f46",
   "country": "5366e71a00c3b25f",
   "countries": "90656ab89f88cd11",
   "blocs": "2a4fca176cfbbad5",
@@ -114,7 +114,7 @@
  "modern": {
   "pop": "e34f65738c8de989",
   "popGroups": "d6ba698a9dc3efc9",
-  "human": "fd2d0c52ae417b77",
+  "human": "82954b4c6c284598",
   "country": "9b47a86d5b981395",
   "countries": "b83cbecc83b89b5d",
   "blocs": "10b96c450c9f0917",
@@ -130,7 +130,7 @@
  "modern:again": {
   "pop": "fd11e95aa6f4593f",
   "popGroups": "954b67531923d565",
-  "human": "f965b710e88326cc",
+  "human": "d2e4e0685a97d6f9",
   "country": "d3e4d9f3b51c846b",
   "countries": "4b60cf18f6c08367",
   "blocs": "1be008defd00340a",
@@ -146,7 +146,7 @@
  "fantasy": {
   "pop": "b0c7380fcb1b984a",
   "popGroups": "4ef4c8ebe24c586d",
-  "human": "42558ad746f308d3",
+  "human": "b937c941aeccc929",
   "country": "7d9aa0ead24d9a04",
   "countries": "b5a7ac35b9486edc",
   "blocs": "9ad2280e0d98311a",
@@ -162,7 +162,7 @@
  "fantasy:again": {
   "pop": "18942eacda0c39a8",
   "popGroups": "75fa78f06dd50dd1",
-  "human": "87fbf4ece3af4d2e",
+  "human": "f8096d2c96b3f3a0",
   "country": "9e665cd88daa53ee",
   "countries": "3f90ac9a43fc55e8",
   "blocs": "e31f6abb293a8920",
@@ -178,7 +178,7 @@
  "scifi": {
   "pop": "bc92abc8e6e93e98",
   "popGroups": "f166da7ffc47679a",
-  "human": "dc53a6b935d42d42",
+  "human": "cf7aa29b40b7519d",
   "country": "e58ba94031b97bc2",
   "countries": "ebfb5612c9b18605",
   "blocs": "fc39c080e47e74c9",
@@ -194,7 +194,7 @@
  "scifi:again": {
   "pop": "c71e8204e3242e16",
   "popGroups": "6136c77f146bdf31",
-  "human": "9445ac668ef4b5a0",
+  "human": "ce22548db2fdda02",
   "country": "329fa21a30e0db78",
   "countries": "dc5c5fee3bf65d84",
   "blocs": "7df293948d078d0d",
@@ -210,7 +210,7 @@
  "medieval-pop": {
   "pop": "bebae6d50acefc46",
   "popGroups": "4f4306f88bcf8558",
-  "human": "50e40cf2f43416ce",
+  "human": "e85ef061adbebdf8",
   "country": "ce7ff625ab0bb48a",
   "countries": "ce7ff625ab0bb48a",
   "blocs": "ce7ff625ab0bb48a",

@@ -5,7 +5,7 @@ import { blocList } from '../../core/human';
 import { landPixelCells } from '../../core/island-types';
 import { scissors, seamPick } from '../../core/seams';
 import { warpOffset, warpOffset3 } from '../../core/subcell';
-import { continents, humanExec, seededEngine, snapshot } from '../../core/testing/fixtures';
+import { continents, fragKm2, humanExec, seededEngine, snapshot } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import type { ViewMode } from '../state';
 import { type ColorOptions, FEDERATION_GROUP, cellLayers } from './colors';
@@ -55,12 +55,13 @@ function cutBig(eng: Engine) {
   throw new Error('没有切得开的省');
 }
 
-// 人文、国家（领海：离岸 seaKm 以内的海归国家），再横切一个大省
+// 人文、国家（领海：离岸 seaKm 以内的海归国家），再横切一个大省。
+// fragmentation：以前重新生成国家时的“分裂 ↔ 统一”，第七十七轮起换成时代的国家大小（fragKm2，平均的国家面积逐值相同）
 function peopled(e: Engine, seaKm: number, fragmentation?: number): Engine {
-  humanExec(e, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: { seed: 3 } });
+  humanExec(e, { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: { seed: 3 } });
   const era = structuredClone(BUILTIN_ERAS.find((x) => x.id === 'medieval')!);
-  e.exec({ op: 'set_content', kind: 'era', id: 'medieval', item: { ...era, seaClaimKm: seaKm } });
-  humanExec(e, { op: 'regenerate_countries', ...(fragmentation !== undefined ? { fragmentation } : {}) });
+  e.exec({ op: 'set_content', kind: 'era', id: 'medieval', item: { ...era, seaClaimKm: seaKm, ...(fragmentation !== undefined ? { countryKm2: fragKm2('medieval', fragmentation) } : {}) } });
+  humanExec(e, { op: 'regenerate_countries' });
   cutBig(e);
   return e;
 }

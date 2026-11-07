@@ -60,12 +60,12 @@ describe('政体限谁用', () => {
       const groups = defaultsOf(eraOf(era));
       for (const seed of [1, 5, 12]) {
         const eng = continents();
-        humanExec(eng, { op: 'generate_human', era, groups, countries: { seed } });
+        humanExec(eng, { op: 'generate_human', packs: [[era]], groups, countries: { seed } });
         check(eng.world, era, `${era} 地区 ${seed}`);
       }
       const eng = engineFor({ seed: 3, cells: 8000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
       eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
-      humanExec(eng, { op: 'generate_human', era, groups, countries: {} });
+      humanExec(eng, { op: 'generate_human', packs: [[era]], groups, countries: {} });
       check(eng.world, era, `${era} 星球`);
     }, 120000);
 });

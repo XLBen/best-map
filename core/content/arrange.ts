@@ -115,19 +115,6 @@ export const RELATIONS: readonly ArrangeRelation[] = [
     links: (items) => items('era').flatMap((e) => ((e as { dimensions?: { id: string }[] }).dimensions ?? []).map((d) => [idOf(e), d.id] as const)),
   },
   {
-    child: 'countryLayout',
-    parent: 'countryTier',
-    unlinkNote: '这种格局里不再有这一等级',
-    // 比例是 0 的等级不出现
-    links: (items) => items('countryLayout').flatMap((l) => Object.entries(((l as Obj).weights as Record<string, number> | undefined) ?? {}).flatMap(([t, n]) => (n > 0 ? [[t, idOf(l)] as const] : []))),
-    fresh: (p, blank) => ({ ...blank, weights: { [String(p.id)]: 1 } }),
-    link: (p, c) => ({ side: 'child', next: { ...c, weights: { ...((c.weights as object | undefined) ?? {}), [String(p.id)]: 1 } } }),
-    unlink: (p, c) => {
-      const { [String(p.id)]: _, ...weights } = (c.weights as Record<string, number> | undefined) ?? {};
-      return { side: 'child', next: { ...c, weights } };
-    },
-  },
-  {
     child: 'faction',
     parent: 'government',
     parentField: 'factions',
@@ -150,7 +137,6 @@ export const PRESET_ARRANGE: Arrange = {
   landmarkType: 'cultureGroup',
   popValue: 'valueGroup',
   variables: 'era',
-  countryLayout: 'countryTier',
   faction: 'government',
 };
 

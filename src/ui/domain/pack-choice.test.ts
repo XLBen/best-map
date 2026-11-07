@@ -23,7 +23,7 @@ const LIB: LibraryEntry[] = builtinPacks().map((p) => ({ key: p.id, pack: p, bui
 const flat = (cmds: readonly Command[]): Command[] => cmds.flatMap((c) => (c.op === 'batch' ? flat(c.commands) : [c]));
 const fromOf = (c: Command) => (c as { from?: string[] }).from;
 
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {} };
+const GEN: HumanCommand = { op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {} };
 const nations = () =>
   snapshot('r30-ui:nations', () => {
     const e = continents();
@@ -51,7 +51,7 @@ describe('选一个库', () => {
     expect(choicePacks(c)).toEqual([['medieval']]);
     const rule = libraryRule(c.library, LIB)!;
     expect([rule.name, rule.era.id, rule.path]).toEqual(['中世纪与近世', 'medieval', ['medieval']]);
-    expect(c.groups).toEqual(defaultsOf({ id: 'medieval' }));
+    expect(c.groups).toEqual(defaultsOf({ id: 'medieval' }).map((g) => g.id));
     expect(choiceProblem(c, null, LIB)).toBeNull();
   });
 
@@ -69,14 +69,13 @@ describe('选一个库', () => {
     expect(isLibrary(lib.find((e) => e.key === 'only-era')!.pack as PackNode)).toBe(false);
   });
 
-  it('换一个库：规则、文化组都换成它的（不合起来），总人口回到自动；奇幻不带历史库的组', () => {
-    const c = { ...defaultChoice(null, true, LIB), pop: 1e8 };
+  it('换一个库：规则、文化组都换成它的（不合起来）；奇幻不带历史库的组', () => {
+    const c = defaultChoice(null, true, LIB);
     const f = chooseLibrary(c, 'fantasy', LIB);
     expect(f.library).toBe('fantasy');
     expect(choiceEra(f, LIB)!.id).toBe('fantasy');
-    expect(f.pop).toBeNull();
-    expect(f.groups).toEqual(defaultsOf({ id: 'fantasy' }));
-    expect(f.groups.some((g) => g.id === 'germanic')).toBe(false);
+    expect(f.groups).toEqual(defaultsOf({ id: 'fantasy' }).map((g) => g.id));
+    expect(f.groups.includes('germanic')).toBe(false);
     expect(chooseLibrary(f, 'medieval', LIB).groups).toEqual(c.groups);
     // 一个都不勾时写明
     expect(choiceProblem({ ...c, groups: [] }, null, LIB)).toBe('至少勾一个文化组');
@@ -117,7 +116,7 @@ describe('向导走得通（六个库）', () => {
       expect(skipped).toEqual([]);
       expect(small.human!.era).toBe(id);
       expect(small.genStamp!.packs).toEqual([[id]]);
-      expect(small.human!.groups.map((g) => g.id)).toEqual(defaultsOf({ id }).map((g) => g.id));
+      expect(small.human!.groups).toEqual(defaultsOf({ id }).map((g) => g.id));
       expect(Object.keys(small.countries!).length).toBeGreaterThan(0);
       expect(small.origin!.terrainClass.plains[0]).toBe(id);
       expect(small.origin!.era[id][0]).toBe(id);
@@ -196,7 +195,7 @@ describe('新建与生成的命令', () => {
     const c = defaultChoice(w.small, true, LIB);
     expect(choicePacks(c)).toEqual(w.small.genStamp!.packs);
     expect(regenerateWith(c, w.small, LIB)).toBeNull();
-    const more = regenerateWith({ ...c, groups: [...c.groups, { id: 'scandinavian', weight: 1 }] }, w.small, LIB)!;
+    const more = regenerateWith({ ...c, groups: [...c.groups, 'scandinavian'] }, w.small, LIB)!;
     expect(more.op).toBe('batch');
     expect(lastOf(more)).toMatchObject({ op: 'regenerate_human', packs: [['medieval']], keepManual: true });
     expect('countries' in lastOf(more)).toBe(false);
@@ -211,7 +210,7 @@ describe('新建与生成的命令', () => {
     const eng = nations();
     const cls = worldTerrainClasses(eng.world.small).find((x) => x.id !== 'plains')!;
     eng.exec({ op: 'set_content', kind: 'terrainClass', id: cls.id, item: null });
-    const c = { library: 'medieval', groups: eng.world.small.human!.groups.map((g) => ({ id: g.id, weight: g.weight })) };
+    const c = { library: 'medieval', groups: eng.world.small.human!.groups };
     const cmds = flat(humanImportCommands(c, eng.world.small, LIB));
     expect(cmds.some((x) => (x as { kind?: string }).kind === 'terrainClass')).toBe(false);
     eng.exec(eng.planTidy({ only: Object.keys(eng.world.small.content!.government!).map((id) => ({ kind: 'government', id })) }).command!);
@@ -224,9 +223,9 @@ describe('新建与生成的命令', () => {
     const eng = nations();
     for (const x of packImportCommands(builtinPacks(), { packs: [['fantasy', 'cultures', 'elven']], groups: ['elven'] }, eng.world)) eng.exec(x);
     const c = defaultChoice(eng.world.small, true, LIB);
-    expect(c.groups.at(-1)).toEqual({ id: 'elven', weight: 1 });
+    expect(c.groups.at(-1)).toEqual('elven');
     eng.exec(regenerateCommand(eng.world.small, LIB));
-    expect(eng.world.small.human!.groups.some((g) => g.id === 'elven')).toBe(true);
+    expect(eng.world.small.human!.groups.includes('elven')).toBe(true);
     expect(Object.values(eng.world.small.popGroups!).some((t) => worldCultureGroups(eng.world.small).find((g) => g.id === 'elven') && t.culture && (eng.world.small.content!.culture![t.culture] as { group: string }).group === 'elven')).toBe(true);
     // 没有加过时命令和以前一样
     expect(lastOf(regenerateCommand(nations().world.small, LIB))).toEqual({ op: 'regenerate_human' });
@@ -244,7 +243,7 @@ describe('已有的世界换库（界面发的命令，内容的门槛见 core/p
       const before = GEN.map((k) => contentOf(eng, k));
       const c = chooseLibrary(defaultChoice(small, true, LIB), b, LIB, small);
       expect(c.library).toBe(b);
-      expect(c.groups).toEqual(defaultsOf({ id: b }));
+      expect(c.groups).toEqual(defaultsOf({ id: b }).map((g) => g.id));
       const cmd = regenerateWith(c, small, LIB)!;
       expect(cmd.op).toBe('batch');
       const drop = (lastOf(cmd) as Extract<Command, { op: 'regenerate_human' }>).switchLibrary!.drop;
@@ -281,8 +280,8 @@ describe('已有的世界换库（界面发的命令，内容的门槛见 core/p
     const small = eng.world.small;
     const c = chooseLibrary(defaultChoice(small, true, LIB), 'modern', LIB, small);
     const spare = packGroups('modern', LIB).find((g) => g.weight === 0)!.group.id;
-    eng.exec(regenerateWith({ ...c, groups: [...c.groups, { id: spare, weight: 1 }] }, small, LIB)!);
-    expect(eng.world.small.human!.groups.some((g) => g.id === spare)).toBe(true);
+    eng.exec(regenerateWith({ ...c, groups: [...c.groups, spare] }, small, LIB)!);
+    expect(eng.world.small.human!.groups.includes(spare)).toBe(true);
     expect(eng.world.small.origin!.cultureGroup[spare]).toEqual(['modern', 'cultures', spare]);
     expect(worldCultureGroups(eng.world.small).find((g) => g.id === spare)!.weight).toBeUndefined();
   });
@@ -294,9 +293,9 @@ describe('已有的世界换库（界面发的命令，内容的门槛见 core/p
     expect(beyondGroups(small, 'medieval', LIB).map((g) => g.id)).toEqual(['elven']);
     const c = chooseLibrary(defaultChoice(small, true, LIB), 'scifi', LIB, small);
     expect(beyondGroups(small, 'scifi', LIB).map((g) => g.id)).toEqual(['elven']);
-    expect(c.groups.at(-1)).toEqual({ id: 'elven', weight: 1 });
+    expect(c.groups.at(-1)).toEqual('elven');
     eng.exec(regenerateWith(c, small, LIB)!);
-    expect(eng.world.small.human!.groups.map((g) => g.id)).toContain('elven');
+    expect(eng.world.small.human!.groups).toContain('elven');
     expect(eng.world.small.content!.cultureGroup!.elven).toBeDefined();
     expect(eng.world.small.content!.cultureGroup!.germanic).toBeUndefined();
     expect(eng.world.small.origin!.cultureGroup.elven[0]).toBe('fantasy');
@@ -306,22 +305,22 @@ describe('已有的世界换库（界面发的命令，内容的门槛见 core/p
     const eng = nations();
     for (const x of packImportCommands(builtinPacks(), { packs: [['fantasy', 'cultures', 'elven']], groups: ['elven'] }, eng.world)) eng.exec(x);
     const start = defaultChoice(eng.world.small, true, LIB);
-    expect(start.groups.map((g) => g.id)).toContain('elven');
+    expect(start.groups).toContain('elven');
     // 取消：组还在世界里，比重写 0；人口不用重算
-    const off = { ...start, groups: start.groups.filter((g) => g.id !== 'elven') };
+    const off = { ...start, groups: start.groups.filter((g) => g !== 'elven') };
     const before = eng.world.small.human;
     eng.exec(regenerateWith(off, eng.world.small, LIB)!);
     expect(worldCultureGroups(eng.world.small).find((g) => g.id === 'elven')!.weight).toBe(0);
     expect(eng.world.small.human).toEqual(before);
     // 重开：不勾；“重新生成”也不带上
     const again = defaultChoice(eng.world.small, true, LIB);
-    expect(again.groups.map((g) => g.id)).not.toContain('elven');
+    expect(again.groups).not.toContain('elven');
     expect(beyondGroups(eng.world.small, 'medieval', LIB).map((g) => g.id)).toEqual(['elven']);
     expect(JSON.stringify(regenerateCommand(eng.world.small, LIB))).not.toContain('"elven"');
     // 再勾上：去掉这个 0，参与生成
-    eng.exec(regenerateWith({ ...again, groups: [...again.groups, { id: 'elven', weight: 1 }] }, eng.world.small, LIB)!);
+    eng.exec(regenerateWith({ ...again, groups: [...again.groups, 'elven'] }, eng.world.small, LIB)!);
     expect(worldCultureGroups(eng.world.small).find((g) => g.id === 'elven')!.weight).toBeUndefined();
-    expect(eng.world.small.human!.groups.map((g) => g.id)).toContain('elven');
+    expect(eng.world.small.human!.groups).toContain('elven');
   });
 
   it('没有人文的世界第一次选别的库：生成的命令带着名单，世界用的库变了', () => {
@@ -342,10 +341,10 @@ describe('已有的世界换库（界面发的命令，内容的门槛见 core/p
 describe('比重是 0 的组（第五十一轮）', () => {
   it('向导里默认不勾；勾上后生成时参与，世界里的那一项不写 0', () => {
     const c = defaultChoice(null, true, LIB);
-    expect(c.groups.some((g) => g.id === 'kongo')).toBe(false);
+    expect(c.groups.includes('kongo')).toBe(false);
     expect(packGroups(c.library, LIB).find((g) => g.group.id === 'kongo')!.weight).toBe(0);
-    const { eng } = wizardWorld({ ...c, groups: [...c.groups, { id: 'kongo', weight: 1 }] });
-    expect(eng.world.small.human!.groups.some((g) => g.id === 'kongo')).toBe(true);
+    const { eng } = wizardWorld({ ...c, groups: [...c.groups, 'kongo'] });
+    expect(eng.world.small.human!.groups.includes('kongo')).toBe(true);
     expect(worldCultureGroups(eng.world.small).find((g) => g.id === 'kongo')!.weight).toBeUndefined();
   });
 
@@ -355,15 +354,15 @@ describe('比重是 0 的组（第五十一轮）', () => {
     const zero = (id: string) => worldCultureGroups(eng.world.small).find((g) => g.id === id)!.weight;
     expect(zero('kongo')).toBe(0);
     const c = defaultChoice(eng.world.small, true, LIB);
-    eng.exec(regenerateWith({ ...c, groups: [...c.groups, { id: 'kongo', weight: 1 }] }, eng.world.small, LIB)!);
+    eng.exec(regenerateWith({ ...c, groups: [...c.groups, 'kongo'] }, eng.world.small, LIB)!);
     expect(zero('kongo')).toBeUndefined();
-    expect(eng.world.small.human!.groups.some((g) => g.id === 'kongo')).toBe(true);
+    expect(eng.world.small.human!.groups.includes('kongo')).toBe(true);
     const was = worldCultureGroups(eng.world.small).find((g) => g.id === 'kongo')!;
     eng.exec({ op: 'set_content', kind: 'cultureGroup', id: 'kongo', item: { ...was, weight: 0 } as unknown as Record<string, unknown> });
     const again = defaultChoice(eng.world.small, true, LIB);
-    eng.exec(regenerateWith({ ...again, pop: 123456 }, eng.world.small, LIB)!);
+    eng.exec(regenerateWith({ ...again, groups: [...again.groups, 'scandinavian'] }, eng.world.small, LIB)!);
     expect(zero('kongo')).toBe(0);
-    expect(eng.world.small.human!.groups.some((g) => g.id === 'kongo')).toBe(false);
+    expect(eng.world.small.human!.groups.includes('kongo')).toBe(false);
   });
 });
 
@@ -379,10 +378,10 @@ describe('世界里改过的内容（第五十轮）', () => {
     expect((w.small.content!.government![id] as { name: string }).name).toBe('改过的');
     // 换了选择（多一个组）也一样
     const h = w.small.human!;
-    const choice = { on: true, library: 'medieval', groups: [...h.groups.map((g) => ({ id: g.id, weight: g.weight })), { id: 'scandinavian', weight: 1 }], pop: null, countries: { on: true, fragmentation: 0.5 }, settlements: { on: false, landmarks: false } } as unknown as HumanChoice;
+    const choice = { on: true, library: 'medieval', groups: [...h.groups, 'scandinavian'], countries: { on: true }, settlements: { on: false, landmarks: false } } as unknown as HumanChoice;
     eng.exec(regenerateWith(choice, w.small, LIB)!);
     expect(Object.keys(w.small.content!.government!).sort()).toEqual([...govs].sort());
-    expect(w.small.human!.groups.some((g) => g.id === 'scandinavian')).toBe(true);
+    expect(w.small.human!.groups.includes('scandinavian')).toBe(true);
     // 整理掉的补回来，改过的还是改过的
     const used = new Set(Object.values(w.small.countries!).map((c) => c.government));
     const idle = govs.find((g) => !used.has(g))!;
@@ -394,7 +393,7 @@ describe('世界里改过的内容（第五十轮）', () => {
 
   it('组的比重是 0 时选上库不跟着勾它', () => {
     const node: PackNode = { id: 'p', name: 'p', cultureGroups: [{ id: 'a', name: 'A', color: '#111111' }, { id: 'b', name: 'B', color: '#222222', weight: 0 }] as unknown as PackNode['cultureGroups'] };
-    expect(defaultGroupsOf(node).map((g) => g.id)).toEqual(['a']);
+    expect(defaultGroupsOf(node)).toEqual(['a']);
   });
 });
 

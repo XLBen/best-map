@@ -142,12 +142,12 @@ describe('奇幻、科幻的政体', () => {
       const used = new Set<string>();
       for (const seed of [1, 5]) {
         const eng = continents();
-        humanExec(eng, { op: 'generate_human', era, groups: defaultsOf(eraOf(era)), countries: { seed } });
+        humanExec(eng, { op: 'generate_human', packs: [[era]], groups: defaultsOf(eraOf(era)), countries: { seed } });
         for (const m of check(eng.world, era, `${era} ${seed}`)) used.add(m.government);
       }
       const eng = engineFor({ seed: 3, cells: 8000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
       eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
-      humanExec(eng, { op: 'generate_human', era, groups: defaultsOf(eraOf(era)), countries: {} });
+      humanExec(eng, { op: 'generate_human', packs: [[era]], groups: defaultsOf(eraOf(era)), countries: {} });
       for (const m of check(eng.world, era, `${era} 星球`)) used.add(m.government);
       expect(used.size, [...used].join()).toBeGreaterThanOrEqual(6);
     }, 120000);

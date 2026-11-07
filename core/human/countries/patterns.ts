@@ -150,10 +150,3 @@ export function runPatterns(g: CountryRun, hook: PatternHook): void {
 // 小数的个数：整数部分 + 小数部分的可能多一个（第二十六轮的 countOf；r 总是取的，不管 v 是不是 0）
 export const countOf = (v: number | undefined, r: number): number => (v ? Math.floor(v) + (r < v - Math.floor(v) ? 1 : 0) : 0);
 
-// 时代用不用某个模块（列了、多少大于 0）。find 按 id 找格局（世界里的，或库里的：界面上选库时时代还没加进世界）
-export function eraUsesModule(era: Pick<Era, 'patterns'> | undefined, module: string, find: (id: string) => Pick<CountryPattern, 'module' | 'amount'> | undefined): boolean {
-  return (era?.patterns ?? []).some((e) => {
-    const p = find(e.pattern);
-    return p?.module === module && (e.amount ?? p.amount) > 0;
-  });
-}

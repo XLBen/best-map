@@ -242,7 +242,7 @@ function derivedDigests(w: World): Record<string, string> {
 const untagged = (w: World) => w.derived.features.map((f) => ({ ...f, cells: digest(Int32Array.from(f.cells)), tags: f.tags.filter((t) => !t.startsWith('rtype:') && !t.startsWith('ltype:')) }));
 
 describe('水不变：带着这些类型和不带时除了类型逐值相同', () => {
-  const groups = [{ id: 'germanic', weight: 3 }, { id: 'levantine', weight: 2 }, { id: 'chinese', weight: 2 }];
+  const groups = ['germanic', 'levantine', 'chinese'];
   const SCENES: [string, object, object][] = [
     ['地区', { seed: 2, cells: 12000, latNorth: 25, latSouth: -25 }, { seed: 2, type: 'fragmented' }],
     ['地区（冷）', { seed: 1, cells: 12000, latNorth: 72, latSouth: 20 }, { seed: 5, type: 'continents', landFraction: 0.4 }],
@@ -260,7 +260,7 @@ describe('水不变：带着这些类型和不带时除了类型逐值相同', (
       expect(a.world.derived.scriptIssues).toEqual(b.world.derived.scriptIssues);
       for (const e of [a, b]) {
         e.exec({ op: 'generate_provinces', rules: { seed: 5 } });
-        for (const c of packImportCommands(LIB, { packs: [['medieval']], groups: groups.map((g) => g.id) }, e.world)) e.exec(c);
+        for (const c of packImportCommands(LIB, { packs: [['medieval']], groups }, e.world)) e.exec(c);
         e.exec({ op: 'generate_human', packs: [['medieval']], groups, countries: {}, settlements: {} });
       }
       expect(humanDigest(a.world)).toEqual(humanDigest(b.world));

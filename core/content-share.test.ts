@@ -7,7 +7,7 @@ import { builtinPacks } from './packs/builtin-tree';
 import { newWorldContentCommands, packImportCommands } from './packs/import';
 import { postedPatch, previewPatch, previewWorldOf } from './preview-world';
 import { cloneSmall, copySmall, restoreSmall, sameAsCopy } from './small-copy';
-import { snapshot } from './testing/fixtures';
+import { eraCommand, fragKm2, snapshot } from './testing/fixtures';
 import type { SmallState, World } from './world';
 
 // 第四十七轮：small.content 在撤销、比较、克隆、快照里按引用共用。这里查的是：
@@ -316,10 +316,12 @@ describe('内容是不可变的：所有写内容的地方都是换掉、不是�
     for (const c of edits(eng)) frozen(eng, c);
     while (eng.canUndo && eng.toDoc().commands.length > 3) eng.undo();
     for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']], groups: ['germanic', 'chinese'] }, eng.world)) frozen(eng, c);
-    frozen(eng, { op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} } as Command);
+    frozen(eng, { op: 'generate_human', packs: [['medieval']], groups: ['germanic', 'chinese'], countries: {}, settlements: {} });
     expect(eng.world.small.human).toBeTruthy();
     expect(eng.world.small.countries).toBeTruthy();
-    frozen(eng, { op: 'regenerate_countries', fragmentation: 0.4 });
+    // 第七十七轮：以前的“分裂 ↔ 统一”0.4 换成时代的国家大小（改时代也是写内容）
+    frozen(eng, eraCommand(eng.world, { countryKm2: fragKm2('medieval', 0.4) }));
+    frozen(eng, { op: 'regenerate_countries' });
     frozen(eng, { op: 'regenerate_settlements' });
     frozen(eng, { op: 'remove_settlements' });
     frozen(eng, { op: 'remove_countries' });

@@ -5,11 +5,5 @@
     { "id": "medium", "name": "公国级行政", "short": "公国级", "description": "平均大小的国家；邦联的中心是这一级。", "order": 30, "area": 1, "weight": 3, "govSize": 1, "fedMember": 0.7, "confedCentre": true, "capitalIcon": 0.8, "capitalAlpha": 0.85, "capitalLabel": 0.85 },
     { "id": "large", "name": "王国级行政", "short": "王国级", "description": "大国，约三个平均的国家大；可能分成联邦。", "order": 40, "area": 3, "weight": 1.5, "govSize": 2, "federation": true, "capitalIcon": 0.9, "capitalAlpha": 0.95, "capitalLabel": 0.92 },
     { "id": "empire", "name": "帝国级行政", "short": "帝国级", "description": "最大的一级，约九个平均的国家大；可能分成联邦。首都画得最醒目。", "order": 50, "area": 9, "weight": 0.4, "govSize": 3, "federation": true }
-  ],
-  "layouts": [
-    { "id": "mixed", "name": "混合", "description": "各等级的国家都有", "weights": { "city": 2, "small": 3, "medium": 2, "large": 1.5, "empire": 0.6 } },
-    { "id": "petty", "name": "诸侯林立", "description": "低等级的国家为主，几乎没有王国级以上的", "weights": { "city": 3, "small": 4, "medium": 1.5, "large": 0.2, "empire": 0 } },
-    { "id": "unified", "name": "大一统", "description": "王国级、帝国级占了大半", "weights": { "city": 0.3, "small": 0.7, "medium": 1, "large": 2, "empire": 1.5 } },
-    { "id": "powers", "name": "列强并立", "description": "几个王国级并立，中间夹着侯国级", "weights": { "city": 0.5, "small": 2, "medium": 0.4, "large": 2.5, "empire": 0.6 } }
   ]
 }

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { digest } from '../../digest';
 import { Engine } from '../../engine';
 import { BUILTIN_ERAS, ERA_PACKS } from '../../packs/eras';
-import { continents, humanExec, snapshot } from '../../testing/fixtures';
+import { continents, fragKm2, humanExec, snapshot } from '../../testing/fixtures';
 import type { World } from '../../world';
 import { blocList, blocMapColors } from '../blocs';
 import { readComp } from '../groups';
@@ -34,7 +34,7 @@ const runs = new Map<string, CountryRun>();
 function peopled(era: string): { eng: Engine; run: CountryRun } {
   const eng = snapshot(`era-patterns:${era}`, () => {
     const e = continents();
-    humanExec(e, { op: 'generate_human', era, groups: groupsOf(era), countries: {} });
+    humanExec(e, { op: 'generate_human', packs: [[era]], groups: groupsOf(era), countries: {} });
     runs.set(era, last!);
     return e;
   });
@@ -159,7 +159,7 @@ describe('中世纪', () => {
   it('国家少的世界（统一）：放不下的格局不放，照样生成', () => {
     const { eng } = peopled('medieval');
     const e = eng.clone();
-    humanExec(e, { op: 'regenerate_countries', fragmentation: 0 });
+    humanExec(e, { op: 'regenerate_countries' }, { countryKm2: fragKm2('medieval', 0) });
     const n = countryList(e.world.small).length;
     expect(n).toBeGreaterThan(0);
     expect(n).toBeLessThan(6);
@@ -286,7 +286,7 @@ describe('重放、锁定', () => {
     for (const era of ['antiquity', 'medieval', 'industrial', 'modern']) {
       const { eng } = peopled(era);
       const b = continents();
-      humanExec(b, { op: 'generate_human', era, groups: groupsOf(era), countries: {} });
+      humanExec(b, { op: 'generate_human', packs: [[era]], groups: groupsOf(era), countries: {} });
       expect(digest(b.world.causes.country!), era).toBe(digest(eng.world.causes.country!));
       expect(digest(b.world.small.countries), era).toBe(digest(eng.world.small.countries));
       expect(digest(b.world.small.blocs ?? null), era).toBe(digest(eng.world.small.blocs ?? null));

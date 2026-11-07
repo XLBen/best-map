@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../../core/commands';
 import type { Engine } from '../../core/engine';
 import { type Government, countryFactions, countryMapColors, countryStats, worldDimensions } from '../../core/human';
-import { continents, snapshot, type HumanCommand, humanExec, lastOf } from '../../core/testing/fixtures';
+import { continents, snapshot, type HumanCommand, humanExec, lastOf, fragKm2 } from '../../core/testing/fixtures';
 import { danglingLinks, linkTable, worldScope } from '../../core/content/links';
 import { recordedOrigin } from '../../core/content/origin';
 import { findPack, packItems, packSections } from '../../core/packs';
@@ -18,13 +18,9 @@ import {
   countryAt,
   countryLabelLines,
   countryRows,
-  estimateCountries,
   factionPatch,
   flagColorPatch,
   foundedPatch,
-  fragAt,
-  fragPos,
-  fragText,
   generateCountriesCommand,
   governmentCommand,
   hasCountries,
@@ -71,11 +67,13 @@ const GROUPS = [
   { id: 'altaic', weight: 1.5 },
 ];
 // 分裂一些：小地图上也有好几个国家
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: { fragmentation: 1 } };
+const GEN: HumanCommand = { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: {} };
+// 以前的“很分裂”（fragmentation 1）：第七十七轮起是时代的国家大小（平均的国家面积逐值相同）
+const MANY = { countryKm2: fragKm2('medieval', 1) };
 const nations = (): Engine =>
   snapshot('ui:nations', () => {
     const eng = continents();
-    humanExec(eng, GEN);
+    humanExec(eng, GEN, MANY);
     eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
     return eng;
   });
@@ -86,37 +84,23 @@ const lastCmd = () => vi.mocked(exec).mock.calls.at(-1)![0] as Command & Record<
 const ids = (w: World) => countryRows(w).map((r) => r.meta.id);
 
 describe('新建向导的“国家”', () => {
-  it('默认同时生成国家；分裂 ↔ 统一在正中时不写；关掉时没有 countries', () => {
+  // 第七十七轮：“分裂 ↔ 统一”、格局去掉了（国家多大、各等级占多少按资源库里的时代），命令里的 countries 是空的
+  it('默认同时生成国家；关掉时没有 countries', () => {
     const c = defaultChoice(null);
-    // 第二十六轮：格局按时代（命令里不写）
-    expect(c.countries).toEqual({ on: true, fragmentation: 0.5, layout: 'era' });
+    expect(c.countries).toEqual({ on: true });
     expect(lastOf(generateCommand(c)!)).toMatchObject({ op: 'generate_human', countries: {} });
-    expect(lastOf(generateCommand({ ...c, countries: { on: true, fragmentation: 0.8 } })!)).toMatchObject({ countries: { fragmentation: 0.8 } });
-    expect('countries' in lastOf(generateCommand({ ...c, countries: { on: false, fragmentation: 0.8 } })!)).toBe(false);
+    expect((lastOf(generateCommand(c)!) as Extract<Command, { op: 'generate_human' }>).countries).toEqual({});
+    expect('countries' in lastOf(generateCommand({ ...c, countries: { on: false } })!)).toBe(false);
     const cmds = newWorldCommands({ seed: 3, type: 'continents' }, '像地球', 3, [], generateCommand(c));
     // 第三十轮：生成人文是一整步（先加时代包的内容，再生成）
     expect(cmds.map((x) => x.op)).toEqual(['batch', 'batch', 'generate_provinces']);
     expect(lastOf(cmds[1])).toMatchObject({ countries: {} });
   });
 
-  it('滑块：左边分裂、右边统一，每格 0.05；有世界时估出大约几个国家（越分裂越多）', () => {
-    expect(fragPos(1)).toBe(0);
-    expect(fragPos(0)).toBe(1);
-    expect(fragAt(0.26)).toBe(0.75);
-    expect([fragText(1), fragText(0.5), fragText(0)]).toEqual(['很分裂', '适中', '很统一']);
-    const w = nations().world;
-    const many = estimateCountries(w, 1)!;
-    const few = estimateCountries(w, 0)!;
-    expect(many).toBeGreaterThan(few);
-    expect(few).toBeGreaterThanOrEqual(1);
-    // 第二十六轮：估计就是核心的 estimateCountryCount，与生成的个数相同（这个世界是“很分裂”生成的；各文化正好分完，中世纪没有联邦）
-    const n = Object.keys(w.small.countries!).length;
-    expect(many).toBe(n);
-  });
-
   it('换时代重新生成人文时国家也重新长；没换时代时不写 countries', () => {
     const w = nations().world;
-    const same = lastOf(regenerateWith({ ...defaultChoice(w.small), pop: 1e8 }, w.small)!);
+    const c = defaultChoice(w.small);
+    const same = lastOf(regenerateWith({ ...c, groups: [...c.groups, 'scandinavian'] }, w.small)!);
     expect('countries' in same).toBe(false);
     const other = lastOf(regenerateWith({ ...defaultChoice(w.small), library: 'antiquity' }, w.small)!);
     expect(other).toMatchObject({ op: 'regenerate_human', packs: [['antiquity']], countries: {} });
@@ -492,12 +476,10 @@ describe('地图模式里的国家（第二十三轮的地理图 / 人文图）'
 });
 
 describe('“国家 ⋯”与仓库', () => {
-  it('生成、重新生成：正中、没变时不写；不留锁定的写 keepLocked: false', () => {
-    const w = nations().world;
-    expect(generateCountriesCommand(0.5)).toEqual({ op: 'generate_countries' });
-    expect(generateCountriesCommand(0.2)).toEqual({ op: 'generate_countries', fragmentation: 0.2 });
-    expect(regenerateCountriesCommand(w, 1, true)).toEqual({ op: 'regenerate_countries' });
-    expect(regenerateCountriesCommand(w, 0.3, false)).toEqual({ op: 'regenerate_countries', fragmentation: 0.3, keepLocked: false });
+  it('生成、重新生成：不写参数；不留锁定的写 keepLocked: false', () => {
+    expect(generateCountriesCommand()).toEqual({ op: 'generate_countries' });
+    expect(regenerateCountriesCommand(true)).toEqual({ op: 'regenerate_countries' });
+    expect(regenerateCountriesCommand(false)).toEqual({ op: 'regenerate_countries', keepLocked: false });
   });
 
   it('国家列表按人口从多到少', () => {

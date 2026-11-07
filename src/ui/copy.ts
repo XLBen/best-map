@@ -35,3 +35,7 @@ export const WATER_MANUAL_NOTE = '不自然生成：勾了也不会自己出现�
 
 // 地貌的季节和风的季节是两个
 export const SEASON_NOTE = '只改雪和植被的样子。风向有自己的季节，在左下角的图例里';
+
+// 生成人文、国家的面板（第七十七轮）：生成的参数都在资源库里
+export const GEN_RULES_NOTE = '国家大小、人口、各组占多少在资源库里改';
+export const ERA_PAGE_TIP = '打开资源库里的时代';

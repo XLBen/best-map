@@ -37,11 +37,11 @@ describe('首页', () => {
     const ctx = ctxOf();
     const p = homePage(lib('medieval'), ctx);
     const ids = p.sections.flatMap((s) => s.cards.map((c) => c.id));
-    for (const gone of ['culture', 'nameStyle', 'faction', 'countryLayout', 'variables', 'valueGroup']) expect(ids, gone).not.toContain(gone);
+    for (const gone of ['culture', 'nameStyle', 'faction', 'variables', 'valueGroup']) expect(ids, gone).not.toContain(gone);
     const card = (id: string) => p.sections.flatMap((s) => s.cards).find((c) => c.id === id)!;
     expect(card('cultureGroup').contains).toBe('含文化、地名风格、地标');
     expect(card('government').contains).toBe('含派系');
-    expect(card('countryTier').contains).toBe('含格局');
+    expect(card('countryTier').contains).toBeUndefined();
     expect(card('dim:religion').contains).toBe('含取值');
     expect(p.era!.contains).toBe('含变量');
     expect(p.sections.map((s) => s.cards.map((c) => c.title))[0]).toEqual(['文化组', '宗教']);
@@ -65,7 +65,7 @@ describe('首页', () => {
   it('全部单独成卡时和第 59 轮一样；每种内容都到得了', () => {
     const flat = copy('flat', {});
     const ctx = ctxOf(null, [flat]);
-    expect(cardIds(lib('flat'), ctx)).toEqual(expect.arrayContaining(['culture', 'nameStyle', 'faction', 'countryLayout', 'variables', 'valueGroup', 'landmarkType']));
+    expect(cardIds(lib('flat'), ctx)).toEqual(expect.arrayContaining(['culture', 'nameStyle', 'faction', 'variables', 'valueGroup', 'landmarkType']));
     expect(cardsOf(lib('flat'), ctx).every((c) => !c.contains)).toBe(true);
     // 融入着的：上级的列表最上面“全部 X”到得了
     const preset = ctxOf();
@@ -104,8 +104,6 @@ describe('拖卡片', () => {
     const v = dropVerdict('faction', 'government', flat);
     expect(v).toMatchObject({ t: 'merge', parent: 'government', text: '融入政体' });
     expect(verdictArrange(v, flat)!.faction).toBe('government');
-    const lay = dropVerdict('countryLayout', 'countryTier', splitOut(a, 'countryLayout'));
-    expect(lay.t).toBe('merge');
   });
 
   it('不讲得通的不接受，给一句提示；安排不变', () => {
@@ -282,9 +280,6 @@ describe('上级页面', () => {
     const group = itemOf(src, kindOf('cultureGroup')!, 'chinese', ctx()) as Record<string, unknown>;
     const lm = newChildIn(src, relationOf('landmarkType', 'cultureGroup')!, group, ctx()) as string;
     expect((itemOf(src, kindOf('landmarkType')!, lm, ctx()) as { cultureGroups: string[] }).cultureGroups).toEqual(['chinese']);
-    const tier = itemOf(src, kindOf('countryTier')!, 'empire', ctx()) as Record<string, unknown>;
-    const lay = newChildIn(src, relationOf('countryLayout', 'countryTier')!, tier, ctx()) as string;
-    expect((itemOf(src, kindOf('countryLayout')!, lay, ctx()) as { weights: object }).weights).toEqual({ empire: 1 });
     const vg = packItems<{ id: string; dimension: string }>(medieval, 'valueGroups')[0];
     const val = newChildIn(src, relationOf('popValue', 'valueGroup')!, vg as never, ctx()) as string;
     expect(itemOf(src, kindOf('popValue')!, val, ctx())).toMatchObject({ group: vg.id, dimension: vg.dimension });
@@ -369,14 +364,11 @@ describe('搜索和列表', () => {
     expect(sec.rows[0].kind.id).toBe('culture');
   });
 
-  it('政体的列表里搜得到派系，列出在哪几个政体；国家等级的列表搜得到格局；地标多个组时写几组', () => {
+  it('政体的列表里搜得到派系，列出在哪几个政体；地标多个组时写几组', () => {
     const ctx = ctxOf();
     const f = packItems<{ id: string; name: string }>(medieval, 'factions')[0];
     const g = listPage(lib('medieval'), { p: 'list', kind: 'government' }, ctx, f.name)!;
     expect(g.sections.find((s) => s.label === '派系')!.rows.map((r) => r.id)).toContain(f.id);
-    const lay = packItems<{ id: string; name: string }>(medieval, 'countryLayouts')[0];
-    const t = listPage(lib('medieval'), { p: 'list', kind: 'countryTier' }, ctx, lay.name)!;
-    expect(t.sections.find((s) => s.label === '格局')!.rows.map((r) => r.id)).toContain(lay.id);
     expect(listPage(lib('medieval'), { p: 'list', kind: 'countryTier' }, ctx)!.searchable).toBe(false);
     expect(listPage(lib('medieval'), { p: 'list', kind: 'government' }, ctx)!.searchable).toBe(true);
     const a = listPage(lib('antiquity'), { p: 'list', kind: 'cultureGroup' }, ctx, 'pyramid')!;

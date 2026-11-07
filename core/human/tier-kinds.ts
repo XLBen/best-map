@@ -1,8 +1,8 @@
 import type { z } from 'zod';
 import { type FieldDesc, notBuiltin, registerKind } from '../content/registry';
-import { type CountryLayoutDef, type CountryTierDef, countryLayoutSchema, countryTierSchema, worldLayouts, worldTiers } from './tiers';
+import { type CountryTierDef, countryTierSchema, worldTiers } from './tiers';
 
-// 第四十二轮的两种内容登记进登记表：国家等级、格局（都放在 small.content，命令是 set_content）。
+// 第四十二轮的内容登记进登记表：国家等级（放在 small.content，命令是 set_content；第七十七轮去掉了格局）。
 // 只在生成国家时读，地图上按等级画首都：改了不重算（dirty 是 none），重新生成国家时按新的。
 // 内置的在每个库的“国家等级”（新建世界默认带上）
 
@@ -28,13 +28,6 @@ const TIER_FIELDS: readonly FieldDesc[] = [
   { key: 'capitalBold', label: '首都名字加粗', type: 'bool', optional: true },
 ];
 
-const LAYOUT_FIELDS: readonly FieldDesc[] = [
-  { key: 'id', label: 'id', type: 'text' },
-  { key: 'name', label: '名字', type: 'text' },
-  { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'weights', label: '各等级占多少', type: 'map', keyRef: 'countryTier', dep: 'auto', value: { key: 'value', label: '比例', type: 'number', min: 0, max: 100, step: 0.1 }, hint: '空着的等级不出现' },
-];
-
 // 由 human/kinds.ts 在政体、派系之后调用
 export function registerTierKinds(): void {
   registerKind<CountryTierDef>({
@@ -57,34 +50,6 @@ export function registerTierKinds(): void {
       withId: (t, id, from) => (id === from ? t : { ...t, id, name: renamed(t.name, id, from) }),
       fromWorld: (w) => notBuiltin('countryTier', worldTiers(w.small)).map((t) => structuredClone(t)),
       exportItem: (t) => structuredClone(t),
-    },
-  });
-
-  registerKind<CountryLayoutDef>({
-    id: 'countryLayout',
-    label: '格局',
-    short: '格局',
-    order: 44,
-    store: 'content',
-    maxInWorld: 32,
-    schema: countryLayoutSchema as unknown as z.ZodType<CountryLayoutDef>,
-    inWorld: (w) => worldLayouts(w.small),
-    dirty: () => 'none',
-    blank: () => ({ id: 'my-layout', name: '新格局', weights: { medium: 1 } }),
-    fields: LAYOUT_FIELDS,
-    pack: {
-      key: 'countryLayouts',
-      max: 32,
-      listed: true,
-      checked: true,
-      withId: (l, id, from) => (id === from ? l : { ...l, id, name: renamed(l.name, id, from).slice(0, 12) }),
-      fromWorld: (w) => notBuiltin('countryLayout', worldLayouts(w.small)).map((l) => structuredClone(l)),
-      exportItem: (l) => structuredClone(l),
-      problems: (items, ctx) => {
-        const tiers = ctx.ids('countryTiers');
-        if (!tiers.size) return [];
-        return items.flatMap((l) => Object.keys(l.weights).filter((id) => !tiers.has(id)).map((id) => `格局“${l.name}”写的等级 ${id} 不在资源包里：世界里没有它时不算`));
-      },
     },
   });
 }

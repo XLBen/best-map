@@ -1,26 +1,19 @@
 import { memo } from 'preact/compat';
 import { useState } from 'preact/hooks';
-import { SUBJECT_NAMES, flagSvg, patternById, worldEra } from '../../../core/human';
-import type { CountryLayout, CountryMeta, World } from '../../../core/world';
+import { SUBJECT_NAMES, flagSvg } from '../../../core/human';
+import type { CountryMeta, World } from '../../../core/world';
 import { askUser, exec, openPanel, selectedCountry, setOptions, sheet, switchTool, togglePanel, world } from '../../state';
 import { focusOn } from '../camera';
-import { Slider } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
 import { TypePicker, TypePickerButton } from '../shell/TypePicker';
+import { EraRulesNote } from '../shell/EraRulesNote';
 import {
   NO_COUNTRIES,
   type CountryRow,
   cellsOf,
   countryRows,
-  estimateCountries,
-  fragAt,
-  fragPos,
-  fragText,
-  fragTitle,
   generateCountriesCommand,
   hasCountries,
-  layoutChoices,
-  layoutOf,
   regenerateCountriesCommand,
 } from '../domain/countries';
 import { popText, withPackImports } from '../domain/human';
@@ -155,55 +148,13 @@ export function CountryList({ w, onPick }: { w: World; onPick?: () => void }) {
 
 // ---------- “国家 ⋯” ----------
 
-function FragSlider({ w, value, onChange, keepLocked }: { w: World; value: number; onChange: (f: number) => void; keepLocked?: boolean }) {
-  const [draft, setDraft] = useState<number | null>(null);
-  const f = draft ?? value;
-  const n = estimateCountries(w, f, keepLocked);
-  return (
-    <Slider
-      stacked
-      label="分裂 ↔ 统一"
-      pos={fragPos(f)}
-      text={fragText(f)}
-      title={fragTitle(worldEra(w.small), (id) => patternById(w.small, id))}
-      note={n ? `约 ${n} 个国家` : undefined}
-      onDraft={(p) => setDraft(fragAt(p))}
-      onCommit={(p) => {
-        setDraft(null);
-        onChange(fragAt(p));
-      }}
-      onCancel={() => setDraft(null)}
-    />
-  );
-}
-
-// 格局（第二十六轮）：国家大小怎么分布。“国家 ⋯”与生成人文（向导、“文化 ⋯”）共用
-// 第四十二轮：选项是“按时代”与世界里的格局（内容，资源库里改）
-export function LayoutPick({ w, value, onChange, disabled }: { w: Pick<World, 'small'> | null | undefined; value: CountryLayout; onChange: (v: CountryLayout) => void; disabled?: boolean }) {
-  const choices = layoutChoices(w?.small, value);
-  return (
-    <div class="row" title={choices.find((c) => c.id === value)?.hint}>
-      <span class="grow">格局</span>
-      <select value={value} disabled={disabled} onChange={(e) => onChange((e.target as HTMLSelectElement).value as CountryLayout)}>
-        {choices.map((c) => (
-          <option value={c.id} title={c.hint}>
-            {c.name}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
+// 第七十七轮：国家多大、各等级占多少按资源库里的时代，这里不再调
 function GenerateCountries({ w }: { w: World }) {
-  const [f, setF] = useState(0.5);
-  const [layout, setLayout] = useState<CountryLayout>('era');
   return (
     <section>
       <h5>生成国家</h5>
-      <FragSlider w={w} value={f} onChange={setF} />
-      <LayoutPick w={w} value={layout} onChange={setLayout} />
-      <button class="primary" onClick={() => void exec(withPackImports(generateCountriesCommand(f, layout), w.small, library.value), '正在生成…')}>
+      <EraRulesNote libraryKey={null} small={w.small} seg="state" />
+      <button class="primary" onClick={() => void exec(withPackImports(generateCountriesCommand(), w.small, library.value), '正在生成…')}>
         生成
       </button>
     </section>
@@ -211,9 +162,7 @@ function GenerateCountries({ w }: { w: World }) {
 }
 
 function CountryTools({ w }: { w: World }) {
-  const [f, setF] = useState(w.small.human?.countryRules?.fragmentation ?? 0.5);
   const [keep, setKeep] = useState(true);
-  const [layout, setLayout] = useState<CountryLayout>(layoutOf(w));
   const locked = Object.values(w.small.countries ?? {}).filter((m) => m.locked).length;
   return (
     <>
@@ -223,15 +172,14 @@ function CountryTools({ w }: { w: World }) {
       </section>
       <section>
         <h5>重新生成</h5>
-        <FragSlider w={w} value={f} onChange={setF} keepLocked={keep} />
-        <LayoutPick w={w} value={layout} onChange={setLayout} />
+        <EraRulesNote libraryKey={null} small={w.small} seg="state" />
         {locked > 0 && (
           <Toggle on={keep} onChange={setKeep}>
             锁定的不动 · {locked} 个
           </Toggle>
         )}
         <div class="row wrap">
-          <button onClick={() => void exec(withPackImports(regenerateCountriesCommand(w, f, keep, layout), w.small, library.value), '正在生成…')} title="人口按新的国家重新分，手改过的格不动">
+          <button onClick={() => void exec(withPackImports(regenerateCountriesCommand(keep), w.small, library.value), '正在生成…')} title="人口按新的国家重新分，手改过的格不动">
             重新生成
           </button>
           <button

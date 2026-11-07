@@ -9,32 +9,25 @@ import {
   countryCodes,
   eraGovernments,
   worldGovernments,
-  estimateCountryCount,
   makeFlag,
   govTitles,
   titleContext,
   titled,
   worldEra,
-  ERA_LAYOUT,
-  ERA_LAYOUT_HINT,
-  ERA_LAYOUT_NAME,
   stampedPacks,
   tierOfCountry,
   tierShort,
-  worldLayouts,
-  eraUsesModule,
   blocOf,
   roleText,
   subjectText,
 } from '../../../core/human';
-import type { CountryPattern, Era } from '../../../core/human';
 import type { LibraryEntry } from '../../library';
 import { addFromLibrary, itemsInPacks, librarySelectable } from './packChoice';
 import { type NameMode, nameLines } from '../../../core/name-display';
-import type { CountryLayout, CountryMeta, World } from '../../../core/world';
+import type { CountryMeta, World } from '../../../core/world';
 
-// 国家（第二十三轮）的界面逻辑：有没有国家、一格是哪国、按人口排的列表、各种命令、档案的改动、
-// “分裂 ↔ 统一”（地图模式见 map/modes.ts）。不碰界面，测试直接调
+// 国家（第二十三轮）的界面逻辑：有没有国家、一格是哪国、按人口排的列表、各种命令、档案的改动（地图模式见 map/modes.ts）。
+// 不碰界面，测试直接调。第七十七轮去掉了“分裂 ↔ 统一”和格局：国家多大、各等级占多少都在资源库的时代里
 
 type Small = World['small'];
 
@@ -166,31 +159,9 @@ export const mergeCommand = (a: number, b: number): Command => ({ op: 'merge_cou
 export const capitalCommand = (id: number, cell: number | null): Command => ({ op: 'move_capital', id, cell });
 export const patchCommand = (id: number, patch: CountryPatch): Command => ({ op: 'set_country', id, patch });
 
-// 生成、重新生成国家（“分裂 ↔ 统一”在正中时不写，用默认）。格局（第二十六轮）：按时代时不写；重新生成时与现在的不同才写
-export function generateCountriesCommand(fragmentation: number, layout: CountryLayout = 'era'): Command {
-  return { op: 'generate_countries', ...(fragmentation !== 0.5 ? { fragmentation } : {}), ...(layout !== 'era' ? { layout } : {}) };
-}
-export function regenerateCountriesCommand(w: World, fragmentation: number, keepLocked: boolean, layout: CountryLayout = layoutOf(w)): Command {
-  const cur = w.small.human?.countryRules?.fragmentation ?? 0.5;
-  return { op: 'regenerate_countries', ...(fragmentation !== cur ? { fragmentation } : {}), ...(layout !== layoutOf(w) ? { layout } : {}), ...(keepLocked ? {} : { keepLocked: false }) };
-}
-
-// ---------- 格局（第二十六轮） ----------
-
-// 现在的格局（没写是按时代）
-export const layoutOf = (w: Pick<World, 'small'>): CountryLayout => w.small.human?.countryRules?.layout ?? 'era';
-// 格局的选项（第四十二轮：格局是内容）：“按时代”，再是世界里的格局（按加进世界的先后）。选着的不在世界里时也列上（写它的 id）
-export interface LayoutChoice {
-  id: string;
-  name: string;
-  hint: string;
-}
-export function layoutChoices(small: Pick<Small, 'content'> | undefined, current?: string): LayoutChoice[] {
-  const out: LayoutChoice[] = [{ id: ERA_LAYOUT, name: ERA_LAYOUT_NAME, hint: ERA_LAYOUT_HINT }];
-  for (const l of small ? worldLayouts(small) : []) out.push({ id: l.id, name: l.name, hint: l.description ?? '' });
-  if (current && !out.some((c) => c.id === current)) out.push({ id: current, name: current, hint: '世界里没有这种格局：按时代' });
-  return out;
-}
+// 生成、重新生成国家（第七十七轮：只按时代，命令里不写参数）。keepLocked：锁定的国家不动
+export const generateCountriesCommand = (): Command => ({ op: 'generate_countries' });
+export const regenerateCountriesCommand = (keepLocked: boolean): Command => ({ op: 'regenerate_countries', ...(keepLocked ? {} : { keepLocked: false }) });
 
 // 国家的等级写在档案、列表里的（第四十二轮：世界里等级的简称；自己建的、等级不在世界里时空着）
 export const tierLabel = (w: Pick<World, 'small'>, m: Pick<CountryMeta, 'tier'>): string => {
@@ -306,31 +277,5 @@ export function countriesByName(w: Pick<World, 'small'>): readonly CountryMeta[]
   let l = byName.get(metas);
   if (!l) byName.set(metas, (l = Object.values(metas).sort((a, b) => ZH.compare(a.name, b.name))));
   return l;
-}
-
-// ---------- 分裂 ↔ 统一 ----------
-
-// 滑块：左边分裂（fragmentation 1），右边统一（0）
-export const fragPos = (f: number) => 1 - f;
-export const fragAt = (p: number) => Math.round((1 - Math.max(0, Math.min(1, p))) * 20) / 20;
-export function fragText(f: number): string {
-  if (f >= 0.8) return '很分裂';
-  if (f >= 0.6) return '分裂';
-  if (f > 0.4) return '适中';
-  if (f > 0.2) return '统一';
-  return '很统一';
-}
-
-// 滑块悬停的说明：时代会生成联邦（第二十六轮）时说一句，估计里没有联邦切出来的成员邦。
-// 第七十三轮：联邦是国家格局，find 按 id 找格局（世界里的，选库时是库里的）
-export const fragTitle = (era: Pick<Era, 'patterns'> | undefined, find: (id: string) => Pick<CountryPattern, 'module' | 'amount'> | undefined): string =>
-  `往左国家多而小，往右国家少而大${eraUsesModule(era, 'federation', find) ? '；联邦的成员邦另算' : ''}`;
-
-// 大约几个国家（第二十六轮：核心的 estimateCountryCount，与生成的第一步同一个算法；锁定的国家的地方不算、另外算上；
-// 联邦切出来的成员邦不算在里面，所以写“约”）
-export function estimateCountries(w: World, f: number, keepLocked = false): number | null {
-  const era = worldEra(w.small);
-  if (!era || !w.derived.habitability) return null;
-  return estimateCountryCount(w, w.derived, era, f, keepLocked);
 }
 

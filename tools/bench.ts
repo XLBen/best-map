@@ -39,6 +39,16 @@ import { coastalStroke, digest } from './hash';
 
 // 中世纪包默认的前三个文化组与权重（第四十三轮起是 EU4 的文化组；按包里列的，旧的提交上也能跑）
 const medievalGroups = () => ((builtinPacks().find((p) => p.id === 'medieval')?.packs ?? []).find((p) => p.id === 'cultures')?.packs ?? []).slice(0, 3).map((n) => ({ id: n.id, weight: n.weight ?? 1 }));
+// 生成人文：第七十七轮起命令只写文化组的 id（各组占多少是世界里组的比重，内置的组带着库里的比重）；旧的提交上要写权重。
+// 先试新的写法，命令的格式不认时（没执行）用旧的写法：两边的结果一样
+function genHuman(eng: Engine, more: Record<string, unknown>): void {
+  const cmd = { op: 'generate_human', packs: [['medieval']], ...more };
+  try {
+    eng.exec({ ...cmd, groups: medievalGroups().map((g) => g.id) } as unknown as Command);
+  } catch {
+    eng.exec({ ...cmd, groups: medievalGroups() } as unknown as Command);
+  }
+}
 
 let t = performance.now();
 const results: Record<string, number> = {};
@@ -222,7 +232,7 @@ function plainBench() {
     lap('import library', 'library');
     if (kept) {
       eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
-      eng.exec({ op: 'generate_human', packs: [['medieval']], groups: medievalGroups(), countries: {}, settlements: {} });
+      genHuman(eng, { countries: {}, settlements: {} });
       eng.update();
       lap('generate human', 'genHuman');
     }
@@ -544,7 +554,7 @@ function humanBench(eng: Engine) {
   eng.exec({ op: 'set_cell_resource', cells: land.slice(0, 120), resource: 'iron' });
   lap('paint resource (human)');
   for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']], groups: medievalGroups().map((g) => g.id) }, eng.world)) eng.exec(c);
-  eng.exec({ op: 'generate_human', packs: [['medieval']], groups: medievalGroups(), countries: {} });
+  genHuman(eng, { countries: {} });
   lap(`generate human + countries (${Object.keys(eng.world.small.countries ?? {}).length})`);
   const peopled = [...Array(eng.world.mesh.n).keys()].filter((i) => eng.world.causes.popTotal![i] > 0).slice(1000, 1120);
   eng.exec({ op: 'paint_culture', cells: peopled, culture: Object.keys(eng.world.small.content?.culture ?? {})[0], amount: 0.5 });
@@ -553,7 +563,7 @@ function humanBench(eng: Engine) {
   lap('paint count (human)');
   eng.undo();
   lap('undo paint (human)');
-  eng.exec({ op: 'regenerate_countries', fragmentation: 0.7 });
+  eng.exec({ op: 'regenerate_countries' });
   lap(`regenerate countries (${Object.keys(eng.world.small.countries ?? {}).length})`);
   const first = Number(Object.keys(eng.world.small.countries ?? {})[0]);
   eng.exec({ op: 'paint_country', cells: peopled, country: first });

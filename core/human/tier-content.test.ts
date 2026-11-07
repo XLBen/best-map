@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Command } from '../commands';
 import type { Engine } from '../engine';
-import { BUILTIN_COUNTRY_LAYOUTS, BUILTIN_COUNTRY_TIERS } from '../packs/countries';
+import { BUILTIN_COUNTRY_TIERS } from '../packs/countries';
 import { BUILTIN_ERAS } from '../packs/eras';
-import { continents, humanExec, snapshot, type HumanCommand } from '../testing/fixtures';
+import { OLD_LAYOUTS, continents, humanExec, snapshot, type HumanCommand } from '../testing/fixtures';
 import { blocList, countryList } from './index';
 import {
   type CountryTierDef,
@@ -13,14 +13,13 @@ import {
   confedMembers,
   fedMemberTier,
   genTiers,
-  layoutById,
   tierWeights,
   vassalOf,
-  worldLayouts,
   worldTiers,
 } from './tiers';
 
-// 第四十二轮：国家等级与格局是内容（human/tiers.ts）——内置的五档与以前写死的一样；几档都能生成；规则按等级的字段与先后
+// 第四十二轮：国家等级与格局是内容（human/tiers.ts）——内置的五档与以前写死的一样；几档都能生成；规则按等级的字段与先后。
+// 第七十七轮去掉了格局：以前的四种格局在测试里写进时代的 tiers（fixtures 的 OLD_LAYOUTS）
 
 // 第四十一轮写死在 countries.ts、blocs.ts 里的数（原样拷贝，不要改它）
 const R41 = {
@@ -92,29 +91,20 @@ describe('内置的国家等级与第四十一轮写死的一样', () => {
     for (const a of [0.2 * T, 0.7 * T, 0.2 * T - 1e-9, 0.7 * T - 1e-9]) expect(fedMemberTier(tiers, a, T).id).toBe(R41.fedMember(a, T));
   });
 
-  it('四种格局的比例；时代的比例', () => {
-    expect(BUILTIN_COUNTRY_LAYOUTS.map((l) => [l.id, l.name])).toEqual([
-      ['mixed', '混合'],
-      ['petty', '诸侯林立'],
-      ['unified', '大一统'],
-      ['powers', '列强并立'],
-    ]);
-    for (const l of BUILTIN_COUNTRY_LAYOUTS) expect(tierWeights(tiers, undefined, l)).toEqual(R41.ids.map((id) => R41.layouts[l.id][id]));
-    for (const era of BUILTIN_ERAS) expect(tierWeights(tiers, era, undefined)).toEqual(era.tiers ? R41.ids.map((id) => era.tiers![id] ?? 0) : R41.ids.map((id) => R41.defaults[id as keyof typeof R41.defaults]));
+  it('时代的比例；以前四种格局的比例写进时代时生效的比例不变', () => {
+    expect(OLD_LAYOUTS).toEqual(R41.layouts);
+    for (const [id, w] of Object.entries(OLD_LAYOUTS)) expect(tierWeights(tiers, { tiers: w }), id).toEqual(R41.ids.map((t) => R41.layouts[id][t]));
+    for (const era of BUILTIN_ERAS) expect(tierWeights(tiers, era)).toEqual(era.tiers ? R41.ids.map((id) => era.tiers![id] ?? 0) : R41.ids.map((id) => R41.defaults[id as keyof typeof R41.defaults]));
   });
 });
 
 describe('生效的比例', () => {
   const tiers = [tier('a', 1, { weight: 2 }), tier('b', 2), tier('c', 3, { weight: 0 })];
   it('世界里没有的等级不算，没写的等级为 0；全是 0 时往下一种退', () => {
-    const layout = { id: 'x', name: 'x', weights: { a: 1, zzz: 9 } };
-    expect(tierWeights(tiers, { tiers: { b: 3 } }, layout)).toEqual([1, 0, 0]);
-    expect(tierWeights(tiers, { tiers: { b: 3, zzz: 5 } }, undefined)).toEqual([0, 3, 0]);
-    // 格局写的等级都不在世界里：按时代
-    expect(tierWeights(tiers, { tiers: { b: 3 } }, { id: 'y', name: 'y', weights: { zzz: 1 } })).toEqual([0, 3, 0]);
-    // 时代写的也都不在：按各等级的 weight（省略为 1）
-    expect(tierWeights(tiers, { tiers: { zzz: 3 } }, undefined)).toEqual([2, 1, 0]);
-    expect(tierWeights(tiers, undefined, undefined)).toEqual([2, 1, 0]);
+    expect(tierWeights(tiers, { tiers: { b: 3, zzz: 5 } })).toEqual([0, 3, 0]);
+    // 时代写的都不在：按各等级的 weight（省略为 1）
+    expect(tierWeights(tiers, { tiers: { zzz: 3 } })).toEqual([2, 1, 0]);
+    expect(tierWeights(tiers, undefined)).toEqual([2, 1, 0]);
   });
 
   it('没写邦联、联邦成员的等级：中心取正中的一级，成员取最低的一级', () => {
@@ -134,29 +124,27 @@ describe('生效的比例', () => {
     expect(worldTiers(small).map((t) => t.id)).toEqual(['m', 'a', 'z']);
     expect(worldTiers({}).length).toBe(0);
     expect(genTiers({}).map((t) => [t.id, t.area])).toEqual([['', 1]]);
-    expect(layoutById({}, 'mixed')).toBeUndefined();
-    expect(layoutById({ content: { countryLayout: { era: { id: 'era', name: 'x', weights: {} } } } }, 'era')).toBeUndefined();
   });
 });
 
 describe('几档都能生成（加、删、改等级）', () => {
-  it('新世界默认带着内置的五档与四种格局', () => {
+  it('新世界默认带着内置的五档（第七十七轮起没有格局）', () => {
     const w = base().world;
     expect(worldTiers(w.small).map((t) => t.id)).toEqual(R41.ids);
-    expect(worldLayouts(w.small).map((l) => l.id)).toEqual(['mixed', 'petty', 'unified', 'powers']);
+    expect(w.small.content?.countryLayout).toBeUndefined();
   });
 
   it('三档：国家都是这三档里的，大的面积大；格局按这三档', () => {
     const eng = base();
     setTiers(eng, [tier('lo', 1, { area: 0.3, govSize: 0.3, vassal: 1, confedMember: 1 }), tier('mid', 2, { confedCentre: true }), tier('hi', 3, { area: 4, govSize: 2.5, federation: true })]);
-    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: { seed: 3 } } as HumanCommand);
+    humanExec(eng, { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: { seed: 3 } } as HumanCommand);
     const metas = countryList(eng.world.small);
     expect(metas.length).toBeGreaterThan(5);
     for (const m of metas) expect(['lo', 'mid', 'hi']).toContain(m.tier);
     expect(new Set(metas.map((m) => m.tier)).size).toBeGreaterThan(1);
     expect(eng.lastSkipped ?? []).not.toContain('没有国家等级：国家都按一般的大小');
-    // 格局“诸侯林立”写的五档里只有这三档以外的：都不在，按时代
-    humanExec(eng, { op: 'regenerate_countries', layout: 'petty' });
+    // 时代的比例写的是内置的五档（以前的格局“诸侯林立”也是）：世界里都不在，按各档的“多见”
+    humanExec(eng, { op: 'regenerate_countries' }, { tiers: OLD_LAYOUTS.petty });
     for (const m of countryList(eng.world.small)) expect(['lo', 'mid', 'hi']).toContain(m.tier);
   });
 
@@ -164,7 +152,7 @@ describe('几档都能生成（加、删、改等级）', () => {
     const eng = base();
     const seven = [...Array(7).keys()].map((k) => tier(`t${k}`, k, { area: 0.1 * 2 ** k, govSize: 0.1 * 1.7 ** k, federation: k >= 4, fedMember: k <= 3 ? [0, 0.15, 0.4, 0.9][k] : undefined }));
     setTiers(eng, seven);
-    humanExec(eng, { op: 'generate_human', era: 'modern', groups: GROUPS, countries: {} } as HumanCommand);
+    humanExec(eng, { op: 'generate_human', packs: [['modern']], groups: GROUPS, countries: {} } as HumanCommand);
     const ids = new Set(seven.map((t) => t.id));
     const metas = countryList(eng.world.small);
     expect(metas.length).toBeGreaterThan(5);
@@ -176,7 +164,7 @@ describe('几档都能生成（加、删、改等级）', () => {
   it('一档都没有：照样生成，国家都按一般的大小（档案里没有等级），写明', () => {
     const eng = base();
     setTiers(eng, []);
-    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} } as HumanCommand);
+    humanExec(eng, { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: {} } as HumanCommand);
     const metas = countryList(eng.world.small);
     expect(metas.length).toBeGreaterThan(5);
     for (const m of metas) expect(m.tier).toBeUndefined();

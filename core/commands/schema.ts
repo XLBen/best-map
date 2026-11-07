@@ -23,19 +23,16 @@ export const cells = z.array(z.number().int().min(0));
 // 人文（第二十二轮）
 export const popCount = z.number().min(0).max(1e13);
 export const seedSchema = z.number().int().min(0).max(0xffffffff);
-export const humanGroups = z
-  .array(z.object({ id: typeIdSchema, weight: z.number().min(0).max(1000), cultures: z.array(typeIdSchema).max(64).optional() }))
-  .max(32);
+// 第七十七轮：只写哪几个文化组；各组占多少是世界里组的比重（cultureGroup.weight，省略为 1），来自资源库
+export const humanGroups = z.array(typeIdSchema).max(32);
 // 生成人文用的资源包（第三十轮）：资源库里的路径，按勾选的先后；规则取第一个带时代的包
 export const humanPacks = z.array(originSchema).max(32);
 export const popTupleSchema = z.object({ culture: typeIdSchema, values: z.record(typeIdSchema, typeIdSchema) });
 // 国家（第二十三轮）
 export const countryId = z.number().int().min(1);
-export const fragmentation = z.number().min(0).max(1);
-// 第二十六轮：格局（国家大小怎么分布，'era' 按时代）
-// 格局（第四十二轮起是内容的 id，'era' 按时代）
-export const layoutSchema = typeIdSchema;
-export const countryRulesInput = z.object({ fragmentation: fragmentation.optional(), seed: seedSchema.optional(), layout: layoutSchema.optional() }).strict();
+// 第七十七轮：国家只剩种子可写。国家多大（时代的 countryKm2）、各等级占多少（时代的 tiers）都来自资源库的时代，
+// 以前的“分裂 ↔ 统一”（fragmentation）、格局（layout）去掉了
+export const countryRulesInput = z.object({ seed: seedSchema.optional() }).strict();
 // 换库（第五十二轮，见 core/packs/switch.ts）：生成之前从世界里移出 drop（旧库带来、新库不带的），两个库都有的项来源改写到新库（rehome）。
 // 只跟着生成走：用到它们的人口、国家马上就被新的换掉，所以不查“还在用”；生成之后还在的东西用到的，界面算计划时已经留下了
 export const librarySwitchInput = z
@@ -319,32 +316,30 @@ export const baseCommands = [
     note: z.string().max(2000).nullable().optional(),
   }),
   // ---------- 人文（第二十二轮，见 human/generate.ts、human/population.ts） ----------
-  // 生成：资源包（第三十轮：规则取第一个带时代的包；内容都要先加进世界）、文化组与权重（cultures 只用组里的这几个文化）、
-  // 总人口（省略时按时代的默认密度）、种子（省略时用世界的）。缺了时代、文化时不生成，结果里写明（skipped）
-  // countries（第二十三轮）：写了就同时生成国家（fragmentation 省略为 0.5，seed 省略为人文的种子）
+  // 生成：资源包（第三十轮：规则取第一个带时代的包；内容都要先加进世界）、文化组（第七十七轮：只写 id，各组占多少是世界里组的比重）、
+  // 种子（省略时用世界的）。总人口按时代的人口密度（第七十七轮去掉了 totalPop）。缺了时代、文化时不生成，结果里写明（skipped）
+  // countries（第二十三轮）：写了就同时生成国家（seed 省略为人文的种子）
   // settlements（第二十四轮）：写了就在最后一起放城市、道路、地标（seed 省略为人文的种子，roads、landmarks 省略为 true）
   z.object({
     op: z.literal('generate_human'),
     packs: humanPacks,
     groups: humanGroups,
-    totalPop: popCount.optional(),
     seed: seedSchema.optional(),
     countries: countryRulesInput.optional(),
     settlements: settlementsInput.optional(),
     switchLibrary: librarySwitchInput.optional(),
-  }),
+  }).strict(),
   // 按记着的参数重新生成（拖过的发源地留着）；写了的几项换掉。keepManual：手改过的格不动（省略为 true）。
   // 有国家时用现有的领土（只按它调人口）；写了 countries 时国家也重新长（锁定的留着）
   z.object({
     op: z.literal('regenerate_human'),
     packs: humanPacks.optional(),
     groups: humanGroups.optional(),
-    totalPop: popCount.optional(),
     seed: seedSchema.optional(),
     keepManual: z.boolean().optional(),
     countries: countryRulesInput.optional(),
     switchLibrary: librarySwitchInput.optional(),
-  }),
+  }).strict(),
   // 挪一个发源地（文化组的写 group，同一组有几个时 index 是第几个；文化的写 culture），挪过的锁定；cell 为 null 是不再锁定。之后重新生成
   z.object({
     op: z.literal('move_hearth'),
@@ -385,10 +380,9 @@ export const baseCommands = [
   }),
   // ---------- 国家（第二十三轮，见 human/countries.ts、human/country-edit.ts） ----------
   // 生成国家（已有时整个换掉）：人口按国家重新分（手改过的格不动）
-  // layout（第二十六轮）：格局，省略或 'era' 按时代
-  z.object({ op: z.literal('generate_countries'), fragmentation: fragmentation.optional(), seed: seedSchema.optional(), layout: layoutSchema.optional(), packs: humanPacks.optional(), groups: humanGroups.optional() }),
+  z.object({ op: z.literal('generate_countries'), seed: seedSchema.optional() }).strict(),
   // 重新生成国家：写了的几项换掉；keepLocked 省略为 true（锁定的国家不动）
-  z.object({ op: z.literal('regenerate_countries'), fragmentation: fragmentation.optional(), seed: seedSchema.optional(), layout: layoutSchema.optional(), keepLocked: z.boolean().optional(), packs: humanPacks.optional(), groups: humanGroups.optional() }),
+  z.object({ op: z.literal('regenerate_countries'), seed: seedSchema.optional(), keepLocked: z.boolean().optional() }).strict(),
   // 去掉国家（人口不动）
   z.object({ op: z.literal('remove_countries') }),
   // 领土笔刷：这些格（只画陆地）归 country，null 是无主

@@ -272,34 +272,25 @@ export {
   averageCountryKm2,
   countryList,
   cultureContext,
-  estimateCountryCount,
   plannedCountries,
-  sizeFactor,
   titleContext,
   yearText,
 } from './countries';
-// 第四十二轮：国家等级与格局是内容
+// 第四十二轮：国家等级是内容（第七十七轮去掉了格局）
 export {
   type CapitalLook,
-  type CountryLayoutDef,
   type CountryTierDef,
-  ERA_LAYOUT,
-  ERA_LAYOUT_HINT,
-  ERA_LAYOUT_NAME,
   FULL_CAPITAL,
   capitalLook,
-  countryLayoutSchema,
   countryTierSchema,
-  layoutById,
   tierById,
   tierOfCountry,
   tierShort,
   tierWeights,
-  worldLayouts,
   worldTiers,
 } from './tiers';
 // 第七十三轮：国家格局
-export { type CountryPattern, type PatternModule, type PatternParam, eraUsesModule, patternById, patternModule, patternModules, patternUses, roleText, worldPatterns } from './countries/patterns';
+export { type CountryPattern, type PatternModule, type PatternParam, patternById, patternModule, patternModules, patternUses, roleText, worldPatterns } from './countries/patterns';
 export { countryPatternSchema } from './countries/patterns/index';
 // 第二十六轮：帝国、联邦、同盟
 export {

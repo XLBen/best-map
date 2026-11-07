@@ -6,7 +6,7 @@ import type { CountryMeta, CountryRules, World } from '../../world';
 //   cleanup.ts 整理（隔海的、住满、湖、飞地）→ 格局的 after → records.ts 写进原因、档案（diplomacy.ts 外交，格局的 diplomacy）；
 //   领土补齐（claims.ts）之后格局的 relate（帝国、联邦、同盟）。共用的东西在 state.ts 的 CountryRun，格局在 patterns.ts
 
-// “统一 ↔ 分裂”在正中时一个国家平均占多少 km² 能住人的陆地（时代没写 countryKm2 时）
+// 一个国家平均占多少 km² 能住人的陆地（时代没写 countryKm2 时）
 export const COUNTRY_KM2 = 1.6e6;
 // 建国年份的范围（时代没写 years 时）
 export const DEFAULT_YEARS: [number, number] = [500, 1000];
@@ -23,9 +23,6 @@ export interface CountryPlan {
   rules: CountryRules;
   keepLocked: boolean;
 }
-
-// “统一 ↔ 分裂”：fragmentation 0（统一）时国家平均大 8 倍，1（分裂）时小 8 倍
-export const sizeFactor = (fragmentation: number): number => Math.pow(8, 1 - 2 * fragmentation);
 
 export function ensureCountryArray(world: World): Int32Array {
   return (world.causes.country ??= new Int32Array(world.mesh.n).fill(-1));

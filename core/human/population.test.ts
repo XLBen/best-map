@@ -36,7 +36,7 @@ const GROUPS = [
   { id: 'chinese', weight: 3 },
   { id: 'altaic', weight: 1.5 },
 ];
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS };
+const GEN: HumanCommand = { op: 'generate_human', packs: [['medieval']], groups: GROUPS };
 // 用到的三个组的内置文化（按中世纪包里组的先后：汉、日耳曼、阿尔泰）
 const SAMPLE_CULTURES = ['chinese', 'germanic', 'altaic'].flatMap((g) => BUILTIN_CULTURES.filter((c) => c.group === g).map((c) => c.id));
 // 文化的地名风格（第四十三轮：没写时用文化组的）
@@ -72,9 +72,10 @@ const peopledCells = (w: World) => [...Array(w.mesh.n).keys()].filter((i) => w.c
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 // 第四十三轮重录：内置的文化换成 EU4 的（三组换成日耳曼、汉、阿尔泰，组的偏好、倾向都是新的）
 // 第五十五轮重录：生态跟高度走（宜居度变了）
+// 第七十七轮：human 只记组的 id、countryRules 只有种子，只重录两项 human（人口、群体一个没变）；核对过两边的世界只差这几样（见 docs/dev/history/第77轮.md）
 const RECORDED = {
-  region: { popTotal: '44aaf71c756825c3', popGroup: 'f937fb6e65f47da2', popShare: 'f25f10906d3d318d', human: 'affb018eea39f0d2' },
-  planet: { popTotal: 'd97cb336d4422d86', popGroup: 'e46748e549810fbd', popShare: 'f41309eec0f6acab', human: '326f8b7290542edc' },
+  region: { popTotal: '44aaf71c756825c3', popGroup: 'f937fb6e65f47da2', popShare: 'f25f10906d3d318d', human: '64a5ac560407c07a' },
+  planet: { popTotal: 'd97cb336d4422d86', popGroup: 'e46748e549810fbd', popShare: 'f41309eec0f6acab', human: '7a744faaabfa427b' },
 };
 const genDigest = (w: World) => ({ popTotal: digest(w.causes.popTotal!), popGroup: digest(w.causes.popGroup!), popShare: digest(w.causes.popShare!), human: digest(w.small.human!) });
 
@@ -259,12 +260,12 @@ describe('生成人文', () => {
     expect(genDigest(w)).toEqual(RECORDED.planet);
   });
 
-  it('换种子换一个样子；总人口可以指定；撤销后与没生成过一样', () => {
+  // 第七十七轮：生成的命令里不再写总人口（按时代的人口密度；生成后改总人口是 set_pop_total）
+  it('换种子换一个样子；撤销后与没生成过一样', () => {
     const eng = continents();
     const before = digestWorld(eng.world);
     const human0 = Object.fromEntries(HUMAN_DERIVED.map((k) => [k, digest(eng.world.derived[k])]));
-    humanExec(eng, { ...GEN, seed: 77, totalPop: 1e6 } as Command);
-    expect(totalPop(eng.world)).toBeCloseTo(1e6, -1);
+    humanExec(eng, { ...GEN, seed: 77 } as Command);
     expect(genDigest(eng.world)).not.toEqual(genDigest(peopled().world));
     eng.undo();
     // 第三十轮：生成之前加进来的时代包内容是单独的一步，再撤一步
@@ -281,7 +282,7 @@ describe('生成人文', () => {
 
   it('不认识的时代、文化组：不生成，写明缺什么（第三十轮：不报错）；去掉人文', () => {
     const eng = continents();
-    humanExec(eng, { ...GEN, era: 'stone' } as Command);
+    humanExec(eng, { ...GEN, packs: [['stone']] } as Command);
     expect(eng.world.small.human).toBeUndefined();
     expect(eng.lastSkipped[0]).toMatch(/^没有时代/);
     humanExec(eng, { ...GEN, groups: [{ id: 'martian', weight: 1 }] } as Command);

@@ -23,7 +23,8 @@ import { librarySwitchPlan, worldLibrary } from './switch';
 
 const LIB = builtinPacks();
 const ROOTS: PackRoot[] = LIB.map((p) => ({ key: p.id, pack: p }));
-const defaultsOf = (id: string) => ERA_PACKS.get(id)!.cultures.map(([g, w]) => ({ id: g, weight: w }));
+// 库默认带的文化组（第七十七轮：命令只写 id，各组占多少是组的比重，库里的组带着它）
+const defaultsOf = (id: string) => ERA_PACKS.get(id)!.cultures.map(([g]) => g);
 const allButProvinces = (d: Record<string, string>) => {
   const { provinces: _, ...rest } = d;
   return rest;
@@ -42,16 +43,16 @@ function terrain(from: string): Engine {
 }
 function generate(eng: Engine, id: string): Engine {
   const groups = defaultsOf(id);
-  for (const c of packImportCommands(LIB, { packs: [[id]], groups: groups.map((g) => g.id) }, eng.world)) eng.exec(c);
+  for (const c of packImportCommands(LIB, { packs: [[id]], groups }, eng.world)) eng.exec(c);
   eng.exec({ op: 'generate_human', packs: [[id]], groups, countries: {}, settlements: {} });
   return eng;
 }
 const fresh = (id: string): Engine => generate(terrain(id), id);
 
 // 换库的命令（界面发的那一条，见 src/ui/human.ts）
-function switchCommand(eng: Engine, to: string, extraGroups: readonly { id: string; weight: number }[] = []): { cmd: Command; plan: ReturnType<typeof librarySwitchPlan> } {
+function switchCommand(eng: Engine, to: string, extraGroups: readonly string[] = []): { cmd: Command; plan: ReturnType<typeof librarySwitchPlan> } {
   const groups = [...defaultsOf(to), ...extraGroups];
-  const plan = librarySwitchPlan(ROOTS, eng.world.small, worldLibrary(eng.world.small), to, groups.map((g) => g.id));
+  const plan = librarySwitchPlan(ROOTS, eng.world.small, worldLibrary(eng.world.small), to, groups);
   return { plan, cmd: { op: 'batch', label: '换库', commands: [...plan.imports, { op: 'regenerate_human', packs: [[to]], groups, keepManual: false, countries: {}, switchLibrary: { drop: plan.drop, rehome: plan.rehome } }] } };
 }
 function switched(from: string, to: string): Engine {
@@ -193,14 +194,14 @@ describe('别的来源的内容留着', () => {
 
   it('中世纪 → 奇幻：第三个库来的政体、自己做的政体和文化组都留着，来源不动，参与生成', () => {
     const { eng, gov, own, ownGroup } = withImports();
-    const { cmd, plan } = switchCommand(eng, 'fantasy', [{ id: ownGroup, weight: 2 }]);
+    const { cmd, plan } = switchCommand(eng, 'fantasy', [ownGroup]);
     expect(plan.drop.some((r) => r.id === gov || r.id === own || r.id === ownGroup || r.id === 'my-people')).toBe(false);
     eng.exec(cmd);
     const small = eng.world.small;
     expect(small.origin!.government[gov][0]).toBe('modern');
     expect(small.content!.government![own]).toBeDefined();
     expect(small.origin?.government?.[own]).toBeUndefined();
-    expect(small.human!.groups.some((g) => g.id === ownGroup)).toBe(true);
+    expect(small.human!.groups.includes(ownGroup)).toBe(true);
     // 手动加的政体在国家里出现了
     const used = new Set(Object.values(small.countries!).map((c) => c.government));
     expect(used.has(gov)).toBe(true);
@@ -222,7 +223,7 @@ describe('别的来源的内容留着', () => {
   it('自己的文化写着旧库的地名风格：风格留下，别的没人用的风格移出', () => {
     const { eng, ownGroup } = withImports();
     const style = worldCultureGroups(eng.world.small).find((g) => g.id === ownGroup)!.nameStyle!;
-    const { plan } = switchCommand(eng, 'fantasy', [{ id: ownGroup, weight: 1 }]);
+    const { plan } = switchCommand(eng, 'fantasy', [ownGroup]);
     expect(plan.drop.some((r) => r.kind === 'nameStyle' && r.id === style)).toBe(false);
     expect(plan.kept.some((r) => r.kind === 'nameStyle' && r.id === style)).toBe(true);
     expect(plan.drop.some((r) => r.kind === 'nameStyle')).toBe(true);
@@ -323,7 +324,7 @@ describe('我的库', () => {
     const eng = fresh('medieval');
     eng.exec({ op: 'set_content', kind: 'government', id: b.id, item: { ...(eng.world.small.content!.government![b.id] as object), name: '世界里改过' } as Record<string, unknown> });
     const groups = defaultsOf('medieval');
-    const plan = librarySwitchPlan(roots, eng.world.small, 'medieval', 'mine', groups.map((g) => g.id));
+    const plan = librarySwitchPlan(roots, eng.world.small, 'medieval', 'mine', groups);
     eng.exec({ op: 'batch', commands: [...plan.imports, { op: 'regenerate_human', packs: [['mine']], groups, keepManual: false, countries: {}, switchLibrary: { drop: plan.drop, rehome: plan.rehome } }] });
     const govs = eng.world.small.content!.government as Record<string, { name: string }>;
     expect(govs[a.id].name).toBe(`新${a.name}`);
@@ -343,7 +344,7 @@ describe('世界现在用的库', () => {
   it('没有人文时换库（第一次生成）：generate_human 带着名单，和新建相同', () => {
     const eng = terrain('medieval');
     const groups = defaultsOf('fantasy');
-    const plan = librarySwitchPlan(ROOTS, eng.world.small, worldLibrary(eng.world.small), 'fantasy', groups.map((g) => g.id));
+    const plan = librarySwitchPlan(ROOTS, eng.world.small, worldLibrary(eng.world.small), 'fantasy', groups);
     eng.exec({ op: 'batch', commands: [...plan.imports, { op: 'generate_human', packs: [['fantasy']], groups, countries: {}, settlements: {}, switchLibrary: { drop: plan.drop, rehome: plan.rehome } }] });
     expect(humanDigest(eng.world)).toEqual(humanDigest(fresh('fantasy').world));
     expect(genContent(eng)).toEqual(genContent(fresh('fantasy')));

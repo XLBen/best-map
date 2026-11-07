@@ -37,7 +37,6 @@ describe('字段表：没有原样的 JSON 了，引用都写了是什么', () =
     expect([f('popValue', 'dimension').ref, f('popValue', 'group').ref, f('valueGroup', 'dimension').ref]).toEqual(['dimension', 'valueGroup', 'dimension']);
     const rule = f('government', 'names').of!;
     expect(rule.map((x) => x.ref ?? x.keyRef)).toEqual(['cultureGroup', 'culture', 'valueGroup', 'popValue', 'countryTier', 'countryTier']);
-    expect(f('countryLayout', 'weights').keyRef).toBe('countryTier');
     expect(f('era', 'tiers').keyRef).toBe('countryTier');
     expect(kindOf('government')!.fields.filter(isTitleField).map((x) => x.key)).toEqual(['titles', 'rulers']);
     expect([f('era', 'years').type, f('cultureGroup', 'tendencies').type, f('culture', 'eraTendencies').byEra]).toEqual(['tuple', 'tendencies', true]);

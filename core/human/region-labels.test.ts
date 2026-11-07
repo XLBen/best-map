@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { continents, engineFor, snapshot, type HumanCommand, humanExec } from '../testing/fixtures';
+import { continents, engineFor, snapshot, type HumanCommand, humanExec, fragKm2 } from '../testing/fixtures';
 import type { World } from '../world';
 import { countryList } from './countries';
 import { type CountryLabel, countryLabels, labelGeometry, regionLabels } from './country-layers';
@@ -48,18 +48,20 @@ function oldCountryLabels(world: World): CountryLabel[] {
 
 const GEN: HumanCommand = {
   op: 'generate_human',
-  era: 'medieval',
+  packs: [['medieval']],
   groups: [
     { id: 'germanic', weight: 3 },
     { id: 'chinese', weight: 3 },
     { id: 'altaic', weight: 1.5 },
   ],
-  countries: { fragmentation: 1 },
+  countries: {},
 };
+// 以前的“很分裂”（fragmentation 1）：第七十七轮起是时代的国家大小（平均的国家面积逐值相同）
+const MANY = { countryKm2: fragKm2('medieval', 1) };
 const nations = () =>
   snapshot('region:nations', () => {
     const eng = continents();
-    humanExec(eng, GEN);
+    humanExec(eng, GEN, MANY);
     return eng;
   });
 
@@ -71,7 +73,7 @@ describe('片区名的位置', () => {
     expect(JSON.stringify(now)).toBe(JSON.stringify(oldCountryLabels(w)));
     const eng = engineFor({ seed: 3, cells: 6000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
-    humanExec(eng, GEN);
+    humanExec(eng, GEN, MANY);
     expect(JSON.stringify(countryLabels(eng.world))).toBe(JSON.stringify(oldCountryLabels(eng.world)));
   });
 

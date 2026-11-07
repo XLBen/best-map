@@ -12,6 +12,10 @@ import { type ImportPicks, newWorldContentCommands, packImportCommands } from '.
 import { BUILTIN_STYLES } from '../packs/names';
 import type { NameStyle } from '../name-styles';
 import { type Settings, type World, buildMeshFor, meshKey, settingsSchema } from '../world';
+import { BUILTIN_ERAS } from '../packs/eras';
+import { COUNTRY_KM2 } from '../human/countries';
+import type { Era } from '../human/era';
+import { ruleEra } from '../human/generate';
 
 // 测试共用的世界：网格按设置缓存；建好的世界按名字留一份模板，每次给出它的副本（Engine.clone），
 // 不必每个测试都从头生成一遍。副本与重新生成的世界逐值相同（推导只取决于原因）。
@@ -150,30 +154,84 @@ export const dryContinents = (opts: Parameters<typeof continents>[0] = {}): Engi
 // ---------- 人文（第三十轮：生成之前先把时代包的内容加进世界） ----------
 
 // 把这些包里生成要用的内容加进世界（packImportCommands，内置的树）
-export function importPacks(eng: Engine, picks: ImportPicks): void {
-  for (const c of packImportCommands(builtinPacks(), picks, eng.world)) eng.exec(c);
+// weights（第七十七轮）：加进来的文化组写上这个比重（改加进世界的那一项，不多一步：撤销的步数和以前一样）
+export function importPacks(eng: Engine, picks: ImportPicks, weights?: ReadonlyMap<string, number>): void {
+  const patch = (c: Command): Command => {
+    if (c.op === 'batch') return { ...c, commands: c.commands.map(patch) };
+    if (c.op !== 'set_content' || c.kind !== 'cultureGroup' || !c.item || !weights?.has(c.id)) return c;
+    const w = weights.get(c.id)!;
+    const { weight: _, ...rest } = c.item as { weight?: number };
+    return { ...c, item: w === 1 ? rest : { ...rest, weight: w } };
+  };
+  for (const c of packImportCommands(builtinPacks(), picks, eng.world)) eng.exec(patch(c));
 }
 
-// 以前的 generate_human {era, groups, …}：先加进时代包（和选的文化组，勾选的包里没有的在别的包里找），再生成。
-// 返回生成的命令（packs 换成了时代包），测试可以拿去比较、重放
-export function humanCommand(era: string, groups: readonly { id: string; weight: number; cultures?: string[] }[], more: Record<string, unknown> = {}): Command {
-  return { op: 'generate_human', packs: [[era]], groups: groups.map((g) => ({ ...g })), ...more } as Command;
+// 测试里写的文化组：id，或 id 与比重。第七十七轮起生成的命令只写 id，各组占多少是世界里组的比重（cultureGroup.weight，省略为 1）：
+// 写了比重的，生成之前把它写进世界里的组（加进来的组改加进来的那一项；世界里已有、比重不同的另用一整步 set_content，和在资源库里改比重一样）。
+// 以前命令写的权重照这样换过来，结果逐值相同
+export type TestGroup = string | { id: string; weight?: number };
+export const groupId = (g: TestGroup): string => (typeof g === 'string' ? g : g.id);
+const weightsOf = (groups: readonly TestGroup[]): Map<string, number> => new Map(groups.flatMap((g) => (typeof g === 'string' || g.weight === undefined ? [] : [[g.id, g.weight] as const])));
+export function groupWeightCommand(world: World, groups: readonly TestGroup[]): Command | null {
+  const out: Command[] = [];
+  for (const g of groups) {
+    if (typeof g === 'string' || g.weight === undefined) continue;
+    if (g.weight === 0) throw new Error(`比重 0 的组不参与生成（${g.id}）：测试里不要这样写`);
+    const item = world.small.content?.cultureGroup?.[g.id] as { weight?: number } | undefined;
+    if (!item || (item.weight ?? 1) === g.weight) continue;
+    const { weight: _, ...rest } = item;
+    out.push({ op: 'set_content', kind: 'cultureGroup', id: g.id, item: (g.weight === 1 ? rest : { ...rest, weight: g.weight }) as Record<string, unknown> });
+  }
+  return out.length ? { op: 'batch', label: '文化组的比重', commands: out } : null;
 }
-export function generateHuman(eng: Engine, era: string, groups: readonly { id: string; weight: number; cultures?: string[] }[], more: Record<string, unknown> = {}): string {
-  importPacks(eng, { packs: [[era]], groups: groups.map((g) => g.id) });
-  return eng.exec(humanCommand(era, groups, more));
+export function setGroupWeights(eng: Engine, groups: readonly TestGroup[]): void {
+  const c = groupWeightCommand(eng.world, groups);
+  if (c) eng.exec(c);
 }
 
-// 执行生成人文、国家的命令（以前的写法也认：era 换成 packs: [[era]]）：先把用的包（以前写的时代、命令里的 packs，省略时是世界记着的）
-// 与选的文化组加进世界（packImportCommands），再执行。返回命令的说明
-export type HumanCommand = { op: 'generate_human' | 'regenerate_human' | 'generate_countries' | 'regenerate_countries'; era?: string; packs?: string[][]; groups?: { id: string; weight: number; cultures?: string[] }[]; [k: string]: unknown };
-export function humanExec(eng: Engine, cmd: HumanCommand | Command): string {
-  const { era, ...rest } = cmd as HumanCommand;
+// 先加进时代包（和选的文化组，勾选的包里没有的在别的包里找）、写上比重，再生成
+export function generateHuman(eng: Engine, era: string, groups: readonly TestGroup[], more: Record<string, unknown> = {}): string {
+  importPacks(eng, { packs: [[era]], groups: groups.map(groupId) }, weightsOf(groups));
+  setGroupWeights(eng, groups);
+  return eng.exec({ op: 'generate_human', packs: [[era]], groups: groups.map(groupId), ...more } as Command);
+}
+
+// ---------- 第七十七轮去掉的生成参数，在测试里换成资源库里的规则（结果逐值相同） ----------
+
+// 以前的“分裂 ↔ 统一”fragmentation f：时代的国家大小换成 countryKm2 × 8^(1−2f)。以前生成时就是这样乘的（同样两个数相乘），
+// 平均的国家面积逐值相同；f = 0.5 时就是时代的 countryKm2。eraId 是内置的时代（按它没改过的 countryKm2 算）
+export const fragKm2 = (eraId: string, f: number): number => (BUILTIN_ERAS.find((e) => e.id === eraId)!.countryKm2 ?? COUNTRY_KM2) * Math.pow(8, 1 - 2 * f);
+// 以前内置的四种格局（core/packs/countries/tiers.json 的 layouts）：以前选了格局时各等级按它的比例，现在写进时代的 tiers，生效的比例逐值相同
+export const OLD_LAYOUTS: Readonly<Record<string, Readonly<Record<string, number>>>> = {
+  mixed: { city: 2, small: 3, medium: 2, large: 1.5, empire: 0.6 },
+  petty: { city: 3, small: 4, medium: 1.5, large: 0.2, empire: 0 },
+  unified: { city: 0.3, small: 0.7, medium: 1, large: 2, empire: 1.5 },
+  powers: { city: 0.5, small: 2, medium: 0.4, large: 2.5, empire: 0.6 },
+};
+// 改世界里规则用的时代（packs 省略时按世界记着的包；世界里要已经有它）：patch 盖在现在的上面，一整步
+export function eraCommand(world: World, patch: Partial<Era>, packs?: readonly (readonly string[])[]): Command {
+  const era = ruleEra(world.small, packs ?? world.small.genStamp?.packs ?? []);
+  if (!era) throw new Error('世界里没有时代');
+  return { op: 'set_content', kind: 'era', id: era.id, item: { ...structuredClone(era), ...patch } as unknown as Record<string, unknown> };
+}
+export function setEra(eng: Engine, patch: Partial<Era>, packs?: readonly (readonly string[])[]): void {
+  eng.exec(eraCommand(eng.world, patch, packs));
+}
+
+// 执行生成人文、国家的命令：先把用的包（命令里的 packs，省略时是世界记着的）与选的文化组加进世界（packImportCommands），
+// 写上比重（groupWeightCommand），再执行。返回命令的说明。第七十七轮去掉了以前的写法 era（写 packs: [[era]]）
+export type HumanCommand = { op: 'generate_human' | 'regenerate_human' | 'generate_countries' | 'regenerate_countries'; packs?: string[][]; groups?: readonly TestGroup[]; [k: string]: unknown };
+// era：生成之前改规则用的时代（以前命令里的 fragmentation、layout 换成时代的 countryKm2、tiers，见 fragKm2、OLD_LAYOUTS）
+export function humanExec(eng: Engine, cmd: HumanCommand | Command, era?: Partial<Era>): string {
+  const c = cmd as HumanCommand;
+  if ('era' in c) throw new Error('第七十七轮去掉了 era 的写法：写 packs: [[era]]');
   const h = eng.world.small.human;
-  const packs = rest.packs ?? (era ? [[era]] : h && eng.world.small.genStamp?.packs) ?? [];
-  const groups = (rest.groups ?? h?.groups ?? []).map((g) => g.id);
-  importPacks(eng, { packs, groups });
-  const out = { ...rest, ...(era || rest.packs || cmd.op === 'generate_human' ? { packs } : {}) };
+  const packs = c.packs ?? (h && eng.world.small.genStamp?.packs) ?? [];
+  const groups = c.groups ?? h?.groups ?? [];
+  importPacks(eng, { packs, groups: groups.map(groupId) }, weightsOf(groups));
+  setGroupWeights(eng, groups);
+  if (era) setEra(eng, era, packs);
+  const out = { ...c, ...(c.groups ? { groups: c.groups.map(groupId) } : {}), ...(c.packs || c.op === 'generate_human' ? { packs } : {}) };
   return eng.exec(out as unknown as Command);
 }
 

@@ -34,7 +34,7 @@ import { Slider } from './components/Slider';
 import { TERRAIN_SLIDERS, type TerrainKey, type TerrainSlider, type WizardTerrain, terrainCommands, terrainDefaults, withTerrain } from './domain/wizardTerrain';
 import { Toggle } from './components/Toggle';
 import { HumanChoices } from './panels/culture';
-import { type HumanChoice, chooseLibrary, choiceEra, defaultChoice, estimateLandKm2, generateCommand, groupByPack } from './domain/human';
+import { type HumanChoice, chooseLibrary, defaultChoice, generateCommand, groupByPack } from './domain/human';
 import { LibraryPick } from './components/LibraryPick';
 import { choicePacks, libraryOptions, packLabel, worldContentCommands } from './domain/packChoice';
 
@@ -276,16 +276,12 @@ export function Wizard() {
     }
     return ok;
   };
-  // 总人口的默认：时代的默认密度 × 估的陆地面积
-  const era = choiceEra(human, lib);
-  const landKm2 = estimateLandKm2({ globe: kind === 'planet', radiusKm: PLANET_SIZES[psize].radiusKm, mapKm: MAP_SIZES[size].km, landFraction: terrain.landFraction ?? terrainBase.landFraction });
-  const popDefault = Math.round((era?.popDensity ?? 1) * landKm2);
   const humanBox = (
     <div class="wizard-human">
       <Toggle on={human.on} onChange={(on) => setHuman({ ...human, on })} disabled={creating}>
         生成人文
       </Toggle>
-      {human.on ? <HumanChoices choice={human} onChange={setHuman} small={null} defaultPop={popDefault} disabled={creating} countries picker={false} /> : <p class="hint">建好后可在“文化”里生成</p>}
+      {human.on ? <HumanChoices choice={human} onChange={setHuman} small={null} disabled={creating} countries picker={false} /> : <p class="hint">建好后可在“文化”里生成</p>}
     </div>
   );
   const contentBox = (

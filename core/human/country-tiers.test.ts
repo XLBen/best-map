@@ -5,12 +5,12 @@ import { Engine } from '../engine';
 import { ISLET_FRAG } from '../features';
 import { BUILTIN_ERAS } from '../packs/eras';
 import { brushCells } from '../select';
-import { continents, snapshot, humanExec, type HumanCommand } from '../testing/fixtures';
+import { OLD_LAYOUTS, continents, snapshot, humanExec, type HumanCommand } from '../testing/fixtures';
 import type { World } from '../world';
 import { SMALL_GAP, claimsStage } from './claims';
 import type { GenContext } from './context';
 import { worldEra } from './era';
-import { ISLET_STEPS, allCountryStats, blocBorderGroups, blocList, blocMapColors, blocOf, cityList, countryCells, countryColors, countryList, countryMapColors, estimateCountryCount, federationColorOf, nextBlocId } from './index';
+import { ISLET_STEPS, allCountryStats, blocBorderGroups, blocList, blocMapColors, blocOf, cityList, countryCells, countryColors, countryList, countryMapColors, federationColorOf, nextBlocId } from './index';
 import { cellInputs } from './rules';
 import { BUILTIN_RANKS } from '../packs/settlements';
 
@@ -21,7 +21,7 @@ const GROUPS = [
   { id: 'chinese', weight: 3 },
   { id: 'altaic', weight: 1.5 },
 ];
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} };
+const GEN: HumanCommand = { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: {} };
 
 const nations = (): Engine =>
   snapshot('nations', () => {
@@ -41,7 +41,7 @@ const empires = (): Engine =>
 const moderns = (): Engine =>
   snapshot('r26-modern', () => {
     const eng = continents({ provinces: true });
-    humanExec(eng, { op: 'generate_human', era: 'modern', groups: GROUPS, countries: {}, settlements: { roads: false, landmarks: false } });
+    humanExec(eng, { op: 'generate_human', packs: [['modern']], groups: GROUPS, countries: {}, settlements: { roads: false, landmarks: false } });
     return eng;
   });
 
@@ -176,22 +176,20 @@ describe('国家的等级与格局', () => {
     expect(cv(w).cv).toBeGreaterThan(0.7);
   });
 
-  it('“混合”格局里有很大的国家也有很小的国家；格局记在 countryRules 里', () => {
+  // 第七十七轮：每个世界选的格局去掉了，以前“混合”的比例写进时代的 tiers（OLD_LAYOUTS，生效的比例逐值相同）；countryRules 只有种子
+  it('“混合”的比例里有很大的国家也有很小的国家', () => {
     const eng = empires();
-    humanExec(eng, { op: 'regenerate_countries', layout: 'mixed' });
+    humanExec(eng, { op: 'regenerate_countries' }, { tiers: OLD_LAYOUTS.mixed });
     const w = eng.world;
-    expect(w.small.human!.countryRules!.layout).toBe('mixed');
+    expect(Object.keys(w.small.human!.countryRules!)).toEqual(['seed']);
     const r = cv(w);
     expect(r.max).toBeGreaterThan(2.5);
     expect(r.min).toBeLessThan(0.25);
-    // 'era' 不记
-    humanExec(eng, { op: 'regenerate_countries', layout: 'era' });
-    expect(w.small.human!.countryRules!.layout).toBeUndefined();
   });
 
   it('中世纪“混合”：最大的国不到陆地的四分之一，留着一些无主地；不占隔海、没什么人的陆块；帝国是认得出的一片', () => {
     const eng = empires();
-    humanExec(eng, { op: 'regenerate_countries', layout: 'mixed' });
+    humanExec(eng, { op: 'regenerate_countries' }, { tiers: OLD_LAYOUTS.mixed });
     const w = eng.world;
     const { mesh, causes } = w;
     const pop = causes.popTotal!;
@@ -237,14 +235,6 @@ describe('国家的等级与格局', () => {
     expect(area).toBeGreaterThan(areas.reduce((a, v) => a + v, 0) / areas.length);
   });
 
-  it('界面估计的个数就是生成的个数（中世纪没有联邦）', () => {
-    const w = nations().world;
-    const era = worldEra(w.small)!;
-    expect(estimateCountryCount(w, w.derived, era, 0.5)).toBe(countryList(w.small).length);
-    const eng = nations();
-    humanExec(eng, { op: 'regenerate_countries', fragmentation: 0.8 });
-    expect(estimateCountryCount(eng.world, eng.world.derived, era, 0.8)).toBe(countryList(eng.world.small).length);
-  });
 });
 
 describe('帝国、联邦、同盟', () => {

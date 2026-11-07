@@ -7,7 +7,7 @@ import { builtinPacks, worldPartsOf } from '../../../core/packs/builtin-tree';
 import { relationOf } from '../../../core/content/arrange';
 import { type ImportAsk, importGates, importLabel } from '../../../core/packs/closure';
 import { newWorldContentCommands, packImportCommands } from '../../../core/packs/import';
-import { NO_CURRENTS, engineFor } from '../../../core/testing/fixtures';
+import { NO_CURRENTS, engineFor, setGroupWeights } from '../../../core/testing/fixtures';
 import { type LibraryEntry, library } from '../../library';
 import { libEdits } from '../../library-edit';
 import { addPicked, addRegenButton, contentAfter, worldAddCommand } from './pick-add';
@@ -37,7 +37,9 @@ function worldOf(lib = 'fantasy', more: Record<string, unknown> = { countries: {
   const groups = all.filter((g) => g.weight !== 0).slice(0, 3).map((g) => ({ id: g.id, weight: 1 }));
   // 和新建向导一样只加选的组（第六十七轮：库里默认不带、世界里比重不是 0 的组参与重新生成）
   for (const c of packImportCommands(ROOTS, { packs: [[lib]], groups: groups.map((g) => g.id) }, e.world)) e.exec(c);
-  e.exec({ op: 'generate_human', packs: [[lib]], groups, ...more } as Command);
+  // 第七十七轮：以前命令写的权重写进世界里的组（命令只写 id），结果不变
+  setGroupWeights(e, groups);
+  e.exec({ op: 'generate_human', packs: [[lib]], groups: groups.map((g) => g.id), ...more } as Command);
   e.update();
   return e;
 }
@@ -163,7 +165,8 @@ describe('世界用的库里默认不带的组', () => {
     for (const c of newWorldContentCommands(ROOTS, worldPartsOf('medieval'))) e.exec(c);
     const groups = packItems<{ id: string; weight?: number }>(pack('medieval'), 'cultureGroups').filter((g) => g.weight !== 0).map((g) => g.id);
     for (const c of packImportCommands(ROOTS, { packs: [['medieval']], groups }, e.world)) e.exec(c);
-    e.exec({ op: 'generate_human', packs: [['medieval']], groups: groups.slice(0, 3).map((id) => ({ id, weight: 1 })), countries: {} } as Command);
+    setGroupWeights(e, groups.slice(0, 3).map((id) => ({ id, weight: 1 })));
+    e.exec({ op: 'generate_human', packs: [['medieval']], groups: groups.slice(0, 3), countries: {} });
     e.update();
     return e;
   }
@@ -188,7 +191,7 @@ describe('世界用的库里默认不带的组', () => {
     e.exec(r.command!);
     e.update();
     expect(shareOf(e, culture.id)).toBeGreaterThan(0);
-    expect(e.world.small.human!.groups.map((g) => g.id)).toContain(culture.group);
+    expect(e.world.small.human!.groups).toContain(culture.group);
     e.undo();
     e.update();
     expect(worldDigest(e.world)).toBe(base);

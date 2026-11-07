@@ -351,7 +351,7 @@ function peopled(era: Era): Engine {
   let e = generated.get(era.id);
   if (!e) {
     e = continents();
-    humanExec(e, { op: 'generate_human', era: era.id, groups: defaults(era) });
+    humanExec(e, { op: 'generate_human', packs: [[era.id]], groups: defaults(era) });
     generated.set(era.id, e);
   }
   return e;
@@ -494,7 +494,7 @@ describe('每个时代按默认生成人文', () => {
     for (const era of BUILTIN_ERAS) {
       const a = peopled(era).world;
       const b = continents();
-      humanExec(b, { op: 'generate_human', era: era.id, groups: defaults(era) });
+      humanExec(b, { op: 'generate_human', packs: [[era.id]], groups: defaults(era) });
       expect(digest(b.world.causes.popGroup!), era.id).toBe(digest(a.causes.popGroup!));
       expect(digest(b.world.causes.popTotal!), era.id).toBe(digest(a.causes.popTotal!));
       expect(b.world.small.popGroups, era.id).toEqual(a.small.popGroups);
@@ -503,7 +503,7 @@ describe('每个时代按默认生成人文', () => {
     globe.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
     for (const era of BUILTIN_ERAS) {
       const g = globe.clone();
-      humanExec(g, { op: 'generate_human', era: era.id, groups: defaults(era) });
+      humanExec(g, { op: 'generate_human', packs: [[era.id]], groups: defaults(era) });
       const w = g.world;
       let total = 0;
       for (let i = 0; i < w.mesh.n; i++) total += w.causes.popTotal![i];
