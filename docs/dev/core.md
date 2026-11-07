@@ -45,7 +45,7 @@
 
 同一个东西有几个名字（第七十一轮记下，存的字段、命令名不改）：**生态**（界面、文档）= `species`（世界里的 `small.species`、命令 `add_species` / `update_species`、检查器的页）= `biome`（内容种类的 id、资源包的段 `biomes`、涂生态的工具）= `vegetation`（算哪里长什么的那一步，`vegetation.ts`；结果是每格的主导生态 `derived.dominant`，底图“生态分区”的 id 是 `dominant`）。资源库面板里“生态与水系”这一层叫 `ecology`（路由 `{ p: 'ecology' }`、`PageEcology.tsx`）。一种生态算哪一大类（荒漠、森林、苔原、冰盖、沼泽湿地）只看 `species.ts` 的 `biomeGroupOf`：写了 `group` 用它，没写的按导出用的地形（`terrain`；奇幻的三种森林靠这一条）。
 
-- `species.ts` 生态类型（色块 + 条件 + 耐受曲线）、`PATTERNS`、大类 `BIOME_GROUPS` 与 `biomeGroupOf`；高度范围（第五十五轮：`height`、`heightTolerance`、`speciesTolerances`，算适宜度时用后者）
+- `species.ts` 生态类型（色块 + 条件 + 耐受曲线）、`PATTERNS`、大类 `BIOME_GROUPS` 与 `biomeGroupOf`；高度范围（第五十五轮：`height`、`heightTolerance`、`speciesTolerances`，算适宜度时用后者；第七十二轮：读进来的海拔条件换成高度范围逐值相同时换 `elevationAsHeight`，资源包的 `biomes` 读的时候用它；高山的下限 `ALPINE_LOW`）
 - `vegetation.ts` 适宜度 / 竞争 / 扩散 / 长在哪里 / 不计水体类型的一遍（baseBiomes）/ 没有生态的陆地格的兜底（`fillBare`，写了高度范围的世界才走）
 - `constraints.ts` 涂生态的反推与“没涂成”的原因
 - `biome-look.ts` 生态在地图上的样子（颜色脚本、花纹与发光的算式，着色器里同一份）；`biome-scripts.ts` 生态的脚本在世界上运行
@@ -72,7 +72,7 @@
 - `content/links.ts` 内容之间的引用表（第四十九轮）：由字段表推出，一项引用了什么、谁引用它、依赖的闭包（`hard` / `auto` / `strip` / `gate`，`gate` 是“限谁用”，全部落空就不能导入）、改名时跟着改（`renameLinks`）、去掉引用（`stripLinks`）；`content/link-rules.ts` 每种内容一条补充；`content/pack-tree.ts` 走包的树（`packs.ts` 照旧导出）
 - `content/arrange.ts` 融入（第六十轮）：库的 `arrange`（下级 → 上级，只改显示）、讲得通的组合 `RELATIONS`（怎么读出下面有哪些、加和移出改哪一项）、预设 `PRESET_ARRANGE`、`childrenOf`、`parentsOf`、`looseItems`
 - `content/refs.ts` 引用的底层：脚本字面量的位置、两项是不是一模一样（`sameItem`、`sameContent`）；`content/usage.ts` 内容用在哪里；`content/unused.ts`（第五十轮起也看文化、文化组、地名风格、时代）哪里都没用到的；`content/cleanable.ts`（第六十二轮）生成后没用到的：面板上变淡的、“清理没用到的”清的都是它，生态、河、湖、画风不算；`content/origin.ts` 每项来自哪个包、改名前的 id；`content/missing.ts` 缺了什么
-- `packs.ts` 资源包的格式、检查、用到世界、从世界导出（各段由登记表推出）
+- `packs.ts` 资源包的格式、检查、用到世界、从世界导出（各段由登记表推出）；`readPack` 读文件（资源包、单独的文字包；第七十二轮起不认裸的生态数组）
 - `packs/builtin-tree.ts` 六个内置的库（第五十一轮：每个时代一个完整的库，由同一份数据拼出来；四个历史库带全部 EU4 文化组，不默认带的比重 0；`LIBRARY_BASE_PACKS`、`worldPartsOf` 是世界的底子）；`packs/base.ts` 库里“基础”由代码写的几样；`packs/nature.ts` 15 种生态（`builtinBiomesIn` 某一大类的 id）、`packs/biome-ids.ts` 它们的 id（别的内置数据点名生态时用）；`packs/planet-forms.ts` 星球形态；`packs/map-styles.ts` 写实、地图册；`packs/countries/` 国家等级与格局（第四十二轮）
 - `packs/import.ts` 生成要用的内容从资源包加进世界（时代包整个加时不带世界的底子，比重 0 的组点名才带），`importIntoPack` 把一个包的内容导入另一个包（撞名改名；第六十一轮：文化组放进“文化”下面自己的小包，取值放进同一维的小包，包不再整个拷贝）；`packs/names/` 内置地名风格（一个 JSON 一种，92 种；`eu4-a/b/c.ts` 是第四十三轮照 EU4 文化组补的 49 种，`fiction-a/b/c/d.ts` 是第四十四轮给奇幻、科幻的组补的 16 种）；`packs/eras/`、`packs/governments/`、`packs/settlements/` 见 [core-human.md](core-human.md)
 - `packs/source-diff.ts` 世界里的一项和来源的库比（第六十二轮）：`sourceDiff`（一样、不同、只差导入时去掉的引用、来源不在了）、`usedSourceItem`（用库里的版本）、`savedBackItem`（存回我的库）
