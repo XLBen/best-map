@@ -113,7 +113,7 @@ describe('圈一块起名', () => {
 });
 
 describe('圈的地区自动类型', () => {
-  it('新圈的地区按圈里现在的地形判断：涂成沙漠就变成沙漠；选过类型的不变；可以改回自动', () => {
+  it('新圈的地区按圈里现在的地形判断：涂成荒漠就变成荒漠；选过类型的不变；可以改回自动', () => {
     const eng = continents();
     const w = eng.world;
     const forest = w.derived.features.filter((f) => f.type === 'forest').sort((a, b) => b.cells.length - a.cells.length)[0];
@@ -124,10 +124,10 @@ describe('圈的地区自动类型', () => {
     eng.exec({ op: 'add_region', region: { kind, cells } });
     const [autoId, fixedId] = w.small.regions.map((r) => r.id);
     expect(regionFeature(eng).map((f) => f.type)).toEqual(['forest', 'forest']);
-    // 整片涂成荒漠：自动的变成沙漠，固定的照旧是森林
+    // 整片涂成荒漠：自动的变成荒漠，固定的照旧是森林
     eng.exec({ op: 'add_constraint', constraint: { cells, species: 'desert', mode: 'override', ratio: 1, radius: 300 } });
     const [auto, fixed] = regionFeature(eng);
-    expect([auto.region, auto.type, featureLabel(w, auto)]).toEqual([autoId, 'desert', '沙漠']);
+    expect([auto.region, auto.type, featureLabel(w, auto)]).toEqual([autoId, 'desert', '荒漠']);
     expect([fixed.region, fixed.type, featureLabel(w, fixed)]).toEqual([fixedId, 'forest', '森林']);
     // 选一个类型：不再自动；再选“自动”：又按地形判断
     eng.exec({ op: 'update_region', id: autoId, kind: 'plain' });

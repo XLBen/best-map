@@ -9,7 +9,7 @@ import { BIOME_GROUPS, type Species, biomeGroupOf } from './species';
 import type { Derived, Guide, RegionKind, SmallState, World } from './world';
 
 // 地理要素识别：在格图上找出大陆、岛、群岛、半岛、海、洋、湾、海峡、湖、大河、山脉、主峰、
-// 高原、平原、盆地、沙漠、森林、冻原、冰原、沼泽、涂出来的生态区，按文字包起名。
+// 高原、平原、盆地、荒漠、森林、苔原、冰盖、沼泽湿地、涂出来的生态区，按文字包起名。
 // 是推导层：每次地形或气候变化后重算。新地物的名字由“类型 + 锚点格（见 stableAnchor）+ 种子”确定；
 // 用户改过的名字先按“同类型、同锚点”、再按“同类型、包含原锚点”匹配到重算后的要素上。
 // 编辑之后原有的地物照旧叫原来的名字（锚点挪了、被新地物抢了名字也一样），见文件末尾“名字跟着地方走”。
@@ -43,6 +43,9 @@ export const FEATURE_TYPES = [
 ] as const;
 export type FeatureType = (typeof FEATURE_TYPES)[number];
 
+// 第七十一轮：大类地物的类型字跟着生态的名字（以前是沙漠、冻原、冰原、沼泽）。只是类型字（地名表、圈地名、features.csv 的类型一列），
+// 起出来的名字（地名风格的模板，“某某沙漠”）没改
+
 export const FEATURE_INFO: Record<FeatureType, { label: string; group: 'land' | 'water' | 'relief' | 'nature' }> = {
   continent: { label: '大陆', group: 'land' },
   island: { label: '岛', group: 'land' },
@@ -59,11 +62,11 @@ export const FEATURE_INFO: Record<FeatureType, { label: string; group: 'land' | 
   plateau: { label: '高原', group: 'relief' },
   plain: { label: '平原', group: 'relief' },
   basin: { label: '盆地', group: 'relief' },
-  desert: { label: '沙漠', group: 'nature' },
+  desert: { label: '荒漠', group: 'nature' },
   forest: { label: '森林', group: 'nature' },
-  tundra: { label: '冻原', group: 'nature' },
-  icecap: { label: '冰原', group: 'nature' },
-  wetland: { label: '沼泽', group: 'nature' },
+  tundra: { label: '苔原', group: 'nature' },
+  icecap: { label: '冰盖', group: 'nature' },
+  wetland: { label: '沼泽湿地', group: 'nature' },
   biome: { label: '生态区', group: 'nature' },
   region: { label: '地区', group: 'land' },
   spot: { label: '地点', group: 'land' },
@@ -75,7 +78,7 @@ export const REGION_KIND_INFO: Record<RegionKind, { label: string; type: Feature
   plain: { label: '平原', type: 'plain' },
   highland: { label: '山地', type: 'range' },
   forest: { label: '森林', type: 'forest' },
-  desert: { label: '沙漠', type: 'desert' },
+  desert: { label: '荒漠', type: 'desert' },
   sea: { label: '海域', type: 'sea' },
   spot: { label: '地点', type: 'spot' },
 };
@@ -1853,7 +1856,7 @@ function spotTags(world: World, d: Derived, c: number, terrain: ArrayLike<number
 
 // 用户的区块变成地物：标注在离边界最远的格，狭长的（主轴比次轴长一倍以上）沿主轴写；
 // 重要度高于所有自动识别的地物，标注时先放。
-// 类型“自动”的区块每次按圈里现在的地形重新判断（涂成沙漠就变成沙漠）；类型变了，自动起的名字也跟着换一套模板
+// 类型“自动”的区块每次按圈里现在的地形重新判断（涂成荒漠就变成荒漠）；类型变了，自动起的名字也跟着换一套模板
 // （改冷暖干湿让它跨过判断的门槛时也一样），用户起的名字不变。terrain 同 detectFeatures
 export function regionFeatures(world: World, d: Derived, terrain: Float32Array = d.elevation): GeoFeature[] {
   const { mesh, kmPerUnit } = world;
@@ -1914,7 +1917,7 @@ export function defaultFeatureLabel(world: World, f: GeoFeature): string {
   return sp ? speciesFeature(sp).label : FEATURE_INFO[f.type].label;
 }
 
-// 圈出来的一块像什么：大半是水 → 海域；陆地里一半以上是山 / 沙漠 / 森林，或大多是低平地 → 平原；否则是地区。
+// 圈出来的一块像什么：大半是水 → 海域；陆地里一半以上是山 / 荒漠 / 森林，或大多是低平地 → 平原；否则是地区。
 // 高低、坡度按 elevation、slope（引擎里是没挖河床的地形：画一条峡谷不会让“山地”变成“地区”，换掉自动起的名字）
 export function guessRegionKind(
   world: World,

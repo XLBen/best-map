@@ -61,6 +61,8 @@ import { NO_CURRENTS, seededEngine } from './testing/fixtures';
 // 第五十三轮：只重录 world.json（四个）：文件的版本是 13；图片、表格一个不变（核对过文件写成版本 12 时与原来的值相同）
 // 第五十七轮：world.json（四个）：新建的命令里多了现实的水系、毛皮多一种生态；星球的 resources.bmp、resources.csv（各两个）：毛皮长到高山苔原上。
 // 河、生态、地形类别的图一个不变（核对过去掉这些时与原来的值相同）
+// 第七十一轮：只重录 features.csv（四个）：type_name 一列大类地物的类型字跟着生态的名字（地区：苔原 1 行、沼泽湿地 2 行；
+// 星球：冰盖 2 行、苔原 2 行、沼泽湿地 7 行）。核对过把这一列换回冰原、冻原、沼泽时四个都与原来的值相同，别的列没有新的字
 
 // 字节摘要：两个不同起点的 32 位 FNV-1a 拼成 16 位十六进制
 function digest(a: ArrayBufferView): string {
@@ -157,7 +159,7 @@ const RECORDED: Record<string, string> = {
   'region 256x128 provinces.bmp': 'c58d000a7958d88e',
   'region 256x128 definition.csv': 'ba2a28c81706ec2e',
   'region 256x128 provinces_summary.csv': '2dcffc767ffae1e2',
-  'region 256x128 features.csv': '9698b3fc1317bece',
+  'region 256x128 features.csv': 'd879faeb63032e51',
   'region 256x128 terrain.bmp': '37974b74564b2fa0',
   'region 256x128 biomes.bmp': '52a63e9e0a83caae',
   'region 256x128 rivers.bmp': '9ac478f168eb64c9',
@@ -177,7 +179,7 @@ const RECORDED: Record<string, string> = {
   'region 300x150 provinces.bmp': 'efa5bc12f8b5a44c',
   'region 300x150 definition.csv': 'ba2a28c81706ec2e',
   'region 300x150 provinces_summary.csv': '2dcffc767ffae1e2',
-  'region 300x150 features.csv': '0e541387367e8929',
+  'region 300x150 features.csv': '2626ee7413b613be',
   'region 300x150 terrain.bmp': '92c0fcda97f2206c',
   'region 300x150 biomes.bmp': '87c49b454f6edee5',
   'region 300x150 rivers.bmp': '9b3998d611e618ba',
@@ -199,7 +201,7 @@ const RECORDED: Record<string, string> = {
   'planet 256x128 provinces.bmp': '0fda7b4292759c06',
   'planet 256x128 definition.csv': 'fb32209bec684ff5',
   'planet 256x128 provinces_summary.csv': 'd061726399d2bb01',
-  'planet 256x128 features.csv': '82a278aed64b92ae',
+  'planet 256x128 features.csv': 'e5a59ed7184288df',
   'planet 256x128 terrain.bmp': '279a757945153ddf',
   'planet 256x128 biomes.bmp': '1785830708f407d7',
   'planet 256x128 rivers.bmp': '4fe2ee5b3aead50f',
@@ -219,7 +221,7 @@ const RECORDED: Record<string, string> = {
   'planet 300x150 provinces.bmp': '6e7369023485d48c',
   'planet 300x150 definition.csv': 'fb32209bec684ff5',
   'planet 300x150 provinces_summary.csv': 'd061726399d2bb01',
-  'planet 300x150 features.csv': '07a8df239a487d49',
+  'planet 300x150 features.csv': '0ed2ae609fa283fc',
   'planet 300x150 terrain.bmp': 'cc5a24a054ee095a',
   'planet 300x150 biomes.bmp': '3bb710e9c9b6b8bf',
   'planet 300x150 rivers.bmp': '9c57d85c985371f2',

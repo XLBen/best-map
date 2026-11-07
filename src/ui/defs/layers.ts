@@ -90,7 +90,7 @@ export const LABEL_GROUPS: { group: LabelGroup; label: string }[] = [
   { group: 'land', label: '大陆、岛、半岛' },
   { group: 'water', label: '海、湾、海峡、河、湖' },
   { group: 'relief', label: '山脉、山峰、高原、平原' },
-  { group: 'nature', label: '森林、沙漠、冻原、沼泽' },
+  { group: 'nature', label: '森林、荒漠、苔原、沼泽湿地' },
   // 省名不是地物：默认不标（省份类工具打开时屏幕上照样标着，帮着选省；导出只看这里）
   { group: 'provinces', label: '省名' },
   { group: 'seaProvinces', label: '海省的省名' },

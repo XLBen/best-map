@@ -51,7 +51,7 @@ function selectNewRegion() {
 const fmtArea = (km2: number) => (km2 >= 1e4 ? `${(km2 / 1e4).toFixed(km2 >= 1e5 ? 0 : 1)} 万 km²` : `${Math.round(km2).toLocaleString()} km²`);
 const REGION_RGB: RGB = [255, 225, 120];
 
-// 圈一块起名：按住画一个圈，圈里的格成为一个地名区块（类型“自动”：按圈里现在的地形判断，之后涂了沙漠就变成沙漠；底部条上可以改成固定的）。
+// 圈一块起名：按住画一个圈，圈里的格成为一个地名区块（类型“自动”：按圈里现在的地形判断，之后涂了荒漠就变成荒漠；底部条上可以改成固定的）。
 // 预览高亮的格就是区块；点在地名上（不拖）是选中那个地名
 export function regionTool(hitLabel: (sx: number, sy: number) => string | null): ToolHandler {
   let pointer: Pointer | null = null;
