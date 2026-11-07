@@ -9,17 +9,30 @@ import type { RiverStyle } from '../../core/river-types';
 
 // 工具预览的矢量图形（第四十一轮从 overlay.ts 原样搬来）
 
+// 一遍图形里画布上的画笔（第八十轮）：颜色、线宽和上一个图形相同时不再设（领土笔刷每动一下要画上千个首都的星，设一次颜色要解析一次字），
+// 虚线只在虚线的图形前后设。设成一样的值画布的状态不变，画出来逐像素相同。一遍开始时（resetPen）当作不知道，第一个图形全部设一遍
+const pen = { known: false, stroke: '', fill: '', width: 0 };
+export function resetPen() {
+  pen.known = false;
+}
+
 // unit：一个屏幕像素合多少地图单位；river：地图上的河现在的宽度系数与颜色（river 图形照它画）
+// 调用方在一遍图形开始时 resetPen()，这一遍里画布的状态只由这里改
 export function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit: number, river: { scale: number; color: string }, style: MapStyle) {
   if (sh.kind === 'river') {
     drawRiverShape(ctx, world, sh, unit, river, style);
+    pen.known = false;
     return;
   }
   const color = sh.color ?? 'rgba(255,255,255,0.9)';
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = (sh.width ?? 1.5) * unit;
-  ctx.setLineDash(sh.dashed ? [6 * unit, 4 * unit] : []);
+  const width = (sh.width ?? 1.5) * unit;
+  if (!pen.known || pen.stroke !== color) ctx.strokeStyle = pen.stroke = color;
+  if (!pen.known || pen.fill !== color) ctx.fillStyle = pen.fill = color;
+  if (!pen.known || pen.width !== width) ctx.lineWidth = pen.width = width;
+  // 虚线：每个图形画完都回到实线，所以知道状态时实线的图形不必再设
+  if (sh.dashed) ctx.setLineDash([6 * unit, 4 * unit]);
+  else if (!pen.known) ctx.setLineDash([]);
+  pen.known = true;
   const { mesh } = world;
   if (sh.kind === 'circle' && sh.geodesic && mesh.kind === 'sphere' && sh.x !== undefined && sh.y !== undefined && sh.r !== undefined) {
     const { pts, pole } = geoCircle(sh.x, sh.y, sh.r);
@@ -62,7 +75,7 @@ export function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape
     });
     ctx.stroke();
   }
-  ctx.setLineDash([]);
+  if (sh.dashed || sh.kind === 'arrow') ctx.setLineDash([]);
 }
 
 // 预览的河：与地图上的河同一套画法（带子、宽度、颜色，见 riverDraw）。带子按图形的点数组缓存（光、预览的图形沿用同一个数组时不重算）

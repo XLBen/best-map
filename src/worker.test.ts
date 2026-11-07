@@ -294,13 +294,20 @@ describe('快照只带变了的数组', () => {
     vi.resetModules();
     await import('./worker');
   });
+  // 第八十轮：没变的原因数组、地物也不发（同样按上一份补上）
+  const causesOf = (s: Snapshot, prev: Snapshot) => {
+    const c = { ...s.causes } as unknown as Record<string, unknown>;
+    for (const k of s.same?.causes ?? []) c[k] = (prev.causes as unknown as Record<string, unknown>)[k];
+    return c as unknown as Snapshot['causes'];
+  };
   const filled = (s: Snapshot, prev: Snapshot) => {
     const d = { ...s.derived } as unknown as Record<string, unknown>;
     const p = prev.derived as unknown as Record<string, Float32Array>;
     for (const k of s.same!.derived) d[k] = p[k];
+    for (const k of s.same!.objects ?? []) d[k] = p[k];
     for (const [k, part] of Object.entries(s.same!.rows)) {
       const out = p[k].slice();
-      const width = out.length / s.causes.land.length;
+      const width = out.length / prev.causes.land.length;
       const rows = part.rows as Float32Array;
       part.idx.forEach((i, q) => out.set(rows.subarray(q * width, (q + 1) * width), i * width));
       d[k] = out;
@@ -347,7 +354,7 @@ describe('快照只带变了的数组', () => {
     expect(held).toBeTruthy();
     const land = (await send({ kind: 'snapshot' })).snapshot as Snapshot;
     const cells = [...land.causes.land.keys()].filter((i) => land.causes.land[i]).slice(0, 80);
-    rx.unpack(structuredClone({ small: land.small, contentRev: land.contentRev }));
+    rx.unpack(structuredClone({ small: land.small, contentRev: land.contentRev, secRev: land.secRev }));
     const edit = await got({ kind: 'exec', cmd: { op: 'paint', field: 'tempOffset', cells, value: -3, mode: 'add' } });
     expect(edit.sameContent).toBe(true);
     const full = await got({ kind: 'snapshot' });
@@ -376,7 +383,12 @@ describe('快照只带变了的数组', () => {
     const { traceRivers } = await import('../core/rivers');
     const { unpackRivers } = await import('../core/river-pack');
     const { buildMeshFor, kmPerUnit } = await import('../core/world');
-    const worldOf = (snap: Snapshot, derived: unknown) => ({ settings: snap.settings, mesh: buildMeshFor(snap.settings), kmPerUnit: kmPerUnit(snap.settings), causes: snap.causes, small: snap.small, derived }) as never;
+    const { ContentHolder } = await import('./content-post');
+    const rx = new ContentHolder();
+    const worldOf = (snap: Snapshot, derived: unknown, causes = snap.causes) => {
+      expect(rx.unpack(snap)).toBe(true);
+      return { settings: snap.settings, mesh: buildMeshFor(snap.settings), kmPerUnit: kmPerUnit(snap.settings), causes, small: snap.small, derived } as never;
+    };
     type L = ReturnType<typeof traceRivers>;
     const json = (ls: L) => JSON.stringify(ls.map((l) => [l.points, l.flow, l.cells ?? null, l.mul ?? null, l.type ?? null, l.head ?? null, l.mouth ?? null, l.into ?? null, l.guide ?? null, l.joins ?? null]));
     const first = (await send({ kind: 'init', settings, commands })).snapshot as Snapshot;
@@ -387,7 +399,7 @@ describe('快照只带变了的数组', () => {
     expect(json(unpackRivers(first.rivers!).lines)).toBe(json(here));
     const r = (await send({ kind: 'exec', cmd: { op: 'set_planet', patch: { humidity: 1.2 } } })).snapshot as Snapshot;
     expect(r.same).toBeDefined();
-    const w1 = worldOf(r, filled(r, first));
+    const w1 = worldOf(r, filled(r, first), causesOf(r, first));
     expect(json(unpackRivers(r.rivers!).lines)).toBe(json(traceRivers(w1)));
     const pv = await send({ kind: 'previewWorld', cmd: { op: 'set_planet', patch: { humidity: 1.3 } } });
     expect(pv.rivers).toBeDefined();

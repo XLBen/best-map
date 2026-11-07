@@ -40,9 +40,18 @@ const STAR = Array.from({ length: 11 }, (_, k) => {
   return [Math.cos(a) * r, Math.sin(a) * r] as [number, number];
 });
 
-// 首都：每国一颗星（选中的国家的大一些、描一道黄边）
+// 首都：每国一颗星（选中的国家的大一些、描一道黄边）。
+// 第八十轮：按国家的对象、网格、缩放、选中的国家缓存同一个数组（领土笔刷每动一下都要；叠加层按图形逐个比，同一批对象一比就过）
+let starMemo: { metas: object; mesh: object; zoom: number; sel: number | null; out: Shape[] } | null = null;
 export function capitalShapes(w: World, zoom: number, sel: number | null): Shape[] {
   if (!hasCountries(w)) return [];
+  const metas = w.small.countries!;
+  if (starMemo && starMemo.metas === metas && starMemo.mesh === w.mesh && starMemo.zoom === zoom && starMemo.sel === sel) return starMemo.out;
+  const out = capitalShapesOf(w, zoom, sel);
+  starMemo = { metas, mesh: w.mesh, zoom, sel, out };
+  return out;
+}
+function capitalShapesOf(w: World, zoom: number, sel: number | null): Shape[] {
   const out: Shape[] = [];
   for (const m of Object.values(w.small.countries!)) {
     if (m.capitalCell === undefined) continue;
@@ -57,12 +66,13 @@ export function capitalShapes(w: World, zoom: number, sel: number | null): Shape
   return out;
 }
 
-// 选中的国家：描出领土的外沿（按领土数组缓存同一个图层）
-let selMemo: { c: Int32Array | undefined; id: number; layer: HighlightLayer } | null = null;
+// 选中的国家：描出领土的外沿（按这一国的格缓存同一个图层：cellsOf 按领土、陆海数组给同一个数组）
+let selMemo: { cells: number[]; id: number; layer: HighlightLayer } | null = null;
 export function selectedLayer(w: World): HighlightLayer | null {
   const id = selectedCountry.value;
   if (id === null || !countryOf(w, id)) return null;
-  if (!selMemo || selMemo.c !== w.causes.country || selMemo.id !== id) selMemo = { c: w.causes.country, id, layer: { cells: cellsOf(w, id), color: [255, 255, 255], alpha: 0.18 } };
+  const cells = cellsOf(w, id);
+  if (!selMemo || selMemo.cells !== cells || selMemo.id !== id) selMemo = { cells, id, layer: { cells, color: [255, 255, 255], alpha: 0.18 } };
   return selMemo.layer;
 }
 
@@ -71,11 +81,12 @@ function backdropOf(w: World, zoom: number): Backdrop {
   return { layers: l ? [l] : [], shapes: capitalShapes(w, zoom, selectedCountry.value) };
 }
 
-// 一国的领土（悬停时淡淡地亮）：按领土数组与编号缓存
-let hoverMemo: { c: Int32Array | undefined; id: number; color: string; layer: HighlightLayer } | null = null;
+// 一国的领土（悬停时淡淡地亮）：按这一国的格与颜色缓存
+let hoverMemo: { cells: number[]; id: number; color: string; layer: HighlightLayer } | null = null;
 function hoverLayer(w: World, id: number, color: RGB = [255, 255, 255], alpha = 0.3): HighlightLayer {
   const key = color.join(',');
-  if (!hoverMemo || hoverMemo.c !== w.causes.country || hoverMemo.id !== id || hoverMemo.color !== key) hoverMemo = { c: w.causes.country, id, color: key, layer: { cells: cellsOf(w, id), color, alpha } };
+  const cells = cellsOf(w, id);
+  if (!hoverMemo || hoverMemo.cells !== cells || hoverMemo.id !== id || hoverMemo.color !== key) hoverMemo = { cells, id, color: key, layer: { cells, color, alpha } };
   return hoverMemo.layer;
 }
 
@@ -169,13 +180,25 @@ export function pickTerritory(w: World, cell: number): string | null {
 
 // ---------- 新建国家 ----------
 
-// 一个省份的陆地格（海省、没有省份时为空）
-function provinceLand(w: World, cell: number): { id: number; cells: number[] } | null {
+// 一个省份的陆地格（海省、没有省份时为空）。
+// 第八十轮：每个省的陆地格按省份、陆海数组一次分好（以前鼠标每换一个省都把所有的格扫一遍）
+const provinceCells = new WeakMap<Int32Array, { land: Uint8Array; m: Map<number, number[]> }>();
+export function provinceLand(w: World, cell: number): { id: number; cells: number[] } | null {
   const p = cell >= 0 ? w.causes.province[cell] : -1;
   if (p < 0 || !w.causes.land[cell] || !w.small.provinces[p]) return null;
-  const cells: number[] = [];
-  for (let i = 0; i < w.mesh.n; i++) if (w.causes.province[i] === p && w.causes.land[i]) cells.push(i);
-  return { id: p, cells };
+  const prov = w.causes.province;
+  let e = provinceCells.get(prov);
+  if (!e || e.land !== w.causes.land) {
+    const m = new Map<number, number[]>();
+    for (let i = 0; i < w.mesh.n; i++) {
+      if (!w.causes.land[i] || prov[i] < 0) continue;
+      let l = m.get(prov[i]);
+      if (!l) m.set(prov[i], (l = []));
+      l.push(i);
+    }
+    provinceCells.set(prov, (e = { land: w.causes.land, m }));
+  }
+  return { id: p, cells: e.m.get(p)! };
 }
 
 // 新建以后选中它、打开档案（新的编号是建之前的 nextCountry）

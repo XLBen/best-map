@@ -6,7 +6,7 @@ import { drawLabels, hasLabels } from './overlay-labels';
 import { projectedParts } from './overlay-proj';
 import { drawRivers } from './overlay-river-layer';
 import { riverScale, riverStroke, samePathsKey } from './overlay-rivers';
-import { drawShape } from './overlay-shapes';
+import { drawShape, resetPen } from './overlay-shapes';
 import { sameShapes, staticKey } from './overlay-static';
 import type { Proj } from './projection';
 import type { Camera } from './renderer';
@@ -21,7 +21,7 @@ import { drawFlows, releaseFlows } from './wind-layer';
 //   overlay-static 静态的键 · overlay-grid 经纬网、比例尺 · overlay-shapes 工具的图形
 //   overlay-labels 地名、山峰、城市 · overlay-country-labels 国名、片区名 · overlay-proj 投影时的画法
 export { type OverlayPaths, type Shape, type ProvinceLabel, PROVINCE_LABEL_COLOR, type OverlayState, type Frame, refZoom, type LabelBox, overlayDebug, setOverlayPerf } from './overlay-base';
-export { riverScale, riverStroke, riverTypeColor, riverDraws, type RiverStyleOverride, splitRiverLine, riverPathsKey, samePathsKey, riverLines, seedRivers, buildPaths } from './overlay-rivers';
+export { riverScale, riverStroke, riverTypeColor, riverDraws, type RiverStyleOverride, splitRiverLine, riverPathsKey, samePathsKey, riverLines, seedRivers, reseedRivers, buildPaths } from './overlay-rivers';
 export { riverLayer, riverLayerTile, riverLayerScene, releaseRiverTile } from './overlay-river-layer';
 export { overlayFieldKinds, staticKey, sameShapes } from './overlay-static';
 export { drawScaleBar } from './overlay-grid';
@@ -222,6 +222,7 @@ export function overlayParts(world: World, paths: OverlayPaths, cam: Camera, st:
       }
     },
     shapes(ctx) {
+      resetPen();
       for (const k of ks) {
         setT(ctx, k);
         for (const sh of st.shapes) drawShape(ctx, world, sh, px * dpr, river, st.style);

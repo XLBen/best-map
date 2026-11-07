@@ -4,6 +4,7 @@ import { type GenName, hasType, styleFor, styleName } from '../name-styles';
 import { hashString } from '../names';
 import { mixSeed, mulberry32 } from '../rng';
 import type { CityMeta, Derived, PointMeta, SettlementRules, World } from '../world';
+import { arraysToken } from '../world-token';
 import { type CellInputs, COAST, LAKE, RIVER, cellInputs } from './rules';
 import { worldEra } from './era';
 import { governmentById } from './government';
@@ -339,11 +340,13 @@ export function computeCityTable(world: World): CityTable {
 // 重要的在前：等级、人口、编号
 export const cmpInfo = (a: CityInfo, b: CityInfo): number => b.rank.level - a.rank.level || b.population - a.population || a.id - b.id;
 
-// 按世界缓存的城市表（界面、导出用）：城市、点、国家的首都与政体、人口、领土、内容都没变时照用上一份
+// 按世界缓存的城市表（界面、导出用）：城市、点、国家的首都与政体、人口、领土、内容都没变时照用上一份。
+// 第八十轮：主线程上没变的数组沿用同一个对象（以前每份快照都是新的副本，键里的数组每次都变）：数组按“这一批”（arraysToken：
+// 陆海、湖、流量、高程、气温、地形类别……城市的管辖、名字读的都在里面），另加名字读的河流门槛（planet）、种子（terrain）、时代（human）
 const tableMemo = new WeakMap<object, { key: unknown[]; sig: string; table: CityTable }>();
 export function cityTable(world: World): CityTable {
   const { small, causes, derived: d } = world;
-  const key: unknown[] = [causes.popTotal, d.popDensity, causes.country, d.country, d.popCulture, small.content, small.provinces, small.nameStyle];
+  const key: unknown[] = [causes.popTotal, d.popDensity, causes.country, d.country, d.popCulture, small.content, small.provinces, small.nameStyle, arraysToken(world), small.planet, small.terrain, small.human, world.kmPerUnit];
   const sig = JSON.stringify([small.cities, small.points, Object.values(small.countries ?? {}).map((c) => [c.id, c.capitalCell, c.government]), small.human?.era]);
   const m = tableMemo.get(world.mesh);
   if (m && m.sig === sig && m.key.every((v, k) => v === key[k])) return m.table;

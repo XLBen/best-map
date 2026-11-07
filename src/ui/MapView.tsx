@@ -101,6 +101,7 @@ export function MapView() {
     // （轻快照沿用同一批推导数组）不必重新描河，改了一条画的河的粗细时会重描
     let pathsKey: unknown[] = [];
     let provinceLabels: ProvinceLabel[] = [];
+    let provinceLabelsKey: unknown[] = [];
     // 预览里将来的省名（重划、重新划分）：按预览对象缓存
     let previewLabels: { of: ProvincePreview | null; labels: ProvinceLabel[] } = { of: null, labels: [] };
     // 图层里打开了“省名”时标的省名（“海域的省名”另开）：屏幕上一直标着，导出也是这一份
@@ -403,7 +404,11 @@ export function MapView() {
         renderer.provinceScale = provinceScale(w.causes.province);
         provinceScaleFor = w.causes.province;
       }
-      provinceLabels = provinceLabelsOf(w, w.causes.province, w.small.provinces);
+      // 第八十轮：省份数组、各省的档案、网格都没变（主线程沿用没变的数组与小数据的段）时不重数
+      if (!sameKey(provinceLabelsKey, [w.mesh, w.causes.province, w.small.provinces])) {
+        provinceLabels = provinceLabelsOf(w, w.causes.province, w.small.provinces);
+        provinceLabelsKey = [w.mesh, w.causes.province, w.small.provinces];
+      }
       // 鼠标没动、世界变了（编辑的结果到了）：屏幕上这一点画的格可能变了（陆海、切线），重新算
       for (const p of new Set([view.pointer, view.lastPointer])) if (p && p.cell >= 0) p.shown = displayCellAt(w, p.x, p.y, p.cell);
       if (view.pointer?.shown) input.setHover(view.pointer);

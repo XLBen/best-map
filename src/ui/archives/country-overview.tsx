@@ -8,7 +8,7 @@ import { popText } from '../domain/human';
 import { Flag } from '../panels/countries';
 import { confirmMerge, selectCountry } from '../tools/countries';
 import { EMBLEM_NAMES, LAYOUT_NAMES, flagPartName, withEmblem, withLayout, patch, run } from '../country-archive';
-import { Line, NamePair } from './fields';
+import { CountrySelect, Line, NamePair } from './fields';
 
 // 国家档案的“概览”一页（第七十轮从 CountryArchive.tsx 按页分出来）
 
@@ -137,21 +137,19 @@ export function TerritorySection({ w, m, remove }: { w: World; m: CountryMeta; r
           <SplitSquareHorizontal /> 分成两半
         </button>
         {others.length > 0 && (
-          <select
-            class="small"
+          <CountrySelect
+            owner={m.id}
+            list={others}
             value=""
+            first="并入…"
+            class="small"
             title="这一国并进所选的国家"
             onChange={(e) => {
               const v = Number((e.target as HTMLSelectElement).value);
               (e.target as HTMLSelectElement).value = '';
               if (v) void into(v);
             }}
-          >
-            <option value="">并入…</option>
-            {others.map((x) => (
-              <option value={x.id}>{x.name}</option>
-            ))}
-          </select>
+          />
         )}
         <button class="small danger" onClick={remove}>
           <Trash2 /> 删除

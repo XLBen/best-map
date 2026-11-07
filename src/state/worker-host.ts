@@ -12,7 +12,8 @@ import { ContentHolder } from '../content-post';
 import { engineCode, engineUrl } from '../engine-source';
 import { EngineWorker, type RawWorker, type SpawnMemory } from '../engine-spawn';
 import type { LightSnapshot, Request, Response, Snapshot } from '../protocol';
-import { seedRivers } from '../render/overlay';
+import { seedRivers, reseedRivers } from '../render/overlay';
+import { lightWorld, mergeSnapshot } from './snapshot-merge';
 import { CANCELLED, EngineHost, type WorkerLike } from '../sandbox';
 import { noteTimings } from './cost-gate';
 import { meshFor } from './mesh';
@@ -275,22 +276,6 @@ export function isPending(kind: Request['kind']): boolean {
   return [...pending.values()].some((p) => p.kind === kind);
 }
 
-// 轻快照：推导数组沿用当前世界的（同一批数组对象，地图据此跳过重新着色）；省份、岛的种类没变时这两个数组也沿用
-function lightWorld(prev: World, s: LightSnapshot): World {
-  const same = (a: ArrayLike<number>, b: ArrayLike<number>) => {
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-    return true;
-  };
-  const sameProvince = same(prev.causes.province, s.province);
-  const sameIsland = same(prev.causes.islandType, s.islandType);
-  const causes =
-    sameProvince && sameIsland
-      ? prev.causes
-      : { ...prev.causes, province: sameProvince ? prev.causes.province : s.province, islandType: sameIsland ? prev.causes.islandType : s.islandType };
-  return { ...prev, causes, small: s.small, derived: { ...prev.derived, features: s.features } };
-}
-
 function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
   const before = world.value;
   if ('light' in s && !before) throw new Error('轻快照之前必须有完整的世界');
@@ -299,7 +284,11 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
       ? lightWorld(before!, s)
       : { settings: s.settings, mesh: meshFor(s.settings), kmPerUnit: kmPerUnit(s.settings), causes: s.causes, small: s.small, derived: s.derived };
   // Worker 描好的河（第十三轮）：画这个世界的河时直接用
-  if (!('light' in s) && s.rivers) seedRivers(next, s.rivers);
+  // 第八十轮：河没变时快照不带，用手上拆好的那一份
+  if (!('light' in s)) {
+    if (s.rivers) seedRivers(next, s.rivers, s.riversId);
+    else reseedRivers(next, s.riversId);
+  }
   const mesh = next.mesh;
   batch(() => {
     if (fresh) {
@@ -394,38 +383,8 @@ export async function handle(r: Response, fresh = false): Promise<boolean> {
   return true;
 }
 
-// 只带变了的推导数组的快照（Snapshot.same）：没发的数组沿用手上世界的同一个对象（着色、河线的缓存照样命中）。
-// 手上的世界不是 Worker 上一次发快照时的状态、网格不同时拼不起来，返回 null。完整的快照原样返回
-function completeSnapshot(s: Snapshot): Snapshot | null {
-  const same = s.same;
-  if (!same) return s;
-  const prev = world.value;
-  if (!prev || worldState.value !== same.base || prev.derived.corrF === undefined) return null;
-  const pd = prev.derived as unknown as Record<string, unknown>;
-  const d = s.derived as unknown as Record<string, unknown>;
-  for (const k of same.derived) {
-    const v = pd[k];
-    if (!ArrayBuffer.isView(v) || d[k] !== null) return null;
-    d[k] = v;
-  }
-  for (const [k, part] of Object.entries(same.rows ?? {})) {
-    const v = pd[k] as Float32Array | undefined;
-    if (!ArrayBuffer.isView(v) || d[k] !== null) return null;
-    const n = prev.mesh.n;
-    const width = v.length / n;
-    const rows = part.rows as Float32Array;
-    if (!Number.isInteger(width) || rows.constructor !== v.constructor || rows.length !== part.idx.length * width) return null;
-    const out = v.slice();
-    for (let q = 0; q < part.idx.length; q++) out.set(rows.subarray(q * width, (q + 1) * width), part.idx[q] * width);
-    d[k] = out;
-  }
-  for (const k of same.corrF) {
-    const v = prev.derived.corrF[k];
-    if (!v || (s.derived.corrF as Record<string, unknown>)[k] !== null) return null;
-    s.derived.corrF[k] = v;
-  }
-  return s;
-}
+// 只带变了的数组的快照：拼到手上的世界上（见 snapshot-merge.ts）
+const completeSnapshot = (s: Snapshot): Snapshot | null => mergeSnapshot(world.value, worldState.value, s);
 
 export async function getDoc(): Promise<WorldDoc | null> {
   const r = await call({ kind: 'doc' }, null);

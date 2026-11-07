@@ -20,6 +20,7 @@ import {
   capitalLook,
 } from '../../../core/human';
 import { type NameMode, nameText } from '../../../core/name-display';
+import { arraysToken } from '../../../core/world-token';
 import type { World } from '../../../core/world';
 import { CITY_ICONS, type CityIcon, LANDMARK_ICONS, POINT_ICONS, type RoadDraw, type SettleMark } from '../../render/settle-draw';
 import type { SettleRef } from '../../state';
@@ -190,11 +191,27 @@ interface Lists {
   landmarks: LandmarkInfo[];
   points: PointInfo[];
 }
-// 列表：按小数据里的几样缓存（城市的表另在 core 里按人口、领土缓存）
+// 城市、地标的名字与城市表用到的国家的几项（首都、政体、主流文化、名字的词根），按国家的对象缓存（第八十轮：改名、换颜色时不变）
+const listSigs = new WeakMap<object, string>();
+function listSig(metas: World['small']['countries']): string {
+  if (!metas) return '';
+  let s = listSigs.get(metas);
+  if (s === undefined) {
+    s = Object.values(metas)
+      .map((m) => `${m.id}:${m.capitalCell ?? ''}:${m.government}:${m.primaryCulture}:${JSON.stringify(m.base)}`)
+      .join(',');
+    listSigs.set(metas, s);
+  }
+  return s;
+}
+
+// 列表：按小数据里的几样缓存（城市的表另在 core 里按人口、领土缓存）。
+// 第八十轮：数组按“这一批”（arraysToken：高程、流量、领土……任何一个变了都重算），小数据按各段（快照里没变的段主线程沿用同一个对象）、
+// 地物（名字），国家只看名字、城市表用到的几项
 let listMemo: { key: unknown[]; v: Lists } | null = null;
 export function settleLists(w: World): Lists {
   const s = w.small;
-  const key = [s.cities, s.points, s.landmarks, s.countries, s.content, s.cells, w.causes.country, w.causes.popTotal, w.derived.popCulture, w.mesh, s.terrain];
+  const key = [s.cities, s.points, s.landmarks, listSig(s.countries), s.content, s.cells, arraysToken(w), w.derived.features, w.kmPerUnit, s.terrain, s.planet, s.human, s.provinces, s.nameStyle, s.featureNames];
   if (listMemo && listMemo.key.length === key.length && listMemo.key.every((k, i) => k === key[i])) return listMemo.v;
   const v: Lists = {
     cities: s.cities || s.points ? cityList(w) : [],

@@ -69,15 +69,20 @@ export interface Snapshot extends PostedContent {
   // 主线程的世界不是那个状态时拼不起来，要一份完整的（snapshot 请求）。没有 same 时是完整的快照
   // rows：变了一小部分格的推导数组（比如冷暖画笔只动了一片的份额、适宜度）：只带变了的格（idx 是格，rows 依次是它们的值，
   // 每格 数组长度 / 格数 个），derived 里那一项也是 null，主线程在自己那一份的副本上补上
-  same?: { base: number; derived: string[]; corrF: string[]; rows: Record<string, { idx: Int32Array; rows: ArrayBufferView }> };
+  // causes、fields（第八十轮）：原因数组、自定义场里与上一次发的内容相同的（causes、causes.fields 里那一项是 null），同样沿用主线程手上的；
+  // objects：推导里不是数组的（地物）与上一次发的逐值相同的，derived 里那一项是 null
+  same?: { base: number; derived: string[]; corrF: string[]; rows: Record<string, { idx: Int32Array; rows: ArrayBufferView }>; causes?: string[]; fields?: string[]; objects?: string[] };
   // 地图上的河（河线与带子，第十三轮）：Worker 描好打包转交，主线程拆开直接用（见 core/river-pack.ts）
   rivers?: PackedRivers;
+  // 这一份河的编号（第八十轮）：和上一次发的相同时不带 rivers，主线程用手上拆好的那一份
+  riversId?: number;
 }
 
 // 轻快照：只改了名字、省份（推导没有重算）时只发这些，推导数组沿用主线程上已有的
 export interface LightSnapshot extends PostedContent {
   light: true;
-  features: GeoFeature[];
+  // 第八十轮：与上一次发的相同时为 null（主线程沿用手上的）
+  features: GeoFeature[] | null;
   province: Int32Array;
   // 每格的岛的种类（第十四轮：删掉一种岛时编号会挪，只重新起名的一步也要带上）
   islandType: Uint8Array;

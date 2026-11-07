@@ -36,9 +36,22 @@ export function showToast(text: string, error = false) {
   }, error ? 6000 : 2500);
 }
 
+const sameInputs = (a: World, b: World) =>
+  a.causes.land === b.causes.land &&
+  a.causes.province === b.causes.province &&
+  a.derived.dominant === b.derived.dominant &&
+  a.derived.elevation === b.derived.elevation &&
+  a.derived.tMean === b.derived.tMean &&
+  a.derived.discharge === b.derived.discharge &&
+  a.derived.lake === b.derived.lake &&
+  a.small.planet.riverThreshold === b.small.planet.riverThreshold &&
+  (a.small.species === b.small.species || (a.small.species.length === b.small.species.length && a.small.species.every((x, k) => x.id === b.small.species[k].id)));
+
 // 编辑前后的差别：哪些格变了、用一句话怎么说
 export function describeChange(a: World, b: World): { cells: number[]; detail: string } {
   if (a.mesh !== b.mesh) return { cells: [], detail: '' };
+  // 第八十轮：读的数组都是同一个对象（主线程沿用没变的数组：改国名、颜色……）、门槛与生态的先后也一样时，逐格比下来什么都没变
+  if (sameInputs(a, b)) return { cells: [], detail: '' };
   const n = a.mesh.n;
   const cells: number[] = [];
   let gained = 0;

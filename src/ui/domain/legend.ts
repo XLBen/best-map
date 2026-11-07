@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals';
 import { RESOURCE_NONE, blocList, blocOf, countryCodes, countryMapColors, humanLegend, valueLayer, worldDimensions, worldResources, worldTerrainClasses } from '../../../core/human';
 import { shownBloc } from './blocs';
-import { countryRows } from './countries';
+import { countryRows, statsOf } from './countries';
 import type { World } from '../../../core/world';
 import { NO_BLOC, NO_RESOURCE, densityRgb, habitRgb } from '../../render/colors';
 import { WIND_STYLE } from '../../render/wind';
@@ -244,9 +244,23 @@ function depsOf(w: World, mode: ViewMode): unknown[] {
   if (mode === 'culture' || mode === 'cultureGroup' || mode.startsWith('dim:')) out.push(popKey(w), c?.culture, c?.cultureGroup, c?.popValue, w.small.human?.era);
   // 国家：人数、名字、颜色、宗主（领土没变时 derived.country 照用同一个数组）
   // 第二十六轮：集团（联邦合成一行、同盟模式）：set_bloc 只改它（小数据里的，主线程每份快照是新的对象，按字比）
-  if (mode === 'country' || mode === 'bloc')
-    out.push(popKey(w), Object.values(w.small.countries ?? {}).map((m) => `${m.id}:${m.name}:${m.color}:${m.overlord ?? ''}`).join(','), !w.causes.popTotal, JSON.stringify(w.small.blocs ?? null));
+  // 第八十轮：国家、集团的字按对象缓存（每次重画图例不再拼一遍）；数组没变、只改了名字颜色以外的档案时统计照旧（statsOf 的键）
+  if (mode === 'country' || mode === 'bloc') out.push(popKey(w), countrySig(w.small.countries), !w.causes.popTotal, blocSig(w.small.blocs), statsOf(w));
   return out;
+}
+const countrySigs = new WeakMap<object, string>();
+function countrySig(metas: World['small']['countries']): string {
+  if (!metas) return '';
+  let s = countrySigs.get(metas);
+  if (s === undefined) countrySigs.set(metas, (s = Object.values(metas).map((m) => `${m.id}:${m.name}:${m.color}:${m.overlord ?? ''}`).join(',')));
+  return s;
+}
+const blocSigs = new WeakMap<object, string>();
+function blocSig(blocs: World['small']['blocs']): string {
+  if (!blocs) return 'null';
+  let s = blocSigs.get(blocs);
+  if (s === undefined) blocSigs.set(blocs, (s = JSON.stringify(blocs)));
+  return s;
 }
 const sameDeps = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((v, k) => v === b[k]);
 

@@ -29,14 +29,19 @@ const EDIT_COLORS: Record<EditKind, [number, number, number]> = {
   water: [70, 220, 235],
 };
 
-// 一格的缓存：键里的对象都没换就沿用
+// 一格的缓存：键里的对象都没换就沿用。
+// 第八十轮：同一个世界对象（键一定相同）直接给上一次的，不再建键的数组（橡皮擦的笔刷每格问一次能不能擦）
 function memo<T>(f: (w: World) => T, keys: (w: World) => unknown[]): (w: World) => T {
-  let last: { k: unknown[]; v: T } | null = null;
+  let last: { w: World; k: unknown[]; v: T } | null = null;
   return (w) => {
+    if (last && last.w === w) return last.v;
     const k = keys(w);
-    if (last && last.k.length === k.length && last.k.every((x, i) => x === k[i])) return last.v;
+    if (last && last.k.length === k.length && last.k.every((x, i) => x === k[i])) {
+      last.w = w;
+      return last.v;
+    }
     const v = f(w);
-    last = { k, v };
+    last = { w, k, v };
     return v;
   };
 }
@@ -133,7 +138,8 @@ export const waterMask = memo(
     }
     return fromFlags(has);
   },
-  (w) => [w.mesh, w.small.guides, w.small.lakes, w.derived.lake],
+  // 第八十轮：放的湖认哪一格还看陆海（以前画的河、放的湖每份快照都是新的对象，每次都重算）
+  (w) => [w.mesh, w.small.guides, w.small.lakes, w.derived.lake, w.causes.land, w.kmPerUnit],
 );
 
 // ---------- 第二十七轮：别的笔刷的橡皮擦（“恢复自动”）能擦的格 ----------

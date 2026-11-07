@@ -49,28 +49,42 @@ interface GeoSpec {
   run: () => Geo[];
 }
 
+// 国家的编号连成的字（按编号排）、集团的成员与种类连成的字：按国家、集团的对象缓存（第八十轮：每帧不再排一遍、拼一遍）
+const idSigs = new WeakMap<object, string>();
+function countryIds(w: World): string {
+  const metas = w.small.countries;
+  if (!metas) return '';
+  let s = idSigs.get(metas);
+  if (s === undefined) idSigs.set(metas, (s = countryList(w.small).map((m) => m.id).join(',')));
+  return s;
+}
+const blocSigs = new WeakMap<object, string>();
+function blocSig(w: World): string {
+  const blocs = w.small.blocs;
+  if (!blocs) return '';
+  let s = blocSigs.get(blocs);
+  if (s === undefined) blocSigs.set(blocs, (s = blocs.map((b) => `${b.id}:${b.kind}:${b.members.join('.')}`).join(',')));
+  return s;
+}
+
 function countryGeo(w: World): GeoSpec {
-  const ids = countryList(w.small).map((m) => m.id);
   return {
     name: 'country',
-    key: [w.causes.country, w.causes.land, w.mesh, ids.join(',')],
+    key: [w.causes.country, w.causes.land, w.mesh, countryIds(w)],
     run: () => countryLabels(w).map((l) => ({ id: l.id, part: 0 as const, path: l.path, area: screenArea(w, l.cells, l.y) })),
   };
 }
 
 // 集团（kinds 里的，按 kinds 的先后认一国在哪一个）：每格的集团（blocCells）读领土、每格的国家、集团的成员与种类、国家的编号
 function blocGeo(w: World, kinds: readonly BlocKind[]): GeoSpec {
-  const list = blocList(w.small).filter((b) => kinds.includes(b.kind));
-  const sig = blocList(w.small)
-    .map((b) => `${b.id}:${b.kind}:${b.members.join('.')}`)
-    .join(',');
   return {
     name: `bloc:${kinds.join(',')}`,
-    key: [w.causes.country, w.derived.country, w.causes.land, w.mesh, sig, countryList(w.small).map((m) => m.id).join(',')],
-    run: () =>
-      !list.length || !w.causes.country
-        ? []
-        : regionLabels(w, blocCells(w, kinds), { ids: list.map((b) => b.id), minCells: REGION_MIN_CELLS }).map((l) => ({ id: l.id, part: l.part, path: l.path, area: screenArea(w, l.cells, l.y) })),
+    key: [w.causes.country, w.derived.country, w.causes.land, w.mesh, blocSig(w), countryIds(w)],
+    run: () => {
+      const list = blocList(w.small).filter((b) => kinds.includes(b.kind));
+      if (!list.length || !w.causes.country) return [];
+      return regionLabels(w, blocCells(w, kinds), { ids: list.map((b) => b.id), minCells: REGION_MIN_CELLS }).map((l) => ({ id: l.id, part: l.part, path: l.path, area: screenArea(w, l.cells, l.y) }));
+    },
   };
 }
 

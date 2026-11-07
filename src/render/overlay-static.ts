@@ -92,25 +92,25 @@ export const sameNums = (a: ArrayLike<number> | undefined, b: ArrayLike<number> 
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
 };
+// 第八十轮：不再每次把两边的键并成一个 Set（领土笔刷动一下要比上千个首都的星）：先逐个看 a 的键，再看 b 有没有 a 没有的键
+//（a 没有、b 有的键：b 那边不是 undefined 就不同，与并起来比相同）
 export function sameShape(a: Shape, b: Shape): boolean {
   if (a === b) return true;
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)] as (keyof Shape)[]);
-  for (const k of keys) {
-    const x = a[k];
-    const y = b[k];
-    if (x === y) continue;
-    if (k === 'points') {
-      const p = x as [number, number][] | undefined;
-      const q = y as [number, number][] | undefined;
-      if (!p || !q || p.length !== q.length) return false;
-      for (let i = 0; i < p.length; i++) if (p[i] !== q[i] && (p[i][0] !== q[i][0] || p[i][1] !== q[i][1])) return false;
-      continue;
-    }
-    if (k === 'cells' || k === 'flow' || k === 'mul') {
-      if (!sameNums(x as number[] | undefined, y as number[] | undefined)) return false;
-      continue;
-    }
-    return false;
-  }
+  for (const k in a) if (!sameField(a, b, k as keyof Shape)) return false;
+  for (const k in b) if (!(k in a) && b[k as keyof Shape] !== undefined) return false;
   return true;
+}
+function sameField(a: Shape, b: Shape, k: keyof Shape): boolean {
+  const x = a[k];
+  const y = b[k];
+  if (x === y) return true;
+  if (k === 'points') {
+    const p = x as [number, number][] | undefined;
+    const q = y as [number, number][] | undefined;
+    if (!p || !q || p.length !== q.length) return false;
+    for (let i = 0; i < p.length; i++) if (p[i] !== q[i] && (p[i][0] !== q[i][0] || p[i][1] !== q[i][1])) return false;
+    return true;
+  }
+  if (k === 'cells' || k === 'flow' || k === 'mul') return sameNums(x as number[] | undefined, y as number[] | undefined);
+  return false;
 }

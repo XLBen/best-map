@@ -383,13 +383,23 @@ export function riverLines(world: World): RiverLine[] {
 export const seeds = new WeakMap<World, RiverLine[]>();
 export const seededDraws = new WeakMap<RiverLine, { key: string; d: RiverDraw }>();
 export const drawKeyOf = (thr: number, spacing: number, types: string) => `${thr}|${spacing}|${types}`;
-export function seedRivers(world: World, packed: PackedRivers): void {
+// id（第八十轮）：Worker 那一份的编号（预览世界的没有）；记下快照最近拆好的一份，下一份快照的河没变（不带河、编号相同）时 reseedRivers 直接用它。
+// 编号在 Worker 里每描一次加一（预览世界描过也算），对得上就是同一份
+let held: { id: number; lines: RiverLine[] } | null = null;
+export function seedRivers(world: World, packed: PackedRivers, id?: number): void {
   const { lines, draws } = unpackRivers(packed);
   seeds.set(world, lines);
+  if (id !== undefined) held = { id, lines };
   if (draws && packed.rb) {
     const key = drawKeyOf(packed.rb.thr, packed.rb.spacing, packed.rb.types);
     lines.forEach((l, i) => seededDraws.set(l, { key, d: draws[i] }));
   }
+}
+// 快照没带河（与上一份相同）：手上拆好的编号对得上时给这个世界；对不上时 false（画的时候主线程自己描）
+export function reseedRivers(world: World, id: number | undefined): boolean {
+  if (id === undefined || held?.id !== id) return false;
+  seeds.set(world, held.lines);
+  return true;
 }
 
 export function buildPaths(world: World, override: RiverStyleOverride | null = null): OverlayPaths {

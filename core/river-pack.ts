@@ -331,8 +331,9 @@ export function unpackRivers(p: PackedRivers): { lines: RiverLine[]; draws: Rive
 // Worker 里：描这个世界的河并打包（带子按地图上的画法：河口多画 0.3 格进水里、按河流类型的粗细）。
 // 高程数组换一份副本再描：Worker 里推导数组会就地改写，按数组认的海岸场缓存可能是旧的。
 // 描河读的东西（与 src/render/overlay.ts 的 riverLinesKey 同样几项，按内容）都没变时（比如只涂了生态）用上一次描好的（复制一份，转交的会被拿走）
-let last: { key: string; packed: PackedRivers } | null = null;
-export function worldRivers(world: World): PackedRivers {
+let last: { key: string; packed: PackedRivers; id: number } | null = null;
+let packs = 0;
+function ensureRivers(world: World): { key: string; packed: PackedRivers; id: number } {
   const thr = world.small.planet.riverThreshold;
   const spacing = world.mesh.spacing;
   const types = drawTypes(world);
@@ -342,10 +343,15 @@ export function worldRivers(world: World): PackedRivers {
     const lines = traceRivers(w);
     const typesKey = drawTypesKey(types);
     const draws = memoDraws(lines, thr, spacing, types, typesKey);
-    last = { key, packed: packRivers(lines, draws, { thr, spacing, types: typesKey }) };
+    last = { key, packed: packRivers(lines, draws, { thr, spacing, types: typesKey }), id: ++packs };
   }
-  return copyPacked(last.packed);
+  return last;
 }
+export function worldRivers(world: World): PackedRivers {
+  return copyPacked(ensureRivers(world).packed);
+}
+// 这个世界的河是哪一份的编号（描河读的东西没变时相同，不复制）：快照按它判断要不要再发（第八十轮，src/worker-snapshot.ts）
+export const riversId = (world: World): number => ensureRivers(world).id;
 
 function copyPacked(p: PackedRivers): PackedRivers {
   const out: PackedRivers = { meta: p.meta.slice(), pts: p.pts.slice(), flow: p.flow.slice(), cells: p.cells.slice(), mul: p.mul.slice(), type: p.type.slice(), joins: p.joins.slice(), guides: p.guides.slice() };

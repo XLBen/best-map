@@ -22,6 +22,7 @@ import {
   subjectText,
 } from '../../../core/human';
 import type { LibraryEntry } from '../../library';
+import { arraysToken } from '../../../core/world-token';
 import { addFromLibrary, itemsInPacks, librarySelectable } from './packChoice';
 import { type NameMode, nameLines } from '../../../core/name-display';
 import type { CountryMeta, World } from '../../../core/world';
@@ -58,30 +59,50 @@ export function countryAt(w: World, cell: number): number | null {
   return code ? (codesOf(w)[code]?.id ?? null) : null;
 }
 
-// 一国的陆地格（按领土数组缓存）
-const cellsCache = new WeakMap<Int32Array, Map<number, number[]>>();
+// 一国的陆地格（按领土、陆海数组缓存：第八十轮起没变的数组主线程沿用同一个对象，领土没变、陆海变了时也要重数）
+const cellsCache = new WeakMap<Int32Array, { land: Uint8Array; m: Map<number, number[]> }>();
+const NO_CELLS: number[] = [];
 export function cellsOf(w: World, id: number): number[] {
   const c = w.causes.country;
-  if (!c) return [];
-  let m = cellsCache.get(c);
-  if (!m) {
-    m = new Map();
+  if (!c) return NO_CELLS;
+  let e = cellsCache.get(c);
+  if (!e || e.land !== w.causes.land) {
+    const m = new Map<number, number[]>();
     for (let i = 0; i < c.length; i++) {
       if (c[i] < 0 || !w.causes.land[i]) continue;
       let l = m.get(c[i]);
       if (!l) m.set(c[i], (l = []));
       l.push(i);
     }
-    cellsCache.set(c, m);
+    cellsCache.set(c, (e = { land: w.causes.land, m }));
   }
-  return m.get(id) ?? [];
+  return e.m.get(id) ?? NO_CELLS;
 }
 
-// 全部国家的统计：按领土、人数、省份、各国的档案、城市缓存一份（只换了名字、颜色时照用）
+// 各国的档案里统计用到的（编号、主流文化、兼容的文化组、首都、政体）连成一个字，按国家的对象缓存（第八十轮：改名、换颜色、旗、外交时不变）
+const statsSigs = new WeakMap<object, string>();
+export function statsSig(metas: World['small']['countries']): string {
+  if (!metas) return '';
+  let s = statsSigs.get(metas);
+  if (s === undefined) {
+    s = Object.values(metas)
+      .map((m) => `${m.id}:${m.primaryCulture}:${m.acceptedGroups.join('.')}:${m.capitalCell ?? ''}:${m.government}`)
+      .join(',');
+    statsSigs.set(metas, s);
+  }
+  return s;
+}
+
+// 全部国家的统计：缓存一份（只换了名字、颜色、旗、外交时照用）。
+// 第八十轮：数组按“这一批”（arraysToken：领土、人数、省份、陆海、湖……任何一个变了都重算），小数据按统计、城市表读的几样
+// （各段在快照里没变时主线程沿用同一个对象，见 src/content-post.ts），国家只看统计用到的那几项
 let statsMemo: { key: unknown[]; stats: Map<number, CountryStats> } | null = null;
+export function statsKey(w: World): unknown[] {
+  const s = w.small;
+  return [arraysToken(w), w.kmPerUnit, statsSig(s.countries), s.popGroups, s.content, s.human, s.cities, s.points, s.provinces, s.nameStyle, s.planet, s.terrain];
+}
 export function statsOf(w: World): Map<number, CountryStats> {
-  // 城市数、首都与陪都（第二十四轮）跟着城市、自定义点、等级变
-  const key = [w.causes.country, w.derived.popDensity, w.causes.province, w.small.countries, w.small.popGroups, w.small.cities, w.small.points, w.small.content];
+  const key = statsKey(w);
   if (statsMemo && statsMemo.key.every((k, i) => k === key[i])) return statsMemo.stats;
   const stats = hasCountries(w) ? allCountryStats(w) : new Map<number, CountryStats>();
   statsMemo = { key, stats };
@@ -95,14 +116,19 @@ export interface CountryRow {
   overlord?: CountryMeta;
 }
 
-// 列表：按人口从多到少（一样多时按面积、编号）
+// 列表：按人口从多到少（一样多时按面积、编号）。
+// 第八十轮：按统计、各国的档案、政体（内容）缓存一份（领土笔刷每动一下、底部条每次重画都要最大的那一国）
+let rowsMemo: { stats: Map<number, CountryStats>; metas: object; content: unknown; rows: CountryRow[] } | null = null;
 export function countryRows(w: World): CountryRow[] {
   if (!hasCountries(w)) return [];
   const stats = statsOf(w);
   const metas = w.small.countries!;
-  return Object.values(metas)
+  if (rowsMemo && rowsMemo.stats === stats && rowsMemo.metas === metas && rowsMemo.content === w.small.content) return rowsMemo.rows;
+  const rows = Object.values(metas)
     .map((m) => ({ meta: m, stats: stats.get(m.id), government: governmentName(w.small, m.government), ...(m.overlord !== undefined && metas[m.overlord] ? { overlord: metas[m.overlord] } : {}) }))
     .sort((a, b) => (b.stats?.population ?? 0) - (a.stats?.population ?? 0) || (b.stats?.areaKm2 ?? 0) - (a.stats?.areaKm2 ?? 0) || a.meta.id - b.meta.id);
+  rowsMemo = { stats, metas, content: w.small.content, rows };
+  return rows;
 }
 
 // 最大的国家（领土笔刷没选时用它）
@@ -126,11 +152,20 @@ export function governmentChoices(w: World, current?: string, lib: readonly Libr
   const all: GovChoice[] = [...list, ...rest].map((gov) => ({ gov }));
   const cur = current ? (w.small.content?.government?.[current] as Government | undefined) : undefined;
   if (cur && !all.some((g) => g.gov.id === cur.id)) all.unshift({ gov: cur });
-  const selectable = librarySelectable(w.small, lib, 'governments');
-  for (const x of itemsInPacks<Government>(w.small.human ? stampedPacks(w.small) : [], lib, 'governments')) {
-    if (!all.some((g) => g.gov.id === x.item.id) && selectable(x.item.id, x.path)) all.push({ gov: x.item, path: x.path });
-  }
+  for (const x of libraryGovernments(w.small, lib)) if (!all.some((g) => g.gov.id === x.gov.id)) all.push(x);
   return all;
+}
+
+// 世界用的包里能从资源库加进来的政体（导入的检查，第六十五轮）：按小数据、资源库缓存（第八十轮：档案每次重画、选别的国家时不再重查）
+const libGovs = new WeakMap<object, { lib: readonly LibraryEntry[]; list: GovChoice[] }>();
+function libraryGovernments(small: Small, lib: readonly LibraryEntry[]): GovChoice[] {
+  const hit = libGovs.get(small);
+  if (hit && hit.lib === lib) return hit.list;
+  const selectable = librarySelectable(small, lib, 'governments');
+  const list: GovChoice[] = [];
+  for (const x of itemsInPacks<Government>(small.human ? stampedPacks(small) : [], lib, 'governments')) if (selectable(x.item.id, x.path)) list.push({ gov: x.item, path: x.path });
+  libGovs.set(small, { lib, list });
+  return list;
 }
 
 // 换成这个政体的命令：本世界没有的先从资源库加进来（一整步）

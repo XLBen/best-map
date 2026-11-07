@@ -7,6 +7,7 @@ import { type Proj, screenToWorld as projScreenToWorld, trueScale, worldToScreen
 import { nameText } from '../../core/name-display';
 import { cellName, peakMarks } from '../../core/human';
 import type { World } from '../../core/world';
+import { arraysToken } from '../../core/world-token';
 
 // 地名、山峰、城市与地标的排版与画法（第四十一轮从 overlay.ts 原样搬来）
 
@@ -493,12 +494,16 @@ export function drawGlyphs(ctx: CanvasRenderingContext2D, l: PlacedLabel, hover:
 export const PEAK_KEY = 'cellpeak:';
 export const PEAK_NAME_ZOOM = 1600;
 export const PEAK_GAP = 14;
-export const peakCache = new WeakMap<Uint8Array, { cells: unknown; features: unknown; list: GeoFeature[] }>();
+// 第八十轮：主线程上没变的数组、小数据的段、地物沿用同一个对象（以前每份快照的地物都是新的，这里每次都重算）：
+// 键里另加起名读的（数组按“这一批”、省份与名字的风格、内容、时代、河流门槛、种子）
+export const peakCache = new WeakMap<Uint8Array, { key: unknown[]; list: GeoFeature[] }>();
 export function peakLabels(world: World): GeoFeature[] {
   const d = world.derived;
   if (!d.peak) return [];
   const hit = peakCache.get(d.peak);
-  if (hit && hit.cells === world.small.cells && hit.features === d.features) return hit.list;
+  const s = world.small;
+  const key = [s.cells, d.features, arraysToken(world), s.provinces, s.content, s.nameStyle, s.featureNames, s.human, s.planet, s.terrain, world.settings.seed];
+  if (hit && hit.key.every((k, i) => k === key[i])) return hit.list;
   const list: GeoFeature[] = peakMarks(world).map((m) => {
     const n = m.feature ? null : cellName(world, m.cell);
     const f = m.feature ? d.features.find((x) => x.key === m.feature) : undefined;
@@ -520,6 +525,6 @@ export function peakLabels(world: World): GeoFeature[] {
       ...(orig ? { orig } : {}),
     };
   });
-  peakCache.set(d.peak, { cells: world.small.cells, features: d.features, list });
+  peakCache.set(d.peak, { key, list });
   return list;
 }
