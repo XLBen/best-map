@@ -43,8 +43,8 @@ export const FEATURE_TYPES = [
 ] as const;
 export type FeatureType = (typeof FEATURE_TYPES)[number];
 
-// 第七十一轮：大类地物的类型字跟着生态的名字（以前是沙漠、冻原、冰原、沼泽）。只是类型字（地名表、圈地名、features.csv 的类型一列），
-// 起出来的名字（地名风格的模板，“某某沙漠”）没改
+// 第七十一轮：大类地物的类型字跟着生态的名字（以前是沙漠、冻原、冰原、沼泽）。只是类型字（地名表、圈地名、features.csv 的类型一列）；
+// 第七十六轮：中文地名风格的模板也跟着改（“某某荒漠”“某某苔原”“某某冰盖”）
 
 export const FEATURE_INFO: Record<FeatureType, { label: string; group: 'land' | 'water' | 'relief' | 'nature' }> = {
   continent: { label: '大陆', group: 'land' },

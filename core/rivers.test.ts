@@ -70,7 +70,8 @@ describe('画的河逐值不变', () => {
     };
     // 第三十二轮重录（地形有了大格局：高程、河网、湖都变了）；第三十三轮重录（平原与河口：高程、河网都变了）；第三十五轮重录（大陆轮廓：海陆变了，从内陆点描的河长短不同）
     // 第五十五轮：生态跟高度走，只有 features 重录（河网、高程不变）
-    expect(got).toEqual({ guides: '8,16,9', elevation: '6ad4a296', discharge: '57abf6e7', receiver: '4ec5ecc5', lake: 'f4f11545', features: '53f4e90c' });
+    // 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
+    expect(got).toEqual({ guides: '8,16,9', elevation: '6ad4a296', discharge: '57abf6e7', receiver: '4ec5ecc5', lake: 'f4f11545', features: '821ae884' });
   });
 });
 

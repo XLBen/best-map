@@ -18,7 +18,7 @@ import { NO_CURRENTS, seededEngine } from './testing/fixtures';
 // 第五十一轮通用拆进了各库，来源的路径（small.origin）变了，再重录一次；核对过 from 写回 common 时与原来的记录逐值相同
 // 第五十五轮内置生态有了高度范围、多了两种，再重录一次；核对过去掉高度范围时与原来的记录逐值相同
 // 第五十七轮新世界默认带现实的水系、毛皮多一种生态，再重录一次（这里是整个世界一个摘要）；核对过去掉这些时与原来的记录逐值相同
-
+// 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
 const FILE = new URL('./r31-digests.json', import.meta.url);
 const record = !!process.env.R31_RECORD;
 const saved: Record<string, string[]> = record ? {} : JSON.parse(readFileSync(FILE, 'utf8'));

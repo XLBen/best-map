@@ -40,6 +40,7 @@ function libraryWorld(id: string, groups = defaultsOf(id)): Engine {
   return eng;
 }
 
+// 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
 describe('六个库', () => {
   it('六个，没有通用；一层 128 个小包够放下“文化”的 71 组（也还能加）；层数没变', () => {
     expect(LIB.map((p) => p.id)).toEqual(['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi']);

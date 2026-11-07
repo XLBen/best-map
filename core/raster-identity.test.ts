@@ -66,6 +66,7 @@ import { NO_CURRENTS, seededEngine } from './testing/fixtures';
 // 第七十三轮：只重录 world.json（四个）：文件的版本是 14；图片、表格一个不变（核对过文件写成版本 13 时与原来的值相同）
 // 第七十四轮：同样只重录 world.json（四个）：文件的版本是 15（核对过写成版本 14 时与原来的值相同）
 // 第七十五轮：同样只重录 world.json（四个）：文件的版本是 16（核对过写成版本 15 时与原来的值相同）
+// 第七十六轮：星球的 features.csv（两个）与 world.json（四个）：中文地名模板的沙漠 / 冻原 / 冰原改成荒漠 / 苔原 / 冰盖（地名与世界里的地名风格）；图片一个不变
 
 // 字节摘要：两个不同起点的 32 位 FNV-1a 拼成 16 位十六进制
 function digest(a: ArrayBufferView): string {
@@ -170,7 +171,7 @@ const RECORDED: Record<string, string> = {
   'region 256x128 resources.bmp': '8c5357a61f173686',
   'region 256x128 terrain_classes.csv': 'e40143df203f2c29',
   'region 256x128 resources.csv': 'adee17512a93512f',
-  'region 256x128 world.json': '6da7990679ab7972',
+  'region 256x128 world.json': '3f82942f2bee8e3d',
   'region 256x128 README.txt': 'e119bc0eb4669bf8',
   'region 300x150 land': '21ebb4f1ddc4a08b',
   'region 300x150 elevation': '53bf091ef5b50eb8',
@@ -190,7 +191,7 @@ const RECORDED: Record<string, string> = {
   'region 300x150 resources.bmp': 'd127157c2d2990de',
   'region 300x150 terrain_classes.csv': 'e40143df203f2c29',
   'region 300x150 resources.csv': 'adee17512a93512f',
-  'region 300x150 world.json': '6da7990679ab7972',
+  'region 300x150 world.json': '3f82942f2bee8e3d',
   'region 300x150 README.txt': '61d7aa0393c2ab35',
   'region thumbnail': '8efca894a4696eca',
   'region functions': '21b1b0794f63fb65',
@@ -204,7 +205,7 @@ const RECORDED: Record<string, string> = {
   'planet 256x128 provinces.bmp': '0fda7b4292759c06',
   'planet 256x128 definition.csv': 'fb32209bec684ff5',
   'planet 256x128 provinces_summary.csv': 'd061726399d2bb01',
-  'planet 256x128 features.csv': 'e5a59ed7184288df',
+  'planet 256x128 features.csv': '96263f761eb50f34',
   'planet 256x128 terrain.bmp': '279a757945153ddf',
   'planet 256x128 biomes.bmp': '1785830708f407d7',
   'planet 256x128 rivers.bmp': '4fe2ee5b3aead50f',
@@ -212,7 +213,7 @@ const RECORDED: Record<string, string> = {
   'planet 256x128 resources.bmp': '54ad4d8a17c22a6a',
   'planet 256x128 terrain_classes.csv': '416ef548f21384fe',
   'planet 256x128 resources.csv': '3872e2d500c914df',
-  'planet 256x128 world.json': '0d964bb5ee175dfb',
+  'planet 256x128 world.json': 'ffe7ab548eb28f34',
   'planet 256x128 README.txt': '7d6804179e70b277',
   'planet 300x150 land': '84cf08ba8ffc6ab6',
   'planet 300x150 elevation': 'dd0a7bed4769b3a1',
@@ -224,7 +225,7 @@ const RECORDED: Record<string, string> = {
   'planet 300x150 provinces.bmp': '6e7369023485d48c',
   'planet 300x150 definition.csv': 'fb32209bec684ff5',
   'planet 300x150 provinces_summary.csv': 'd061726399d2bb01',
-  'planet 300x150 features.csv': '0ed2ae609fa283fc',
+  'planet 300x150 features.csv': 'c1f71a6fe8d3096b',
   'planet 300x150 terrain.bmp': 'cc5a24a054ee095a',
   'planet 300x150 biomes.bmp': '3bb710e9c9b6b8bf',
   'planet 300x150 rivers.bmp': '9c57d85c985371f2',
@@ -232,7 +233,7 @@ const RECORDED: Record<string, string> = {
   'planet 300x150 resources.bmp': '09783432fa3e7b98',
   'planet 300x150 terrain_classes.csv': '416ef548f21384fe',
   'planet 300x150 resources.csv': '3872e2d500c914df',
-  'planet 300x150 world.json': '0d964bb5ee175dfb',
+  'planet 300x150 world.json': 'ffe7ab548eb28f34',
   'planet 300x150 README.txt': '57acf72e11dc422a',
   'planet thumbnail': '33920eb4237a4772',
   'planet functions': '2b5491eb1322a165',

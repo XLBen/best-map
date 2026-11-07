@@ -70,6 +70,7 @@ function world(): Engine {
 
 const groupsOf = (g: readonly (readonly [string, number])[]) => g.map(([id, weight]) => ({ id, weight }));
 
+// 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
 describe('生成只读世界里的内容', () => {
   it('不先加时代包：不生成人文，结果里写明缺时代（命令照样能执行，不报错）', () => {
     const eng = world();

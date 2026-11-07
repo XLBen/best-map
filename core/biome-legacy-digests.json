@@ -12,7 +12,7 @@
   "dominant": "fd958605",
   "corrT": "c945df34",
   "province": "e9326e05",
-  "features": "dd5af579"
+  "features": "f6485026"
  },
  "goldenFull": {
   "region": {
@@ -78,7 +78,7 @@
    "derived.sstAnom": "455c982de0c4e8b3",
    "derived.features": "74aa5520d8283ccc",
    "derived.conflicts": "39fe5353d4e6e6f3",
-   "small": "af606de86a62719e"
+   "small": "8960b1a5eb32f4d0"
   },
   "planet": {
    "mesh.x": "edbabd66920764cd",
@@ -144,9 +144,9 @@
    "derived.currentX": "1404d349a69187cc",
    "derived.currentY": "5b45b5deba2138a6",
    "derived.sstAnom": "88d34347877fc02b",
-   "derived.features": "3cff0e2a6446f096",
+   "derived.features": "38d13cde5d0b2e13",
    "derived.conflicts": "344f2c5435de7138",
-   "small": "ee30832df39005c9"
+   "small": "410e722ab28edf58"
   }
  },
  "r29": {
@@ -161,7 +161,7 @@
    "roads": "ce7ff625ab0bb48a",
    "landmarks": "ce7ff625ab0bb48a",
    "provinces": "8b27376533d74d9e",
-   "features": "6ee6d433a36ed762",
+   "features": "28fec1603dc9e848",
    "habitability": "e0bbb6fa2340e10a",
    "terrainClass": "90d63b51331db1bd",
    "resource": "576a359e7ab00588"
@@ -273,7 +273,7 @@
    "roads": "be95fb5598ca640d",
    "landmarks": "55401b82f0b9b743",
    "provinces": "f0bd2362c214aaa0",
-   "features": "46d7fdb13db96a62",
+   "features": "7ae1171fa8947e5a",
    "habitability": "e0bbb6fa2340e10a",
    "terrainClass": "90d63b51331db1bd",
    "resource": "576a359e7ab00588"
@@ -289,7 +289,7 @@
    "roads": "ed8b411713ef30dc",
    "landmarks": "23aacabbfedda72b",
    "provinces": "c970326b6e064ba3",
-   "features": "46d7fdb13db96a62",
+   "features": "7ae1171fa8947e5a",
    "habitability": "e0bbb6fa2340e10a",
    "terrainClass": "90d63b51331db1bd",
    "resource": "576a359e7ab00588"
@@ -430,7 +430,7 @@
    "habitability": "bc3de3ebaae13a5f",
    "terrainClass": "ac37ad28b5a0fad5",
    "resource": "abf64551e4712240",
-   "content": "b2b8b5e56469e196",
+   "content": "3e5df5ae1d6795c9",
    "origin": "285b9f3abca73c3c"
   },
   "industrial:strip": {

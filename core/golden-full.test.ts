@@ -12,6 +12,7 @@ import golden from './golden-full.json';
 // 第五十五轮：生态跟高度走，生态、地物、小数据变了；这组操作里有“自然融入”，修正场跟着生态变，气候、径流也重录（网格、原因、高程、风、洋流、水面、流向、汇水不变；
 // 去掉内置生态的高度范围时全部回到以前的值，见 biome-legacy.test.ts）
 // 第五十七轮：新世界默认带现实的水系：derived.riverType、derived.lakeType、derived.features（类型的标签）、small 重录，别的一项不变（核对过去掉这些类型时全部回到以前的值）
+// 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
 describe('整个世界逐值不变（加长的操作序列）', () => {
   it('一块地区', () => {
     expect(extendedHashes('region')).toEqual(golden.region);

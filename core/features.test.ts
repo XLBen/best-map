@@ -361,8 +361,9 @@ describe('名字稳定', () => {
   const kv = (eng: Engine) => hashString(eng.world.derived.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16);
   it('没涂过生态的世界：地物的 key 与名字和以前完全相同', () => {
     // 第五十五轮重录：生态跟高度走，森林、苔原、沼泽这些片变了
-    expect(kv(continents())).toBe('2365ec78');
-    expect(kv(planet())).toBe('ca526329');
+    // 第七十六轮重录：中文地名模板的沙漠 / 冻原 / 冰原改成荒漠 / 苔原 / 冰盖（大陆世界 6 个、小星球 3 个地名），key 不变
+    expect(kv(continents())).toBe('1d12476c');
+    expect(kv(planet())).toBe('f7e2696a');
     const islands = engineFor({ seed: 2, cells: 6000 });
     // 第四十六轮：关掉区域的洋流，与以前逐值相同（见 fixtures 的 NO_CURRENTS）
     islands.exec(NO_CURRENTS);

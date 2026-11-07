@@ -758,7 +758,7 @@
     "desert": {
       "patterns": [
         {
-          "p": "{dry}{color}沙漠",
+          "p": "{dry}{color}荒漠",
           "w": 2
         },
         {
@@ -819,7 +819,7 @@
     "tundra": {
       "patterns": [
         {
-          "p": "{cold}{nature}冻原",
+          "p": "{cold}{nature}苔原",
           "w": 2
         },
         {
@@ -831,7 +831,7 @@
     "icecap": {
       "patterns": [
         {
-          "p": "{cold}{nature}冰原",
+          "p": "{cold}{nature}冰盖",
           "w": 2
         },
         {

@@ -21,6 +21,7 @@ import { type InvadeTable, invadeBoost, suitability, vegShares } from './vegetat
 // （人口、群体、国家、集团、城市、道路、地标、省名）；libraries.medieval 的 content、origin 因为中世纪多了集权帝国、游牧汗国两种格局。地形、生态的几项没变
 // 第七十五轮：奇幻的国家有意改了（种族王国），重录 r29.fantasy 人文的几项；r29.medieval、r29.modern、libraries.medieval 只重录 countries：
 // 档案多了格局里的角色（role），核对过不写 role 时与原来的值逐个相同
+// 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
 describe('没写高度范围的生态和第五十四轮逐值相同', () => {
   const plain = () => withoutHeights(newWorldContentCommands());
 

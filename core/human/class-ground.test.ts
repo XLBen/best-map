@@ -74,6 +74,7 @@ function arrays(eng: Eng): Record<string, string> {
   return out;
 }
 
+// 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
 describe('力度 0：逐位和第五十七轮相同', () => {
   // class-only-digests.json 是 f01e102（第五十七轮）的代码跑 core/testing/class-only.ts 记下的：每一步之后全部推导、原因、
   // 小数据（典型高度不算），每一步的撤销记录，再一步一步撤销回去。
