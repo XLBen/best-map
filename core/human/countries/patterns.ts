@@ -58,6 +58,10 @@ export interface PatternModule {
   params?: readonly PatternParam[];
   // 时代没列这一个模块时的多少（附庸 1：国家之间照旧有附庸；别的 0）
   fallback?: number;
+  // 资源库里格局页面上的一句提示（第七十五轮：这个模块做什么、在哪个时代合适）
+  tip?: string;
+  // 档案里“格局”那一句（第七十五轮）：角色（Seed.role → CountryMeta.role）→ 文字
+  roles?: Readonly<Record<string, string>>;
   reserve?(g: CountryRun, use: PatternUse): void;
   grow?(g: CountryRun, use: PatternUse): void;
   after?(g: CountryRun, use: PatternUse): void;
@@ -76,6 +80,16 @@ export interface CountryPattern {
 }
 
 const MODULES: PatternModule[] = [];
+
+// 档案里的一句（第七十五轮）：国家在生成时是哪种格局里的什么角色（神圣帝国的成员、民族国家……）；不认得的角色没有
+export function roleText(role: string | undefined): string | undefined {
+  if (!role) return undefined;
+  for (const m of MODULES) {
+    const t = m.roles?.[role];
+    if (t) return t;
+  }
+  return undefined;
+}
 
 // 登记一个模块（同一个 id 再登记一次是换掉，位置不变）。先后就是调的先后
 export function registerPattern(m: PatternModule): void {

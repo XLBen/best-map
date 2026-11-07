@@ -17,6 +17,8 @@ export const centralEmpire: PatternModule = {
   name: '集权帝国',
   description: '一个文化组的腹地里一个很大的集权国家，没有成员国，是最大的国家',
   amountHint: '几个；小数是再多一个的可能',
+  tip: '像中世纪的中国、拜占庭：一个文化的腹地里一个没有诸侯的大国',
+  roles: { 'central-empire': '集权帝国' },
   params: [
     { key: 'size', label: '多大', min: 0.5, max: 20, step: 0.5, default: 6, hint: '面积预算是几个平均的国家（不超过能住人的地方的三成；至少比别的国家大两成五）' },
     { key: 'pace', label: '长得快', min: 0, max: 1, step: 0.05, default: 0.4, hint: '往外长时每一步的代价少几成（集权的大国推进得快）' },
@@ -51,6 +53,7 @@ export const centralEmpire: PatternModule = {
       const center = bestCell(g, ok, (i) => hab[i] * (1 + 0.35 * noiseAt(world, ns, 800, i)));
       if (center < 0) continue;
       const seed = seedAt(g, center, tier, budget, -1, rand, (gv) => 0.25 + gv.cohesion);
+      seed.role = CENTRAL_EMPIRE;
       openCore(g, CENTRAL_EMPIRE, seed, 0.2 * budget, ok);
       list.push(seed);
       g.rest -= 1;

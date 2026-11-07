@@ -121,8 +121,8 @@ export function foundedYear(era: Pick<Era, 'years'> | undefined, rand: () => num
 export const yearText = (y: number): string => (y < 0 ? `前 ${-y} 年` : `${y} 年`);
 
 // 从属的种类的中文名与历史里的一句（第二十六轮）
-export const SUBJECT_NAMES: Record<SubjectKind, string> = { vassal: '附庸', protectorate: '保护国', dominion: '自治领', tributary: '朝贡国', colony: '殖民地' };
-// 从属的一句（档案、列表用；第七十四轮）：殖民地写“殖民地 · 宗主国 X”，别的写“附庸 · 宗主 X”
+export const SUBJECT_NAMES: Record<SubjectKind, string> = { vassal: '附庸', protectorate: '保护国', dominion: '自治领', tributary: '朝贡国', colony: '殖民地', company: '公司领地' };
+// 从属的一句（档案、列表用；第七十四轮）：殖民地写“殖民地 · 宗主国 X”，别的写“附庸 · 宗主 X”（第七十五轮的公司领地写“公司领地 · 宗主 X”）
 export function subjectText(kind: SubjectKind | undefined, lord: string): string {
   return kind === 'colony' ? `殖民地 · 宗主国 ${lord}` : `${SUBJECT_NAMES[kind ?? 'vassal']} · 宗主 ${lord}`;
 }
@@ -131,6 +131,7 @@ function subjectLine(kind: SubjectKind | undefined, lord: string): string {
   if (kind === 'dominion') return `后来成为${lord}的自治领。`;
   if (kind === 'tributary') return `向${lord}称臣纳贡。`;
   if (kind === 'colony') return `后来成为${lord}的殖民地。`;
+  if (kind === 'company') return `后来成为${lord}的公司领地。`;
   return `后来成为${lord}的附庸。`;
 }
 
@@ -236,6 +237,8 @@ export function writeRecords(g: CountryRun) {
       founded: foundedYear(era, yearRand),
       history: '',
       ...(s.tier.id ? { tier: s.tier.id } : {}),
+      // 第七十五轮：格局里的角色（没有时不写，以前的档案逐值不变）
+      ...(s.role ? { role: s.role } : {}),
     };
     Object.assign(meta, nameCountry(world, meta, seed, taken, era));
     return meta;

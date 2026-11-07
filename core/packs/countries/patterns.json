@@ -12,6 +12,8 @@
     { "id": "multiethnic", "name": "多民族帝国", "description": "一两个大国越过文化组的边界，境内住着好几个民族。", "module": "multiethnic", "amount": 1 },
     { "id": "nation-state", "name": "民族国家", "description": "有的文化组并成一国，有的按文化分成一族一国，别的照旧。", "module": "nation-state", "amount": 1 },
     { "id": "post-colonial", "name": "前殖民地国家", "description": "本土以外的大陆上国界是直线，一国里住着好几个民族。", "module": "post-colonial", "amount": 2 },
+    { "id": "race-realms", "name": "种族王国", "description": "精灵守着古林，矮人在山里分成几个要塞小国、结成同盟，兽人在荒原上分成几个部落、结成部落联盟，人类的王国在平原和海岸上。", "module": "race-realms", "amount": 1 },
+    { "id": "outposts", "name": "殖民据点", "description": "本地种族的国家之间散着一些很小的据点，归外来的公司或殖民政府管：有的是公司领地，有的是殖民据点。", "module": "outposts", "amount": 6 },
     { "id": "tributaries", "name": "朝贡与附庸", "description": "小国多向旁边的大国称臣纳贡，少数是附庸。", "module": "vassals", "amount": 1, "tributary": 3, "vassal": 1 },
     { "id": "feudal-vassals", "name": "封建附庸", "description": "小国多是旁边大国的附庸，少数称臣纳贡。", "module": "vassals", "amount": 1, "vassal": 4, "tributary": 1 },
     { "id": "realm-vassals", "name": "封臣与朝贡", "description": "小国多是旁边王国的封臣，也有称臣纳贡的。", "module": "vassals", "amount": 1, "vassal": 3, "tributary": 1 },

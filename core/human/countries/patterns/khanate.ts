@@ -24,6 +24,8 @@ export const khanate: PatternModule = {
   name: '游牧汗国',
   description: '草原、荒漠上一个很大、松散的游牧国家',
   amountHint: '几个（一片草原一个）；小数是再多一个的可能',
+  tip: '像中世纪的蒙古：草原、荒漠上一个很大的游牧国家',
+  roles: { 'khanate': '游牧汗国' },
   params: [
     { key: 'size', label: '多大', min: 0.5, max: 20, step: 0.5, default: 5, hint: '面积预算是几个平均的国家（不超过能住人的地方的两成）' },
     { key: 'steppe', label: '守着草原', min: 0, max: 1, step: 0.05, default: 0.7, hint: '进草原、荒漠多容易、进别处多难；0 和别的国家一样' },
@@ -80,6 +82,7 @@ export const khanate: PatternModule = {
       if (center < 0) continue;
       // 偏游牧的政体：(0.1 + nomadic)²
       const seed = seedAt(g, center, tier, budget, -1, rand, (gv) => (0.1 + gv.nomadic) ** 2);
+      seed.role = KHANATE;
       openCore(g, KHANATE, seed, 0.2 * budget, open);
       st.seeds.push(seed);
       g.rest -= 1;

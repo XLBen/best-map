@@ -14,6 +14,7 @@ export const federation: PatternModule = {
   name: '联邦',
   description: '几个大国按地区分成 4–12 个成员邦，在国家模式里画成一种颜色',
   amountHint: '几个；小数是再多一个的可能',
+  tip: '近现代、现代、科幻：几个大国分成成员邦，地图上整片一种颜色',
 
   relate(g, use) {
     const b = g.bloc!;

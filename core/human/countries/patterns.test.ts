@@ -56,7 +56,8 @@ describe('六个内置的时代', () => {
     it(`${era.id}：格局就是以前的 relations（邦联、联邦、同盟的多少，附庸的种类）；relations 只剩称号`, () => {
       const old = OLD_RELATIONS[era.id];
       const uses = patternUses(builtinSmall, era);
-      expect(uses.get('holy-empire')!.amount).toBe(old.confederation ?? 0);
+      // 第七十五轮：奇幻不再有神圣帝国（种族王国的山中要塞、荒原部落取代了它，见 era-patterns.test.ts）
+      expect(uses.get('holy-empire')!.amount).toBe(era.id === 'fantasy' ? 0 : (old.confederation ?? 0));
       expect(uses.get('federation')!.amount).toBe(old.federation ?? 0);
       expect(uses.get('alliance')!.amount).toBe(old.alliances ?? 0);
       expect(uses.get('vassals')!.amount).toBe(1);

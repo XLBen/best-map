@@ -8,8 +8,8 @@ import { type PatternModule, param } from '../patterns';
 // 多少：乘在收下的可能上（1 是政体写的那么多，0 没有附庸）。时代没列附庸的格局时照样有附庸（fallback 1），都算附庸。
 // 代码从 countries.ts 的 diplomacy 原样搬来，随机流的名字不变：'vassal'
 
-// 殖民地（第七十四轮）是殖民地的格局写的，附庸不挑它
-const SUBJECT_LIST = SUBJECT_KINDS.filter((k): k is Exclude<SubjectKind, 'colony'> => k !== 'colony');
+// 殖民地（第七十四轮）、公司领地（第七十五轮）是殖民地、殖民据点的格局写的，附庸不挑它们
+const SUBJECT_LIST = SUBJECT_KINDS.filter((k): k is Exclude<SubjectKind, 'colony' | 'company'> => k !== 'colony' && k !== 'company');
 const LABEL: Record<(typeof SUBJECT_LIST)[number], string> = { vassal: '附庸', protectorate: '保护国', dominion: '自治领', tributary: '朝贡国' };
 
 export const vassals: PatternModule = {
@@ -17,6 +17,7 @@ export const vassals: PatternModule = {
   name: '附庸',
   description: '小国当旁边大三倍以上的国家的附庸（最多两层）；从属的种类按比例挑',
   amountHint: '乘在收附庸的可能上；1 是政体写的那么多，0 没有附庸',
+  tip: '时代没列也照样有附庸（都算附庸）；列了可以调几种从属各占多少',
   fallback: 1,
   params: SUBJECT_LIST.map((k) => ({ key: k, label: LABEL[k], min: 0, max: 100, step: 0.1, default: 0, hint: `从属里${LABEL[k]}占多少；都是 0 时都算附庸` })),
 

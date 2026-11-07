@@ -11,7 +11,9 @@ import { khanate } from './khanate';
 import { multiethnic } from './multiethnic';
 import { nationState } from './nation-state';
 import { nationalism } from './nationalism';
+import { outposts } from './outposts';
 import { postColonial } from './post-colonial';
+import { raceRealms } from './race-realms';
 import { riverEmpire } from './river-empire';
 import { unification } from './unification';
 import { vassals } from './vassals';
@@ -23,15 +25,19 @@ import { vassals } from './vassals';
 //   diplomacy：殖民地在附庸之后（列强是定完附庸以后不是附庸的大国）；
 //   grow：大河帝国、集权帝国、汗国 → 多民族帝国 → 民族主义（民族主义看多民族的大国的记号）；
 //   after：民族统一 → 民族国家 → 前殖民地国家
+// 第七十五轮的种族王国插在汗国之后（relate 的同盟要在军事同盟之前），殖民据点在殖民地之后（diplomacy 在附庸之后）；
+// 都不取共用流里的数、多少是 0 时什么都不做
 registerPattern(holyEmpire);
 registerPattern(cityLeague);
 registerPattern(riverEmpire);
 registerPattern(centralEmpire);
 registerPattern(khanate);
+registerPattern(raceRealms);
 registerPattern(federation);
 registerPattern(alliance);
 registerPattern(vassals);
 registerPattern(colonies);
+registerPattern(outposts);
 registerPattern(multiethnic);
 registerPattern(nationalism);
 registerPattern(unification);

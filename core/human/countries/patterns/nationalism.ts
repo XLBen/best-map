@@ -10,6 +10,7 @@ export const nationalism: PatternModule = {
   name: '民族主义',
   description: '国家不愿越过文化的边界往外长（按时代的“民族主义”有多强）；不是每个国家都在乎',
   amountHint: '乘在时代的“民族主义”上；1 照时代写的，0 没有',
+  tip: '时代没列也起作用；强弱看时代的“文化的倒向”，这里调谁在乎、在乎多少',
   fallback: 1,
   params: [
     { key: 'sameGroup', label: '同组的文化', min: 0, max: 10, step: 0.1, default: 0.8, hint: '进同一个文化组里别的文化的地方，代价 ×（1 + 这个数 × 民族主义）' },

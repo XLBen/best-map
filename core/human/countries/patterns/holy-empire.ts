@@ -20,6 +20,8 @@ export const holyEmpire: PatternModule = {
   name: '神圣帝国',
   description: '一个文化组的一片地方诸侯林立：撒很多城邦、小国，并成一个帝国（皇帝的那一国是最大的成员）',
   amountHint: '几片；小数是再多一片的可能',
+  tip: '像中世纪的神圣罗马帝国：一片地方诸侯林立，名义上是一个帝国',
+  roles: { 'holy-empire': '神圣帝国的成员' },
   params: [...MEMBER_PARAMS(6, 14), { key: 'memberShare', label: '占国家的几成', min: 0, max: 1, step: 0.05, default: 0.3, hint: '诸侯的个数大约是国家总数的几成（再按上面两项夹住）' }],
 
   // 圈出那一片、放诸侯的起点；占用总个数里的几个
@@ -110,7 +112,7 @@ export const holyEmpire: PatternModule = {
         const tier = s === 0 ? centreTier : pickWeighted(members.list, members.weight, rand)!;
         const w = govWeights(ctx.world, ctx.era, culture, govs);
         const gov = pickGov(govs, (gg) => w(gg) * govFit(gg, tier), rand);
-        return { cell: pick, culture: c, gov, tier, budget: tier.area * (0.7 + 0.6 * rand()), region: k0 };
+        return { cell: pick, culture: c, gov, tier, budget: tier.area * (0.7 + 0.6 * rand()), region: k0, role: HOLY_EMPIRE };
       });
       shareBudget(list, got);
       g.regions.push({ pattern: HOLY_EMPIRE, group: gi, seeds: list });

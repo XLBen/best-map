@@ -25,6 +25,8 @@ export interface Seed {
   overseas?: boolean;
   // 多民族的大国（第七十四轮的 multiethnic）：越过文化组的边界不难，也不在乎民族主义
   multiethnic?: boolean;
+  // 格局里的角色（第七十五轮）：写进档案的 CountryMeta.role（“神圣帝国的成员”“民族国家”……，文字见 patterns.ts 的 roleText）
+  role?: string;
 }
 
 // 预留的一片地方（reserve 钩子圈的，神圣帝国的诸侯……）：长的时候只有它的成员进，成员也不出这一片去占能住人的地方

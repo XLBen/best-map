@@ -53,13 +53,14 @@ const rgb = (hex: string): [number, number, number] => {
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
 };
 
-// 每个国家在 kinds 的集团里算哪一个（kinds 里先列的种类优先）。第七十四轮：自己不在这些集团里的殖民地跟着宗主（一层层往上找）
+// 每个国家在 kinds 的集团里算哪一个（kinds 里先列的种类优先）。第七十四轮：自己不在这些集团里的殖民地跟着宗主（一层层往上找）；
+// 第七十五轮的公司领地也一样
 export function memberBlocs(small: Pick<World['small'], 'blocs' | 'countries'>, kinds: readonly BlocKind[]): Map<number, Bloc> {
   const pick = new Map<number, Bloc>();
   for (const kind of kinds) for (const b of blocList(small)) if (b.kind === kind) for (const m of b.members) if (!pick.has(m)) pick.set(m, b);
   const metas = small.countries ?? {};
   for (const m of Object.values(metas)) {
-    if (m.subject !== 'colony' || pick.has(m.id)) continue;
+    if ((m.subject !== 'colony' && m.subject !== 'company') || pick.has(m.id)) continue;
     let top: CountryMeta | undefined = m;
     for (let d = 0; top && top.overlord !== undefined && d < 8; d++) {
       top = metas[top.overlord];

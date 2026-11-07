@@ -19,6 +19,8 @@ export const cityLeague: PatternModule = {
   name: '城邦群',
   description: '最宜居的一段海岸或河谷里很多城邦级的小国，结成一个同盟',
   amountHint: '几群；小数是再多一群的可能',
+  tip: '像古典的希腊、腓尼基：一段海岸或河谷里一串城邦，结成同盟',
+  roles: { 'city-league': '城邦同盟的成员' },
   params: [...MEMBER_PARAMS(8, 15), { key: 'room', label: '每个多大', min: 0.5, max: 4, step: 0.1, default: 1.2, hint: '每个城邦大约是城邦级面积的几倍' }],
 
   reserve(g, use) {
@@ -49,7 +51,7 @@ export const cityLeague: PatternModule = {
         continue;
       }
       const seeds = g.stream(CITY_LEAGUE, q);
-      const list = scatterSeeds(g, cells, k0, center, nc, (_, pick) => seedAt(g, pick, tier, tier.area * (0.7 + 0.6 * seeds()), k0, seeds), false);
+      const list = scatterSeeds(g, cells, k0, center, nc, (_, pick) => ({ ...seedAt(g, pick, tier, tier.area * (0.7 + 0.6 * seeds()), k0, seeds), role: CITY_LEAGUE }), false);
       shareBudget(list, got);
       g.regions.push({ pattern: CITY_LEAGUE, group: gi, seeds: list });
       g.rest = Math.max(1, g.rest - Math.max(1, Math.round(got / g.T)));

@@ -15,6 +15,8 @@ export const unification: PatternModule = {
   name: '民族统一',
   description: '一个分成好几国的文化组里，最大的那一国把挨着的同组国家并成一国',
   amountHint: '几次（一次一个文化组）；小数是再多一次的可能',
+  tip: '像近现代的德意志、意大利：分成几国的同族并成一国',
+  roles: { 'unification': '统一了同族的国家' },
   params: [
     { key: 'joinChance', label: '并进来的可能', min: 0, max: 1, step: 0.05, default: 0.75, hint: '挨着的同组国家各自被并进来的可能' },
     { key: 'most', label: '最多几国', min: 2, max: 20, step: 1, default: 8, hint: '一次最多几国并成一国（算上统一者）' },
@@ -73,6 +75,7 @@ export const unification: PatternModule = {
         frontier = next;
       }
       merged += members.length - 1;
+      if (members.length > 1) seeds[leader].role = UNIFICATION;
     }
     if (merged) mergeOwners(g, into);
     g.state.set(UNIFICATION, merged);

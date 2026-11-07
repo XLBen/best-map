@@ -23,6 +23,8 @@ export const riverEmpire: PatternModule = {
   name: '大河帝国',
   description: '最大的河谷里一个集权的大国，国土顺着大河长',
   amountHint: '几个（一个流域一个）；小数是再多一个的可能',
+  tip: '像古典的埃及、两河：最大的河谷里一个大国顺着河长',
+  roles: { 'river-empire': '大河帝国' },
   params: [
     { key: 'size', label: '最大多大', min: 0.5, max: 20, step: 0.5, default: 6, hint: '面积预算是这个流域能住人的地方那么大，最多几个平均的国家（不超过能住人的地方的三成）' },
     { key: 'river', label: '沿河', min: 0, max: 1, step: 0.05, default: 0.75, hint: '沿着河、在流域里长得多容易；0 和别的国家一样' },
@@ -57,6 +59,7 @@ export const riverEmpire: PatternModule = {
       // 预算：这个流域能住人的地方那么大（至少一个平均的国家，至多 size 个、能住人的地方的三成）
       const budget = Math.min(Math.max(room.get(b)!, g.T), size * g.T, 0.3 * g.area);
       const seed = seedAt(g, center, tier, budget, -1, rand);
+      seed.role = RIVER_EMPIRE;
       // 核心：沿河圈预算的两成（不是河的格贵三倍）
       openCore(g, RIVER_EMPIRE, seed, 0.2 * budget, ok, (j) => ((x.flags[j] & RIVER) !== 0 ? 1 : 3));
       st.list.push({ seed, basin: b });

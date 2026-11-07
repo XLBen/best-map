@@ -13,6 +13,7 @@ export const alliance: PatternModule = {
   name: '军事同盟',
   description: '在已有的同盟关系上聚成几个军事集团',
   amountHint: '几个；小数是再多一个的可能',
+  tip: '最大的几国各拉一帮邻国，结成几个军事同盟（近现代、现代、奇幻、科幻）',
 
   relate(g, use) {
     const b = g.bloc!;

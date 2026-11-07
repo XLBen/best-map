@@ -13,7 +13,7 @@
     "countryKm2": 1300000,
     "years": [200, 1200],
     "tiers": {"city": 1, "small": 2.5, "medium": 2, "large": 1, "empire": 0.4},
-    "patterns": [{"pattern": "holy-empire", "amount": 0.6}, {"pattern": "alliances", "amount": 1}, {"pattern": "realm-vassals"}],
+    "patterns": [{"pattern": "race-realms", "amount": 1}, {"pattern": "alliances", "amount": 1}, {"pattern": "realm-vassals"}],
     "nationalism": 0.2,
     "relations": {
       "titles": {

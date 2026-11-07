@@ -13,7 +13,7 @@
     "countryKm2": 900000,
     "years": [2150, 2600],
     "tiers": {"city": 0.5, "small": 2, "medium": 2, "large": 1.5, "empire": 0.5},
-    "patterns": [{"pattern": "federation", "amount": 1}, {"pattern": "alliances", "amount": 2}, {"pattern": "stellar-subjects"}],
+    "patterns": [{"pattern": "federation", "amount": 1}, {"pattern": "alliances", "amount": 2}, {"pattern": "stellar-subjects"}, {"pattern": "outposts", "amount": 6}],
     "nationalism": 0.5,
     "relations": {
       "titles": {

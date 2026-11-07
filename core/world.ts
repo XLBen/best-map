@@ -342,6 +342,9 @@ export interface CountryMeta {
   overlord?: number;
   // 从属的种类（第二十六轮，有 overlord 时才有意义；省略为 vassal）
   subject?: SubjectKind;
+  // 生成时在哪种国家格局里、是什么角色（第七十五轮：神圣帝国的成员、城邦同盟的成员、民族国家……；格局模块的 id，或“模块:角色”）。
+  // 档案里写一句（human/countries/patterns.ts 的 roleText）；快照式的，之后改集团、合并不跟着改
+  role?: string;
   allies: number[];
   rivals: number[];
   ruler: { name: string; orig?: string; title?: string };

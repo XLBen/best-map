@@ -299,7 +299,7 @@ export {
   worldTiers,
 } from './tiers';
 // 第七十三轮：国家格局
-export { type CountryPattern, type PatternModule, type PatternParam, eraUsesModule, patternById, patternModule, patternModules, patternUses, worldPatterns } from './countries/patterns';
+export { type CountryPattern, type PatternModule, type PatternParam, eraUsesModule, patternById, patternModule, patternModules, patternUses, roleText, worldPatterns } from './countries/patterns';
 export { countryPatternSchema } from './countries/patterns/index';
 // 第二十六轮：帝国、联邦、同盟
 export {

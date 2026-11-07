@@ -21,6 +21,8 @@ export const nationState: PatternModule = {
   name: '民族国家',
   description: '有的文化组并成一国，有的按文化分成一族一国，别的照旧',
   amountHint: '乘在“并成一国”“一族一国”两个比例上；1 照参数，0 都照旧',
+  tip: '现代：有的民族并成一国，有的一族一国',
+  roles: { 'nation-state': '民族国家' },
   params: [
     { key: 'unify', label: '并成一国', min: 0, max: 1, step: 0.05, default: 0.3, hint: '一个文化组并成一国的可能' },
     { key: 'split', label: '一族一国', min: 0, max: 1, step: 0.05, default: 0.35, hint: '一个文化组按文化分成一族一国的可能' },
@@ -82,7 +84,9 @@ export const nationState: PatternModule = {
       }
       for (const gr of splitG) {
         const has = [...Array(K).keys()].filter((c) => ctx.cultureGroup[c] === gr && stateOf[c] >= 0);
-        if (has.length >= 2) log.split.push(gr);
+        if (has.length < 2) continue;
+        log.split.push(gr);
+        for (const c of has) seeds[stateOf[c]].role = NATION_STATE;
       }
       // 重新分：组里的文化归它的那一国；别的格留给原来的国家，原来的并掉了时归它主流文化的那一国
       const kept = (o: number) => stateOf[seeds[o].culture] === o;
@@ -119,6 +123,7 @@ export const nationState: PatternModule = {
           if (part.length < 2 || sum > maxSize * g.T) continue;
           const lead = part.reduce((a, b) => (area[b] > area[a] ? b : a));
           for (const o of part) if (o !== lead) into[o] = lead;
+          seeds[lead].role = NATION_STATE;
           any = true;
         }
         if (any) log.unified.push(gr);

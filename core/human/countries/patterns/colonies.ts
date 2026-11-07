@@ -46,6 +46,7 @@ export const colonies: PatternModule = {
   name: '殖民地',
   description: '本土以外的大陆上划出几大块殖民地，归本土上最大的几国（列强）管；当地的文化不变',
   amountHint: '几块；小数是再多一块的可能',
+  tip: '近现代：列强在别的大陆上划出大块殖民地，地图上用宗主的浅色',
   params: [
     { key: 'size', label: '多大', min: 0.5, max: 20, step: 0.5, default: 2.5, hint: '一块殖民地是几个平均的国家大' },
     { key: 'landShare', label: '最多占几成', min: 0.1, max: 1, step: 0.05, default: 0.7, hint: '一块陆地最多被划成殖民地的几成' },
