@@ -24,13 +24,13 @@ export const BUILTIN_FIELDS: FieldInfo[] = [
   { id: 'tWarm', label: '暖季均温', unit: '°C', lo: -30, hi: 45, correctable: 'temp' },
   { id: 'tCold', label: '冷季均温', unit: '°C', lo: -50, hi: 30, correctable: 'temp' },
   { id: 'precip', label: '年降水', unit: 'mm', lo: 0, hi: 4000, correctable: 'precip' },
-  { id: 'moisture', label: '湿润指数 P/PET', unit: '', lo: 0, hi: 4, correctable: 'precip' },
+  { id: 'moisture', label: '湿润程度', unit: '', lo: 0, hi: 4, correctable: 'precip' },
   { id: 'seasonality', label: '降水季节性（正=夏雨）', unit: '', lo: -1, hi: 1, correctable: null },
   { id: 'elevation', label: '海拔', unit: 'm', lo: 0, hi: 8000, correctable: null },
   { id: 'slope', label: '坡度', unit: 'm/km', lo: 0, hi: 100, correctable: null },
   { id: 'discharge', label: '河流流量', unit: 'm³/s', lo: 0, hi: 20000, correctable: null },
-  { id: 'wetness', label: '地形湿度指数', unit: '', lo: 0, hi: 30, correctable: null },
-  { id: 'continentality', label: '大陆度', unit: '', lo: 0, hi: 1, correctable: null },
+  { id: 'wetness', label: '地形湿度', unit: '', lo: 0, hi: 30, correctable: null },
+  { id: 'continentality', label: '离海远近', unit: '', lo: 0, hi: 1, correctable: null },
   { id: 'lat', label: '纬度（绝对值）', unit: '°', lo: 0, hi: 90, correctable: null },
 ];
 
@@ -210,6 +210,34 @@ export function heightTolerance(h: HeightRange): Tolerance {
   const noHigh = h.high >= HEIGHT_MAX;
   return { field: 'elevation', min: noLow ? -1 : h.low - HEIGHT_MARGIN, optLow: noLow ? -1 : h.low, optHigh: noHigh ? 1e5 : h.high, max: noHigh ? 1e5 : h.high + HEIGHT_MARGIN };
 }
+
+// “只长在高山上”（第七十二轮起是高度范围旁边的一个按钮）：把高度范围的下限设到这里，和以前的命名条件 mountain 的最适下限一样
+export const ALPINE_LOW = 1500;
+
+// 读进来的生态带着海拔的耐受条件（第七十二轮：界面上海拔只在高度范围里设）。换成高度范围后算出来逐值相同时换掉，
+// 否则原样留着（core/species-height.test.ts 查着）。逐值相同要三条都成立：
+//   - 没写高度范围（写了时高度范围是另一条曲线，换掉就少了一条）；
+//   - 海拔的这一条是最后一条，也是唯一的一条（speciesTolerances 把高度范围排在最后：乘的先后不变）；
+//   - 这一条和高度范围换成的曲线（heightTolerance）四个数一样。
+// 命名条件 mountain（1000 / 1500 / 9000 / 9000）不满足最后一条：高度范围的过渡只有 HEIGHT_MARGIN，下限是 1200，不是 1000
+export function elevationAsHeight<T>(sp: T): T {
+  if (!sp || typeof sp !== 'object') return sp;
+  const o = sp as { tolerances?: unknown; height?: unknown };
+  if (o.height !== undefined || !Array.isArray(o.tolerances)) return sp;
+  const tols = o.tolerances as Tolerance[];
+  const k = tols.findIndex((t) => t && typeof t === 'object' && t.field === 'elevation');
+  if (k < 0 || k !== tols.length - 1) return sp;
+  const t = tols[k];
+  if (![t.min, t.optLow, t.optHigh, t.max].every((v) => typeof v === 'number' && Number.isFinite(v))) return sp;
+  const h = { low: t.optLow <= 0 ? 0 : t.optLow, high: t.optHigh >= HEIGHT_MAX ? HEIGHT_MAX : t.optHigh };
+  if (h.low > h.high) return sp;
+  const same = heightTolerance(h);
+  if (same.min !== t.min || same.optLow !== t.optLow || same.optHigh !== t.optHigh || same.max !== t.max) return sp;
+  return { ...sp, tolerances: tols.slice(0, k), height: h };
+}
+
+// 海拔的耐受条件（读进来、换不成高度范围的；界面上写一行，不能改）
+export const elevationTolerances = (sp: Pick<Species, 'tolerances'>): Tolerance[] => sp.tolerances.filter((t) => t.field === 'elevation');
 
 // 算适宜度时用的全部耐受曲线：写着的，加上高度范围（排在最后）。没写高度范围时就是 sp.tolerances 这个数组
 export function speciesTolerances(sp: Pick<Species, 'tolerances' | 'height'>): readonly Tolerance[] {

@@ -417,7 +417,10 @@ export function solveConstraints(world: World, base: ClimateBase, d: Derived, ef
   return { plans };
 }
 
-const FIELD_LABEL = new Map(BUILTIN_FIELDS.map((f) => [f.id, f]));
+// 没涂成的建议写在推导里（derived.conflicts，金标准查着）：第七十二轮界面上把这三项改叫湿润程度、地形湿度、离海远近，
+// 这里的字照旧（改了就要重录金标准）。界面上“没涂成”的原因另按 Inspector.tsx 的说法写
+const CONFLICT_WORDS: Record<string, string> = { moisture: '湿润指数 P/PET', wetness: '地形湿度指数', continentality: '大陆度' };
+const FIELD_LABEL = new Map(BUILTIN_FIELDS.map((f) => [f.id, { ...f, label: CONFLICT_WORDS[f.id] ?? f.label }]));
 
 // 最终结果出来后检查每个约束是否达成；未达成的列入冲突面板，并说明卡在哪里
 export function checkConstraints(world: World, d: Derived, solve: SolveResult): Conflict[] {

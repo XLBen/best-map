@@ -18,7 +18,7 @@ export const cellRuleSchema = z.object({
   // 年均温（°C）
   tempMin: z.number().optional(),
   tempMax: z.number().optional(),
-  // 湿润指数（P/PET）
+  // 湿润程度（P/PET）
   moistMin: z.number().optional(),
   moistMax: z.number().optional(),
   // 地形湿度指数
@@ -51,7 +51,7 @@ export const RULE_FIELDS: readonly FieldDesc[] = [
   ...range('elev', '海拔', 'm'),
   ...range('slope', '坡度', 'm/km'),
   ...range('temp', '年均温', '°C'),
-  ...range('moist', '湿润指数', 'P/PET'),
+  ...range('moist', '湿润程度', '降水 ÷ 蒸散'),
   ...range('wet', '地形湿度', ''),
   ...range('lat', '纬度', '°（绝对值）'),
   { key: 'terrain', label: '生态的地形', type: 'tags', optional: true, hint: 'forest、jungle、steppe、desert、arctic、marsh…' },

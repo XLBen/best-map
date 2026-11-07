@@ -6,7 +6,7 @@ import { type NameStyle, nameStyleSchema, sampleNames, styleInUse, styleNotes, s
 import { type PlanetForm, planetFormSchema } from '../planet-form';
 import { DEFAULT_LOOK, type MapStyle, mapStyleSchema, worldMapStyles } from '../map-style';
 import { RIVER_STYLES, RIVER_STYLE_LABEL, type RiverType, riverTypeSchema, riverTypesOf } from '../river-types';
-import { HEIGHT_MARGIN, HEIGHT_MAX, PATTERNS, PATTERN_LABEL, type Species, speciesSchema } from '../species';
+import { HEIGHT_MARGIN, HEIGHT_MAX, PATTERNS, PATTERN_LABEL, type Species, elevationAsHeight, speciesSchema } from '../species';
 import { type LakeWhenKey, LAKE_WHEN_KEYS, WHEN_KEYS, WHEN_RANGE } from '../water-types';
 import { CommandError } from '../errors';
 import { BIOME_TERRAINS } from '../export-terrain';
@@ -135,7 +135,7 @@ registerKind<Species>({
     { key: 'color', label: '颜色', type: 'color' },
     // 第七十一轮：以前叫“地形类别”，和地形类别那一层（平原、丘陵……）撞名；选项写中文，存的是 id
     { key: 'terrain', label: '导出用的地形', type: 'enum', options: BIOME_TERRAINS.map((t) => ({ value: t.id, label: t.label })), hint: '导出的地形图按它着色' },
-    { key: 'competition', label: '竞争力', type: 'number', min: 0, max: 100, step: 0.5 },
+    { key: 'competition', label: '强势程度', type: 'number', min: 0, max: 100, step: 0.5 },
     { key: 'natural', label: '自然生成', type: 'bool', optional: true, default: true },
     { key: 'habitability', label: '宜居度', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '0–1；空着时按气候估' },
     { key: 'movement', label: '通行难度', type: 'number', optional: true, min: 0.1, max: 20, step: 0.05, hint: '乘在地形类别的起伏上；平地的草原为 1，空着时按生态估' },
@@ -155,7 +155,7 @@ registerKind<Species>({
     },
     {
       key: 'tolerances',
-      label: '耐受条件',
+      label: '更精细的条件',
       type: 'list',
       hint: '最适合的范围在“偏低”到“偏高”之间，到“最低”“最高”降到 0',
       of: [
@@ -168,7 +168,7 @@ registerKind<Species>({
     },
     {
       key: 'visual',
-      label: '样子',
+      label: '图案',
       type: 'json',
       optional: true,
       of: [
@@ -211,7 +211,7 @@ registerKind<Species>({
     },
     {
       key: 'feature',
-      label: '地名设定',
+      label: '地名',
       type: 'json',
       optional: true,
       of: [{ key: 'label', label: '类型名', type: 'text', hint: '“晶林”' }, { ...NAMES_FIELD, label: '起名模板' }],
@@ -221,6 +221,8 @@ registerKind<Species>({
   pack: {
     key: 'biomes',
     max: 256,
+    // 第七十二轮：带着海拔耐受条件的生态，换成高度范围后逐值相同时换掉（界面上海拔只在高度范围里设）
+    read: (raw) => elevationAsHeight(raw),
     listed: true,
     checked: true,
     // 只长在某处的生态（从起源地扩散、只在某个岛上、圈的范围里）不勾：起源地的格编号只对做它的那个世界有效
