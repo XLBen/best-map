@@ -55,7 +55,7 @@
 - `features.ts` 地理要素识别（陆块、海、山脉、群岛……；用户圈的地名区块；前后地物配对留名字）
 - `names.ts` 模板式起名；`name-styles.ts` 地名风格（模板式、音译式，`styleFor`）；`name-display.ts` 中文 / 原文 / 两者
 - `map-style.ts` 画风的格式（`DEFAULT_LOOK` 就是写实）、`styleRgba`、`worldMapStyle`、签名 `mapStyleKey`
-- `provinces.ts` 省份规则、划分、局部重划、修补（海、陆、湖三类）、湖与陆地的整理（`lakeProvinceFix`）
+- `provinces.ts` 省份的划分、局部重划、修补（海、陆、湖三类）、湖与陆地的整理（`lakeProvinceFix`）；`province-rules.ts` 划分的规则（第七十八轮起是资源库里的内容“省份划分”：格式、默认的一份、世界的那一份 `worldProvinceRules`，种子在 `small.provinceSeed`）
 - `select.ts` 画笔、拖动扩张、画河的路线、圈一片、剪刀沿线切省；`seams.ts` 剪刀的切线
 
 ## 引擎与命令
@@ -68,12 +68,12 @@
 - `rng.ts` 随机数与噪声（按位置取，与格数无关）；`digest.ts` 64 位哈希；`errors.ts`、`type-id.ts`、`world-types.ts` 为避免循环引用拆出来的小文件
 
 ## 内容与资源包
-- `content/registry.ts` 内容种类的登记表（`ContentKind`、`allKinds`、`kindOf`）；编辑器的字段表 `FieldDesc`（第四十五轮：`ref` / `keyRef` 引用什么，`tuple`、`tuples`、`title`、`titleList`、`tendencies` 几种成块的字段）；`content/kinds.ts` 现有的种类在这里登记（登记的先后有意义）
+- `content/registry.ts` 内容种类的登记表（`ContentKind`、`allKinds`、`kindOf`）；编辑器的字段表 `FieldDesc`（第四十五轮：`ref` / `keyRef` 引用什么，`tuple`、`tuples`、`title`、`titleList`、`tendencies` 几种成块的字段）；`content/kinds.ts` 现有的种类在这里登记（登记的先后有意义）；`content/province-kind.ts` 省份划分（第七十八轮，一个世界一份，改了湖的归属马上整理）
 - `content/links.ts` 内容之间的引用表（第四十九轮）：由字段表推出，一项引用了什么、谁引用它、依赖的闭包（`hard` / `auto` / `strip` / `gate`，`gate` 是“限谁用”，全部落空就不能导入）、改名时跟着改（`renameLinks`）、去掉引用（`stripLinks`）；第七十三轮字段表多了 `follow`（去得掉的引用导入时也跟着带：时代的国家格局）；`content/link-rules.ts` 每种内容一条补充；`content/pack-tree.ts` 走包的树（`packs.ts` 照旧导出）
 - `content/arrange.ts` 融入（第六十轮）：库的 `arrange`（下级 → 上级，只改显示）、讲得通的组合 `RELATIONS`（怎么读出下面有哪些、加和移出改哪一项）、预设 `PRESET_ARRANGE`、`childrenOf`、`parentsOf`、`looseItems`
 - `content/refs.ts` 引用的底层：脚本字面量的位置、两项是不是一模一样（`sameItem`、`sameContent`）；`content/usage.ts` 内容用在哪里；`content/unused.ts`（第五十轮起也看文化、文化组、地名风格、时代）哪里都没用到的；`content/cleanable.ts`（第六十二轮）生成后没用到的：面板上变淡的、“清理没用到的”清的都是它，生态、河、湖、画风不算；`content/origin.ts` 每项来自哪个包、改名前的 id；`content/missing.ts` 缺了什么
 - `packs.ts` 资源包的格式、检查、用到世界、从世界导出（各段由登记表推出）；`readPack` 读文件（资源包、单独的文字包；第七十二轮起不认裸的生态数组）
-- `packs/builtin-tree.ts` 六个内置的库（第五十一轮：每个时代一个完整的库，由同一份数据拼出来；四个历史库带全部 EU4 文化组，不默认带的比重 0；第七十七轮起默认带的组带着这个时代的比重（各组占多少，`groupPack`）；`LIBRARY_BASE_PACKS`、`worldPartsOf` 是世界的底子）；`packs/base.ts` 库里“基础”由代码写的几样；`packs/nature.ts` 15 种生态（`builtinBiomesIn` 某一大类的 id）、`packs/biome-ids.ts` 它们的 id（别的内置数据点名生态时用）；`packs/planet-forms.ts` 星球形态；`packs/map-styles.ts` 写实、地图册；`packs/countries/` 国家等级（第四十二轮；第七十七轮去掉了格局）
+- `packs/builtin-tree.ts` 六个内置的库（第五十一轮：每个时代一个完整的库，由同一份数据拼出来；四个历史库带全部 EU4 文化组，不默认带的比重 0；第七十七轮起默认带的组带着这个时代的比重（各组占多少，`groupPack`）；`LIBRARY_BASE_PACKS`、`worldPartsOf` 是世界的底子）；`packs/base.ts` 库里“基础”由代码写的几样（第七十八轮：基础里还有内置的省份划分，见 `province-rules.ts`）；`packs/nature.ts` 15 种生态（`builtinBiomesIn` 某一大类的 id）、`packs/biome-ids.ts` 它们的 id（别的内置数据点名生态时用）；`packs/planet-forms.ts` 星球形态；`packs/map-styles.ts` 写实、地图册；`packs/countries/` 国家等级（第四十二轮；第七十七轮去掉了格局）
 - `packs/import.ts` 生成要用的内容从资源包加进世界（时代包整个加时不带世界的底子，比重 0 的组点名才带），`importIntoPack` 把一个包的内容导入另一个包（撞名改名；第六十一轮：文化组放进“文化”下面自己的小包，取值放进同一维的小包，包不再整个拷贝）；`packs/names/` 内置地名风格（一个 JSON 一种，92 种；`eu4-a/b/c.ts` 是第四十三轮照 EU4 文化组补的 49 种，`fiction-a/b/c/d.ts` 是第四十四轮给奇幻、科幻的组补的 16 种）；`packs/eras/`、`packs/governments/`、`packs/settlements/` 见 [core-human.md](core-human.md)
 - `packs/source-diff.ts` 世界里的一项和来源的库比（第六十二轮）：`sourceDiff`（一样、不同、只差导入时去掉的引用、来源不在了）、`usedSourceItem`（用库里的版本）、`savedBackItem`（存回我的库）
 - `packs/import-gates.ts` 导入时一项能不能选（第六十四轮）：`importGates(来源, 目的地, 勾选, 去掉的)` 给 `free` / `have` / `fixable` / `gated`（写要什么；第六十六轮加 `resolvable`：要的在这个来源里勾得到，`choices` 是勾得到的那几个）/ `full`（写原因）；`walkClosure` 走勾的项、子项（库的 `arrange`）、去不掉的引用和写了 `follow` 的引用（第七十三轮），最小不动点，勾的文化带来的组记 `member`；派系主要靠的变量只看来源库提供的（第六十五轮）；来源的表按对象记着
@@ -91,6 +91,6 @@
 - `export.ts` 导出；`export-terrain.ts` 导出用的地形（id、中文名、地形图的颜色；生态的 `terrain` 选它）；`thumbnail.ts` 向导缩略图；`presets.ts` 世界大小、纬度带、星球格数（`planetCells`）
 
 ## 测试用
-- `testing/fixtures.ts` 共用的世界模板与 `snapshot(key, build)`（建一次，每个测试拿副本）；`withoutHeights`、`plainEngine`（第五十五轮之前的生态，比算法和旧代码相同的测试用）；第七十七轮去掉的参数换成库里的规则：`humanExec` / `generateHuman` 收带比重的组（`TestGroup`，比重写进世界里的组）和改时代的 `era`，`fragKm2`（以前的“分裂 ↔ 统一”换成时代的国家大小）、`OLD_LAYOUTS`（以前的四种格局）、`eraCommand` / `setEra`；`testing/eras.ts` 按时代查内置内容
+- `testing/fixtures.ts` 共用的世界模板与 `snapshot(key, build)`（建一次，每个测试拿副本）；`withoutHeights`、`plainEngine`（第五十五轮之前的生态，比算法和旧代码相同的测试用）；第七十七轮去掉的参数换成库里的规则：`humanExec` / `generateHuman` 收带比重的组（`TestGroup`，比重写进世界里的组）和改时代的 `era`，`fragKm2`（以前的“分裂 ↔ 统一”换成时代的国家大小）、`OLD_LAYOUTS`（以前的四种格局）、`eraCommand` / `setEra`；第七十八轮：以前 generate_provinces 的规则换成改世界里的省份划分（`provinceRulesCommand` / `setProvinceRules`、先改再划分的 `divideProvinces`，以前的小 · 中 · 大是 `OLD_SIZES`）；`testing/eras.ts` 按时代查内置内容
 - `testing/class-only.ts` 只改类别的一串命令的摘要（第五十八轮，和 f01e102 记下的 `human/class-only-digests.json` 对照；不要改它）
 - `golden-full.json`、`golden-hashes.json`、`r31-digests.json`、`human/r29-digests.json` 金标准与摘要：不要重录（见 [测试](tests.md)）
