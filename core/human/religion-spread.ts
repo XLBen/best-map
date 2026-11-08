@@ -3,6 +3,7 @@ import { mixSeed } from '../rng';
 import type { GenContext } from './context';
 import { genEdgeCosts } from './cultures';
 import { HeapLite } from '../mesh';
+import { registerGenCache, viewKey } from './gen-cache';
 import { cellKm2, distKm } from './space';
 
 // 宗教的发源地与传播（第八十四轮）：以前每格的宗教只按文化的倾向 × 偏好 × 1200 km 的噪声，同一个文化里哪种宗教多是噪声说了算。
@@ -27,25 +28,29 @@ export interface ValueSpread {
   mix: Float32Array;
 }
 
-// 上一次的结果（重新生成国家时文化圈、宜居度、地形都没变，宗教传播的结果也一样：照用）。键里的数组按引用比（推导变了就是新的数组），
-// 文化圈按内容比
-let last: { key: string; arrays: unknown[]; cultureOf: Int32Array; out: ValueSpread | null } | null = null;
+// 上一次的结果（重新生成国家时文化圈、宜居度、地形都没变，宗教传播的结果也一样：照用）。键按内容比（gen-cache.ts 的 viewKey）
+let last: { key: string; mesh: unknown; out: ValueSpread | null } | null = null;
+registerGenCache(() => (last = null));
 
 export function spreadValues(ctx: GenContext, options: readonly { id: string; w: number }[][], dimId: string, border: (owner: Int32Array) => { other: Int32Array; mix: Float32Array }): ValueSpread | null {
-  const { world, d } = ctx;
-  const key = JSON.stringify([dimId, ctx.seed, world.kmPerUnit, options.map((l) => l.map((o) => [o.id, o.w])), ctx.cultures.map((c) => c.id), ctx.hearths.map((h) => [h.cell, h.culture ?? ''])]);
-  const arrays: unknown[] = [world.mesh, ctx.hab, d.elevation, d.dominant, d.terrainClass, d.discharge, d.lake, world.causes.land, world.small.species, world.small.content?.terrainClass];
+  const { world, x } = ctx;
   const cultureOf = ctx.cultureOf!;
-  if (last && last.key === key && last.arrays.every((a, k) => a === arrays[k]) && sameInts(last.cultureOf, cultureOf)) return last.out;
+  const key = JSON.stringify([
+    dimId,
+    ctx.seed,
+    world.kmPerUnit,
+    options.map((l) => l.map((o) => [o.id, o.w])),
+    ctx.hearths.map((h) => [h.cell, h.culture ?? '']),
+    ctx.cultures.map((c) => c.id),
+    viewKey(ctx.hab),
+    viewKey(x.dry),
+    viewKey(cultureOf),
+    viewKey(genEdgeCosts(ctx)),
+  ]);
+  if (last && last.mesh === world.mesh && last.key === key) return last.out;
   const out = spreadFresh(ctx, options, dimId, border);
-  last = { key, arrays, cultureOf: cultureOf.slice(), out };
+  last = { key, mesh: world.mesh, out };
   return out;
-}
-
-function sameInts(a: Int32Array, b: Int32Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
 }
 
 function spreadFresh(ctx: GenContext, options: readonly { id: string; w: number }[][], dimId: string, border: (owner: Int32Array) => { other: Int32Array; mix: Float32Array }): ValueSpread | null {

@@ -499,10 +499,10 @@ export const popFixSchema = z
     groups: z.array(z.number().int().min(0).max(65535)),
     shares: z.array(z.number().int().min(0).max(255)),
     // 第八十四轮：宜居度变了的一带挪了人的格（只改人数，成分不动）
-    moves: z.object({ cells: z.array(z.number().int().min(0)), total: z.array(z.number().min(0)) }).optional(),
+    moves: z.object({ steps: z.array(z.number().int().min(0)), total: z.array(z.number().min(0)) }).optional(),
   })
   .refine((f) => f.cells.length === f.total.length && f.groups.length === f.cells.length * 4 && f.shares.length === f.cells.length * 4, '人口修补的长短不对')
-  .refine((f) => !f.moves || f.moves.cells.length === f.moves.total.length, '人口修补的长短不对');
+  .refine((f) => !f.moves || f.moves.steps.length === f.moves.total.length, '人口修补的长短不对');
 
 // 命令里记下的地名（见 Command 的 nameCarry）：键是“类型:锚点格”或“guide:河道 id”
 export const featureKey = z.string().regex(/^\w+:\S+$/);

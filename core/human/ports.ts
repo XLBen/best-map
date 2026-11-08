@@ -16,7 +16,6 @@ const SHELTER = 0.6;
 export const MAX_LANE_KM = 1500;
 
 const isWater = (world: World, i: number) => !world.causes.land[i] || world.derived.lake[i] === 1;
-const openWater = (world: World, i: number) => isWater(world, i) && world.derived.tMean[i] >= ICE_SEA;
 
 // 这一格能不能做港口
 export function isPortCell(world: World, cell: number): boolean {
@@ -69,6 +68,8 @@ export interface Port {
   major: boolean;
 }
 
+let buf: { n: number; dist: Float64Array; label: Int32Array; parent: Int32Array; open: Uint8Array; heap: HeapLite } | null = null;
+
 // 海路：返回新的几条（还没编号），按连的先后
 export function seaLanes(world: World, ports: readonly Port[], piece: Int32Array): Omit<RoadMeta, 'id'>[] {
   const { mesh } = world;
@@ -77,16 +78,21 @@ export function seaLanes(world: World, ports: readonly Port[], piece: Int32Array
   if (P < 2) return [];
   const km = world.kmPerUnit;
   const reach = MAX_LANE_KM / 2;
-  const dist = new Float64Array(n).fill(Infinity);
-  const label = new Int32Array(n).fill(-1);
-  const parent = new Int32Array(n).fill(-1);
-  const heap = new HeapLite(1024);
+  // 数组按格数留着下一次用（重新生成国家时每次都要找一遍）
+  if (!buf || buf.n !== n) buf = { n, dist: new Float64Array(n), label: new Int32Array(n), parent: new Int32Array(n), open: new Uint8Array(n), heap: new HeapLite(1024) };
+  const { dist, label, parent, open, heap } = buf;
+  dist.fill(Infinity);
+  label.fill(-1);
+  parent.fill(-1);
+  heap.size = 0;
+  const { causes, derived: dv } = world;
+  for (let i = 0; i < n; i++) open[i] = (!causes.land[i] || dv.lake[i] === 1) && dv.tMean[i] >= ICE_SEA ? 1 : 0;
   // 起点：港口旁边的水面（parent 是港口的格）
   ports.forEach((p, k) => {
     const i = p.cell;
     for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
       const j = mesh.adj[e];
-      if (!openWater(world, j)) continue;
+      if (!open[j]) continue;
       const dd = mesh.dist[e] * km;
       if (dd < dist[j] || (dd === dist[j] && k < label[j])) {
         dist[j] = dd;
@@ -102,7 +108,7 @@ export function seaLanes(world: World, ports: readonly Port[], piece: Int32Array
     if (di > dist[i]) continue;
     for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
       const j = mesh.adj[e];
-      if (!openWater(world, j)) continue;
+      if (!open[j]) continue;
       const nd = di + mesh.dist[e] * km;
       if (nd > reach || nd >= dist[j]) continue;
       dist[j] = nd;

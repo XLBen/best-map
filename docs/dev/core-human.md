@@ -17,7 +17,7 @@
 - `pop-kinds.ts` 这五种登记进登记表
 - `context.ts` 生成各步共用的 `GenContext`；`generate.ts` 生成人文（分步、复制内容、重新生成；`generateHuman`、`regenerateHuman`、`humanBlockers`；用的包记在 `small.genStamp`，第五十一轮以前是 `human.packs`；第七十七轮：命令只写文化组的 id，各组占多少是组的比重 `cultureGroup.weight`，`human.groups` 只记 id，`countryRules` 只有种子）
 - `habitability.ts` 宜居度与偏好（第七十九轮 `preferenceProducts`、`preferenceFactorsAfter`：文化的偏好在组的双精度乘积上接着乘）；`cultures.ts` 文化圈；`culture-style.ts` 地名跟着文化
-- `population.ts` 人口、修补、笔刷（`paintPop`、`setCellPop`、`applyPopFix`；第七十九轮 `composeCell` 按候选的下标拼数查群体，`valueDistAt`；第八十四轮：首都一带多出来的人 `scalePopulation`，`populationFix` 带上一步的宜居度时宜居度变了的一带的人在本国里重新分 `habitabilityMoves`）；`religion-spread.ts` 宗教的发源地与传播（第八十四轮，`SPREAD_DIMS`、`spreadValues`、`spreadFactor`）；`groups.ts` 人口群体的编号与每格成分（`codeFor`：键已拼好）
+- `population.ts` 人口、修补、笔刷（`paintPop`、`setCellPop`、`applyPopFix`；第七十九轮 `composeCell` 按候选的下标拼数查群体，`valueDistAt`；第八十四轮：首都一带多出来的人 `scalePopulation`，`populationFix` 带上一步的宜居度时宜居度变了的一带的人在本国里重新分 `habitabilityMoves`）；`religion-spread.ts` 宗教的发源地与传播（第八十四轮，`SPREAD_DIMS`、`spreadValues`、`spreadSlots`）；`gen-cache.ts` 跨几次生成的缓存（宗教的传播、过河翻山的倍数；键按内容 `viewKey`，`clearGenCaches`）；`groups.ts` 人口群体的编号与每格成分（`codeFor`：键已拼好）
 - `add-dimension.ts` 给已有的世界加一维（第五十四轮）：现有的人原地分开，文化比例逐值不变（`fillPopulation`）；生成时后加的维度最后分开（`fillAddedDims`）；群体的上限 `MAX_POP_GROUPS`。`era.ts` 的 `composedDims`、`filledDims` 分哪几维排列组合，`MAX_DIMENSIONS` 每个时代最多 8 维
 - `layers.ts` 人口的几层、图例、档案的人口一栏、每省人口；`space.ts` 面积、距离、噪声、按份额长
 - `packs/eras/` 内置 6 个时代（一个 JSON 一个）、`values/` 共用的取值与宗教组、`cultures/` EU4 的 71 个文化组 410 个文化（一个地区一个 JSON）与奇幻、科幻的组（`fantasy.json` 11 组、`scifi.json` 9 组，第四十四轮）；奇幻的宗教组在 `fantasy.json` 时代文件的 `valueGroups`

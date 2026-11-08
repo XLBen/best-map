@@ -1,5 +1,6 @@
 import { HeapLite } from '../../mesh';
 import { genEdgeCosts } from '../cultures';
+import { registerGenCache, viewKey } from '../gen-cache';
 import type { Government } from '../government';
 import { COAST, RIVER } from '../rules';
 import { cellKm2 } from '../space';
@@ -31,7 +32,20 @@ const MAJOR_RIVER = 2;
 const FREE_ROLES = ['river-empire', 'central-empire', 'multiethnic', 'khanate'];
 const freeRole = (role: string | undefined) => !!role && (FREE_ROLES.includes(role) || role.startsWith('race-realms:'));
 const RIDGE_FROM = 300;
+// 上一次的结果（重新生成国家时河、流域、高程都没变：照用；键按内容比，见 gen-cache.ts）
+let lastCross: { mesh: unknown; key: string; out: Float32Array } | null = null;
+registerGenCache(() => (lastCross = null));
 export function crossingCosts(g: Pick<CountryRun, 'ctx' | 'world'>): Float32Array {
+  const { ctx, world } = g;
+  const { x, d } = ctx;
+  const key = [world.small.planet.riverThreshold, viewKey(x.dry), viewKey(x.flags), viewKey(d.elevation), viewKey(d.basin), viewKey(d.discharge)].join('|');
+  if (lastCross && lastCross.mesh === world.mesh && lastCross.key === key) return lastCross.out;
+  const out = crossingFresh(g);
+  lastCross = { mesh: world.mesh, key, out };
+  return out;
+}
+
+function crossingFresh(g: Pick<CountryRun, 'ctx' | 'world'>): Float32Array {
   const { ctx, world } = g;
   const { x, d } = ctx;
   const { mesh } = world;

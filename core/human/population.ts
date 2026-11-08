@@ -369,7 +369,9 @@ export interface PopFix {
   groups: number[];
   shares: number[];
   // 第八十四轮：宜居度变了的一带挪了人的格与新的人数（成分不动；按格的编号排）
-  moves?: { cells: number[]; total: number[] };
+  // steps：格的编号按差记（第一项是格的编号，之后每项是与前一格的差），total 写成 9 位有效数字（单精度的数按这么多位写回去逐位相同）。
+  // 存成这样是为了世界文件小一些
+  moves?: { steps: number[]; total: number[] };
 }
 
 // 一个文化（含它的组）的偏好
@@ -438,8 +440,11 @@ export function populationFix(world: World, d: Derived, wasWater: Uint8Array, ha
     }
   }
   for (const i of lost) put(i, 0, empty);
-  const moves = moved ? { cells: [...moved.keys()].sort((a, b) => a - b), total: [] as number[] } : undefined;
-  if (moves) moves.total = moves.cells.map((i) => moved!.get(i)!);
+  let moves: PopFix['moves'];
+  if (moved) {
+    const cells = [...moved.keys()].sort((a, b) => a - b);
+    moves = { steps: cells.map((c, k) => (k ? c - cells[k - 1] : c)), total: cells.map((i) => Number(moved.get(i)!.toPrecision(9))) };
+  }
   if (!fix.cells.length && !moves) return null;
   // 按格的编号排（命令里的样子固定）
   const order = fix.cells.map((_, q) => q).sort((a, b) => fix.cells[a] - fix.cells[b]);
@@ -530,7 +535,15 @@ export function applyPopFix(world: World, fix: PopFix) {
       c.popShare![i * SLOTS + k] = fix.shares[q * SLOTS + k];
     }
   });
-  if (fix.moves) fix.moves.cells.forEach((i, q) => (c.popTotal![i] = fix.moves!.total[q]));
+  if (fix.moves) moveCells(fix.moves).forEach((i, q) => (c.popTotal![i] = fix.moves!.total[q]));
+}
+
+// moves 里的格（按差记的还原成编号）
+export function moveCells(m: { steps: readonly number[] }): number[] {
+  const out: number[] = [];
+  let at = 0;
+  for (let k = 0; k < m.steps.length; k++) out.push((at = k ? at + m.steps[k] : m.steps[k]));
+  return out;
 }
 
 // ---------- 笔刷（见 commands.ts 的 paint_pop、paint_culture、set_cell_pop） ----------

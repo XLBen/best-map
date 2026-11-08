@@ -12,7 +12,7 @@ import { originTarget, recordedOrigin, setOrigin, tidyOrigins } from './content/
 import { type ContentRef, refName, removeCommand, unusedContent } from './content/unused';
 import { CommandError } from './errors';
 import { applyNameCarry } from './features';
-import { applyPopFix } from './human/population';
+import { applyPopFix, moveCells } from './human/population';
 import { tidyCities } from './human/settlements';
 import { applyProvinceFix } from './provinces';
 import { copySmall, restoreSmall, sameAsCopy } from './small-copy';
@@ -181,7 +181,7 @@ export function applyCommand(
   const popParsed = popInput === undefined ? undefined : popFixSchema.safeParse(popInput);
   if (popParsed && !popParsed.success) throw new CommandError(`命令里的人口修补无效：${formatIssues(popParsed.error)}`);
   const popFix = popParsed?.data;
-  if (popFix && (popFix.cells.some((c) => c >= world.mesh.n) || popFix.moves?.cells.some((c) => c >= world.mesh.n))) throw new CommandError('命令里的人口修补不属于这张地图');
+  if (popFix && (popFix.cells.some((c) => c >= world.mesh.n) || (popFix.moves && moveCells(popFix.moves).some((c) => c >= world.mesh.n)))) throw new CommandError('命令里的人口修补不属于这张地图');
   const parsed = commandSchema.safeParse(raw);
   if (!parsed.success) throw new CommandError(`命令参数无效：${formatIssues(parsed.error)}`);
   const cmd = parsed.data;

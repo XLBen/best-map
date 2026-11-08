@@ -15,7 +15,7 @@ import { type PreviewPatch, previewPatch } from './preview-world';
 import { scriptsEnabled } from './script';
 import { resolveTerrain, shareTerrainBase, warmTerrainSteps } from './terrain';
 import { SLOTS } from './human/groups';
-import { applyPopFix, populationFix } from './human/population';
+import { applyPopFix, moveCells, populationFix } from './human/population';
 import { computePopLayers } from './human/layers';
 import { type Derived, type Settings, type World, createWorld, kmPerUnit, settingsSchema } from './world';
 import type { WorldDoc, Timings, EngineBase, DerivedState, DoneStep, Checkpoint, UndoneStep, DocTail, PreviewResult, ProvincesPreview } from './engine-types';
@@ -436,7 +436,7 @@ export class Engine {
     const before = { t: c.popTotal!.slice(), g: fix.cells.length ? c.popGroup!.slice() : c.popGroup!, s: fix.cells.length ? c.popShare!.slice() : c.popShare! };
     applyPopFix(w, fix);
     const slots = fix.cells.flatMap((i) => Array.from({ length: SLOTS }, (_, k) => i * SLOTS + k));
-    addArrayUndo(step.undo, 'popTotal', fix.moves ? [...new Set([...fix.cells, ...fix.moves.cells])].sort((a, b) => a - b) : fix.cells, before.t);
+    addArrayUndo(step.undo, 'popTotal', fix.moves ? [...new Set([...fix.cells, ...moveCells(fix.moves)])].sort((a, b) => a - b) : fix.cells, before.t);
     if (fix.cells.length) {
       addArrayUndo(step.undo, 'popGroup', slots, before.g);
       addArrayUndo(step.undo, 'popShare', slots, before.s);
