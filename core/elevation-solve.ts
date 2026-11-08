@@ -4,7 +4,7 @@ import { type World, latitudeOf } from './world';
 import { gradGeo, graphDistanceSame, type Mesh } from './mesh';
 import { Router, accumulate, type Routing } from './routing';
 import { applyPlains } from './plains';
-import { wetWeights } from './elevation-precip';
+import { dryPits, wetWeights } from './elevation-precip';
 import { glacialFieldOf, iceStrength } from './glacial';
 import { glacialLegacy, glacialScourInSolve } from './glacial-legacy';
 
@@ -99,7 +99,8 @@ export function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: 
   // 降水（第八十六轮，见 elevation-precip.ts）：汇水面积按降水代理加权成流量（湿处下切多、干处少）
   const wet = new Float64Array(n);
   const areaQ = new Float64Array(n);
-  const pitL = wetWeights(world, todo, T, coastKm, fk, pitM, areaKm, wet, areaQ);
+  const dry = new Float32Array(n);
+  const anyDry = wetWeights(world, todo, T, coastKm, fk, areaKm, wet, areaQ, dry);
   // 画的河不改地形的求解：求解之后再挖河床（carveBeds），周围的山不动
 
   // 初始高程：按离海距离给一个缓坡加噪声，再加上大半个基准面（固定的 12 轮一开始就按大陆倾斜汇流；固定初值，结果只取决于原因）
@@ -127,6 +128,8 @@ export function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: 
   }
   // 平原、洼地按真的面积（km²）：最后一轮的流向再累加一次
   accumulate(r, areaKm, A);
+  // 干的洼地（第八十六轮）：只挖小流域里、上游不大的那些（不把大流域的上游截成内流区）
+  const pitL = anyDry ? dryPits(world, todo, r, A, pitM, dry) : pitM;
 
   // 坡面过程：轻度扩散，削掉单格尖峰
   const tmp = Float64Array.from(h);

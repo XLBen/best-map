@@ -31,9 +31,9 @@ export const PRECIP = {
 };
 
 export const WET = {
-  // 流量的权重 clamp(P / P_REF, W_MIN, 1)：只减不加（湿处与以前一样）
+  // 流量的权重 clamp(P / P_REF, W_MIN, 1)：只减不加（湿处与以前一样）；最多减到 0.85（减得多时干处的河太陡、流域变短，见第86轮）
   P_REF: 0.8,
-  W_MIN: 0.7,
+  W_MIN: 0.85,
   // 干：P 从 ARID0 降到 ARID1 渐渐算满
   ARID0: 0.45,
   ARID1: 0.18,
@@ -165,26 +165,44 @@ function sweepCell(i: number, dir: number, off: Int32Array, adj: Int32Array, dis
   }
 }
 
-// 每个要算的陆格的降水代理 P（写进 out；别的格不动）。hgt：每格的“山”（抬升 + 基准面，原始单位），coastKm：离海岸的 km
-export function precipProxy(world: World, todo: Uint8Array, hgt: Float64Array, coastKm: Float64Array, out: Float64Array): void {
+// 反复用的缓冲区（按格数留一份；一次求解里用完就还，不跨调用保留内容）：要算的格（按东西坐标）、走过的陆路、挡着的山、山、降水
+interface Scratch {
+  n: number;
+  list: Int32Array;
+  road: Float64Array;
+  sh: Float64Array;
+  hgt: Float64Array;
+  P: Float64Array;
+}
+let scratch: Scratch | null = null;
+function scratchFor(n: number): Scratch {
+  if (!scratch || scratch.n !== n) scratch = { n, list: new Int32Array(n), road: new Float64Array(n), sh: new Float64Array(n), hgt: new Float64Array(n), P: new Float64Array(n) };
+  return scratch;
+}
+
+// 要算的陆格（按东西坐标的先后）写进 list，返回个数
+function todoList(order: Int32Array, todo: Uint8Array, list: Int32Array): number {
+  let m = 0;
+  for (let k = 0; k < order.length; k++) {
+    const i = order[k];
+    if (todo[i] === 1) list[m++] = i;
+  }
+  return m;
+}
+
+// 降水代理 P：list 的前 m 格（按东西坐标）写进 out。hgt：每格的“山”（抬升 + 基准面，原始单位），coastKm：离海岸的 km。
+// 只读写 list 里的格（road、sh 在这些格上先初始化），不新建数组
+function proxyOn(world: World, g: SweepGeo, todo: Uint8Array, list: Int32Array, m: number, hgt: Float64Array, coastKm: Float64Array, road: Float64Array, sh: Float64Array, out: Float64Array): void {
   const { mesh, causes } = world;
-  const n = mesh.n;
   const land = causes.land;
-  const g = sweepGeo(world);
   const { off, adj, dist } = mesh;
   const km = world.kmPerUnit;
   const east = g.east;
-  // 只扫要算的格（按东西坐标的先后）
-  let m = 0;
-  const list = new Int32Array(n);
-  for (let k = 0; k < n; k++) {
-    const i = g.order[k];
-    if (todo[i] === 1) list[m++] = i;
+  for (let k = 0; k < m; k++) {
+    const i = list[k];
+    road[i] = coastKm[i];
+    sh[i] = 0;
   }
-  // road：走过的陆路（km，扫不到时按到最近海岸的距离）；sh：上风方向挡着的山
-  const road = new Float64Array(n);
-  const sh = new Float64Array(n);
-  for (let k = 0; k < m; k++) road[list[k]] = coastKm[list[k]];
   const we = g.we;
   const passes = mesh.kind === 'sphere' ? 2 : 1;
   for (let p = 0; p < passes; p++) {
@@ -208,39 +226,102 @@ export function precipProxy(world: World, todo: Uint8Array, hgt: Float64Array, c
   }
 }
 
-// 求解用的几样：wet（流量的权重）、areaQ = 面积 × wet；返回洼地场（米）：生成器的洼地，再在干的内陆按岩性的噪声
-// （fk 高处岩性软，是盆地）挖平底的洼地（两者取深的）。没有干的洼地时返回 pitM 本身
+// 每个要算的陆格的降水代理 P（写进 out；别的格不动）。hgt：每格的“山”（抬升 + 基准面，原始单位），coastKm：离海岸的 km
+export function precipProxy(world: World, todo: Uint8Array, hgt: Float64Array, coastKm: Float64Array, out: Float64Array): void {
+  const g = sweepGeo(world);
+  const sc = scratchFor(world.mesh.n);
+  const m = todoList(g.order, todo, sc.list);
+  proxyOn(world, g, todo, sc.list, m, hgt, coastKm, sc.road, sc.sh, out);
+}
+
+// 求解用的几样：wet（流量的权重）、areaQ = 面积 × wet；干的内陆按岩性的噪声（fk 高处岩性软，是盆地）要挖的平底洼地的深（米）写进 dry
+// （没有时不写、返回 false）。挖不挖还要看路由（dryPits：只在小流域、上游不大的地方）
 // 测试用：关掉（第八十五轮的求解：流量不加权、没有干的洼地）
 export const precipOn = { on: true };
-export function wetWeights(world: World, todo: Uint8Array, T: Float64Array, coastKm: Float64Array, fk: Float64Array, pitM: Float32Array, areaKm: Float64Array, wet: Float64Array, areaQ: Float64Array): Float32Array {
+export function wetWeights(world: World, todo: Uint8Array, T: Float64Array, coastKm: Float64Array, fk: Float64Array, areaKm: Float64Array, wet: Float64Array, areaQ: Float64Array, dry: Float32Array): boolean {
   const { mesh, causes } = world;
-  const n = mesh.n;
+  const g = sweepGeo(world);
+  const sc = scratchFor(mesh.n);
+  const { list, hgt, P } = sc;
+  const m = todoList(g.order, todo, list);
   if (!precipOn.on) {
-    for (let i = 0; i < n; i++) {
-      if (!todo[i]) continue;
+    for (let k = 0; k < m; k++) {
+      const i = list[k];
       wet[i] = 1;
       areaQ[i] = areaKm[i];
     }
-    return pitM;
+    return false;
   }
   const up = causes.uplift;
-  const hgt = new Float64Array(n);
-  for (let i = 0; i < n; i++) if (todo[i]) hgt[i] = up[i] + Math.max(0, T[i]);
-  const P = new Float64Array(n);
-  precipProxy(world, todo, hgt, coastKm, P);
-  let pit: Float32Array = pitM;
-  for (let i = 0; i < n; i++) {
-    if (!todo[i]) continue;
-    const w = Math.min(1, Math.max(WET.W_MIN, P[i] / WET.P_REF));
+  for (let k = 0; k < m; k++) {
+    const i = list[k];
+    hgt[i] = up[i] + (T[i] > 0 ? T[i] : 0);
+  }
+  proxyOn(world, g, todo, list, m, hgt, coastKm, sc.road, sc.sh, P);
+  let any = false;
+  const pRef = 1 / WET.P_REF;
+  for (let k = 0; k < m; k++) {
+    const i = list[k];
+    const p = P[i];
+    const w = Math.min(1, Math.max(WET.W_MIN, p * pRef));
     wet[i] = w;
     areaQ[i] = areaKm[i] * w;
-    const arid = smoothstep(WET.ARID0, WET.ARID1, P[i]);
-    if (arid <= 0) continue;
-    const g = arid * smoothstep(WET.DRY_T, WET.DRY_T + WET.DRY_W, (fk[i] - 1) / 0.25) * smoothstep(WET.COAST0, WET.COAST1, coastKm[i]);
-    const d = WET.DRY_D * smoothstep(WET.G0, WET.G1, g);
-    if (d <= pit[i]) continue;
-    if (pit === pitM) pit = pitM.slice();
-    pit[i] = d;
+    if (p >= WET.ARID0) continue;
+    const arid = smoothstep(WET.ARID0, WET.ARID1, p);
+    const gg = arid * smoothstep(WET.DRY_T, WET.DRY_T + WET.DRY_W, (fk[i] - 1) / 0.25) * smoothstep(WET.COAST0, WET.COAST1, coastKm[i]);
+    if (gg <= WET.G0) continue;
+    dry[i] = WET.DRY_D * smoothstep(WET.G0, WET.G1, gg);
+    any = true;
+  }
+  return any;
+}
+
+// 干的洼地挖哪些（第八十六轮）：dry > 0 的格连成的一片，按求解最后一轮的流向（A：真的汇水面积，km²）看——
+// 这一片里最大的上游面积（挖成洼地后流进来的面积）不超过 CAP_CAPTURE，它所在的流域（出口的汇水面积）不超过 CAP_BASIN 时才挖：
+// 不把大流域的上游截成内流区（大河、长流路不被切断）。返回洼地场（生成器的洼地与挖的干洼地取深的）；一片都不挖时返回 pitM 本身
+export const DRY_CAPS = { CAPTURE: 1e6, BASIN: 3e6 };
+export function dryPits(world: World, todo: Uint8Array, r: { order: Int32Array; count: number; receiver: Int32Array }, A: Float64Array, pitM: Float32Array, dry: Float32Array): Float32Array {
+  const { mesh, causes } = world;
+  const n = mesh.n;
+  const land = causes.land;
+  const { off, adj } = mesh;
+  // 每格的出口（路由的顺序是下游在前）
+  const outlet = new Int32Array(n).fill(-1);
+  for (let k = 0; k < r.count; k++) {
+    const i = r.order[k];
+    const j = r.receiver[i];
+    outlet[i] = j >= 0 && land[j] === 1 && todo[j] === 1 && outlet[j] >= 0 ? outlet[j] : i;
+  }
+  let pit: Float32Array = pitM;
+  const seen = new Uint8Array(n);
+  const queue: number[] = [];
+  for (let k = 0; k < r.count; k++) {
+    const s0 = r.order[k];
+    if (seen[s0] || !(dry[s0] > 0)) continue;
+    queue.length = 0;
+    queue.push(s0);
+    seen[s0] = 1;
+    let capture = 0;
+    let basin = 0;
+    for (let q = 0; q < queue.length; q++) {
+      const c = queue[q];
+      if (A[c] > capture) capture = A[c];
+      const o = outlet[c] >= 0 ? A[outlet[c]] : 0;
+      if (o > basin) basin = o;
+      for (let e = off[c]; e < off[c + 1]; e++) {
+        const j = adj[e];
+        if (!seen[j] && todo[j] === 1 && dry[j] > 0) {
+          seen[j] = 1;
+          queue.push(j);
+        }
+      }
+    }
+    if (capture > DRY_CAPS.CAPTURE || basin > DRY_CAPS.BASIN) continue;
+    for (const c of queue) {
+      if (dry[c] <= pit[c]) continue;
+      if (pit === pitM) pit = pitM.slice();
+      pit[c] = dry[c];
+    }
   }
   return pit;
 }

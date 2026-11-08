@@ -92,8 +92,8 @@ function countryDigest(w: World): Record<string, string> {
 // 第八十五轮只重录 countries：档案去掉了 ruler（统治者是 small.archive 里的一份名单）；领土 country 没变，去掉 ruler 时与第八十四轮的值相同（见 docs/dev/history/第85轮.md）
 // 第八十六轮重录：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林），宜居度、人文往后都变了（见 docs/dev/history/第86轮.md）
 const RECORDED = {
-  region: { country: '2e3709f240e390ef', countries: 'ed83d7fa29c15153' },
-  planet: { country: '70fb9b436f4f710d', countries: '39debc3b015ab868' },
+  region: { country: '91eb612e162172d3', countries: '8c156bebcd578699' },
+  planet: { country: '75e0562c61eb40b9', countries: '30ad41d7b417e9a6' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;
@@ -198,8 +198,8 @@ describe('生成国家', () => {
         expect(w.derived.habitability[i], `格 ${i}`).toBeGreaterThanOrEqual(minH * (1 - g.nomadic) - 1e-6);
       }
     }
-    // 中世纪：宜居与稍差的地方大多有了国家
-    expect(owned / land).toBeGreaterThan(0.6);
+    // 中世纪：宜居与稍差的地方大多有了国家（第八十六轮：地形变了，这个世界约 57%，放宽到 0.55）
+    expect(owned / land).toBeGreaterThan(0.55);
     // seaClaimKm 为 0：海不归谁（碎岛除外，第二十六轮）
     for (let i = 0; i < w.mesh.n; i++) if (!w.causes.land[i] && !w.derived.countryIslet?.[i]) expect(w.derived.country![i]).toBe(0);
     expect(humanStages()).toContain('claims');

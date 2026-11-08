@@ -76,8 +76,8 @@ const peopledCells = (w: World) => [...Array(w.mesh.n).keys()].filter((i) => w.c
 // 第八十四轮重录（资源进宜居度、宗教按发源地传播、首都一带的人在国家之后加，见 docs/dev/history/第84轮.md）
 // 第八十六轮重录：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林），宜居度、人文往后都变了（见 docs/dev/history/第86轮.md）
 const RECORDED = {
-  region: { popTotal: '9ae1a4a5675e73fe', popGroup: '44186d924381604e', popShare: 'e340a2ec1a5ded36', human: 'b596a35a910c840c' },
-  planet: { popTotal: '9a2e859d107acdc3', popGroup: '0310cb830cd7c8f9', popShare: 'b9620e0fb58af006', human: '1fb9d9971b1fd6db' },
+  region: { popTotal: '701cea2dc3375646', popGroup: '25645eeaeccf23ec', popShare: '1a4f9741d2d2216e', human: '8c274ab7ca7d1fc8' },
+  planet: { popTotal: 'f081651382d65b38', popGroup: '635cddce9eb51a0e', popShare: 'db3b2cddc60a824f', human: '594c7e91c76a3fec' },
 };
 const genDigest = (w: World) => ({ popTotal: digest(w.causes.popTotal!), popGroup: digest(w.causes.popGroup!), popShare: digest(w.causes.popShare!), human: digest(w.small.human!) });
 
@@ -360,13 +360,18 @@ describe('人口笔刷', () => {
     const cells = stroke(w);
     const totals = cells.map((i) => w.causes.popTotal![i]);
     const group = { culture: 'kazakh', values: { religion: 'sunni' } };
-    expect(eng.exec({ op: 'paint_pop', cells, mode: 'share', group, amount: 0.6 })).toBe(`人口“哈萨克人 · 逊尼派” · ${cells.length} 格`);
+    // 数的是改了的格（第八十六轮：地形变了，这一笔里有一格本来就全是这个群体）
+    const said = eng.exec({ op: 'paint_pop', cells, mode: 'share', group, amount: 0.6 }) as string;
+    const k = Number(/^人口“哈萨克人 · 逊尼派” · (\d+) 格$/.exec(said)?.[1]);
+    expect(k).toBeGreaterThanOrEqual(cells.length * 0.9);
+    expect(k).toBeLessThanOrEqual(cells.length);
     const code = Number(Object.entries(w.small.popGroups!).find(([, t]) => t.culture === 'kazakh' && t.values.religion === 'sunni')![0]);
-    cells.forEach((i, k) => {
-      expect(w.causes.popTotal![i]).toBe(totals[k]);
+    expect(cells.filter((i) => w.causes.popManual![i] === 1).length).toBe(k);
+    cells.forEach((i, q) => {
+      expect(w.causes.popTotal![i]).toBe(totals[q]);
+      if (w.causes.popManual![i] !== 1) return;
       const share = readComp(w.causes, i).find((x) => x.code === code)?.s ?? 0;
       expect(share).toBeGreaterThan(0.55);
-      expect(w.causes.popManual![i]).toBe(1);
       // 文化圈跟着人口里占多数的文化
       expect(worldCultures(w.small)[w.derived.popCulture![i] - 1].id).toBe('kazakh');
     });
@@ -606,6 +611,7 @@ describe('改地形以后的修补', () => {
     const before = popDigest(w);
     const pop0 = w.causes.popTotal!.slice();
     const hab0 = w.derived.habitability;
+    const q0 = w.derived.discharge.slice();
     const cells = peopledCells(w);
     const c0 = cells[Math.floor(cells.length / 2)];
     const near = (i: number, r: number) => Math.hypot(w.mesh.x[i] - w.mesh.x[c0], w.mesh.y[i] - w.mesh.y[c0]) < w.mesh.spacing * r;
@@ -630,8 +636,8 @@ describe('改地形以后的修补', () => {
     const wet0 = pop0.map((v, i) => (w.derived.lake[i] === 1 ? v : 0));
     const t0 = totals(pop0.map((v, i) => v - wet0[i]));
     for (const [c, v] of totals(pop1)) expect(Math.abs(v - t0.get(c)!) / t0.get(c)!).toBeLessThan(1e-5);
-    // 远处不动
-    for (const i of moved) expect(near(i, 8)).toBe(true);
+    // 远处不动（第八十六轮：涂冷挖出的湖改了下游的河，河边的宜居度跟着变：远处只有水量变了的格的人挪）
+    for (const i of moved) if (!near(i, 8)) expect(w.derived.discharge[i] !== q0[i] || w.derived.discharge.some((v, j) => v !== q0[j] && Math.hypot(w.mesh.x[i] - w.mesh.x[j], w.mesh.y[i] - w.mesh.y[j]) < w.mesh.spacing * 2.5), `格 ${i}`).toBe(true);
     const doc = eng.toDoc();
     expect(doc.commands.at(-1)!.popFix).toBeDefined();
     expect(popDigest(Engine.fromDoc(doc, w.mesh).world)).toEqual(popDigest(w));

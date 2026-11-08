@@ -29,8 +29,8 @@ const autoDigest = (w: World) => ({ classes: digest(w.derived.terrainClassAuto),
 // 第五十七轮：毛皮多一种生态（高山苔原），只有地区的资源变了
 // 第八十六轮重录：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林），宜居度、人文往后都变了（见 docs/dev/history/第86轮.md）
 const RECORDED = {
-  region: { classes: '128393096a904fba', resources: '14d60c76f8aa497a', peaks: '3080aea6a1a39c81' },
-  planet: { classes: '73eb67d59e2c2587', resources: 'b8c061922fde760c', peaks: '42abdf5782305ccf' },
+  region: { classes: '6aa129e4f0d8f357', resources: 'd61be64deb7bb11b', peaks: '48fd9342289d38de' },
+  planet: { classes: 'b848dd57c68f353b', resources: '228bb47508db03b6', peaks: '400a04905beb4a6f' },
 };
 
 const planet = () => {

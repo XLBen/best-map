@@ -3,7 +3,7 @@ import { digest } from '../tools/hash';
 import { type ElevationResult, SOLVE, carvePits, carvePocketLakes, computeElevation, elevationMemo, lakeBedShape, seafloor, windwardFactor } from './elevation';
 import { MinHeap } from './heap';
 import { applyPlains } from './plains';
-import { wetWeights } from './elevation-precip';
+import { dryPits, wetWeights } from './elevation-precip';
 import { type Mesh, gradGeo, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
@@ -609,7 +609,8 @@ function computeElevationOld(world: World): ElevationResult {
   // 第八十六轮：降水代理（照 elevation.ts 的写法）
   const wet = new Float64Array(n);
   const areaQ = new Float64Array(n);
-  const pitL = wetWeights(world, land, T, coastKm, fk, pitM, areaKm, wet, areaQ);
+  const dry = new Float32Array(n);
+  const anyDry = wetWeights(world, land, T, coastKm, fk, areaKm, wet, areaQ, dry);
 
   // 固定轮数：每个流域的计算只取决于它自己，在一处编辑不会因为“全局收敛轮数”变化而改动远处的地形
   const active = land;
@@ -653,6 +654,7 @@ function computeElevationOld(world: World): ElevationResult {
     h.set(tmp);
   }
   accumulateOld(r, areaKm, A);
+  const pitL = anyDry ? dryPits(world, land, r as unknown as Routing, A, pitM, dry) : pitM;
   carvePits(world, land, r as unknown as Routing, u, areaKm, pitL, fade, h, wet);
   // 第三十三轮：平原与河口（照 elevation.ts 的写法，用 plains.ts 的 applyPlains；到下游的边按下游找）
   const edge = new Int32Array(n).fill(-1);

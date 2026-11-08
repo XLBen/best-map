@@ -14,6 +14,11 @@ import { countryFactions, countryList, currentRuler, titleContext } from './inde
 import { type Culture, cultureTendency, weightedList } from './era';
 import { FLAG_EMBLEMS, FLAG_LAYOUTS } from './flags';
 import { CATEGORY_NAMES, type Government, type TitleContext, type Title, factionSchema, govTitles, governmentById, governmentSchema, titled } from './government';
+import { useRound85Terrain } from '../../core/testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 第二十三轮 内容：内置的政体与派系（六个时代各一个文件）——格式、引用、称号的说法、文化的政体倾向；
 // 每个时代按默认生成国家：用的是这个时代自己的政体与派系、称号按文化换说法、无主地与国家多少合时代、确定性

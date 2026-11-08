@@ -168,19 +168,29 @@ for (const [label, settings] of SETTINGS) {
         if (ice1[i] > ice0[i]) grew++;
       }
       expect(grew).toBeGreaterThan(0);
-      let moved = 0;
+      // 不是湖的格：高程变了的一定在冰盖里（湖的范围随气候变，湖底跟着修，不算）。新挖出的小洼多半蓄成了湖：
+      // 挖过的地形（不含湖底的修整）在冰盖长出来的地方变了
       for (let i = 0; i < w0.mesh.n; i++) {
         if (!w0.causes.land[i] || e.world.derived.lake[i] || e.world.derived.elevation[i] === elev0[i]) continue;
-        moved++;
         expect(ice1[i]).toBeGreaterThan(0);
       }
-      // 湖格不算（湖的范围随气候变，湖底跟着修）；5000 格的星球上新挖出的小洼都蓄成了湖
-      if (!('globe' in settings)) expect(moved).toBeGreaterThan(0);
+      let solved = 0;
+      if (!('globe' in settings)) {
+        const c1 = elevationMemo.computed;
+        const terrain = withMemo(false, () => computeElevation(e.world).elevation);
+        solved = elevationMemo.computed - c1;
+        const a = glacialTerrain(e.world, terrain, ice0);
+        const b = glacialTerrain(e.world, terrain, ice1);
+        let moved = 0;
+        for (let i = 0; i < w0.mesh.n; i++) if (a[i] !== b[i]) moved++;
+        expect(moved).toBeGreaterThan(0);
+      }
       if (!('globe' in settings)) {
         e.exec({ op: 'set_planet', patch: { latShift: -12 } });
         expect(e.world.derived.ice).not.toEqual(ice1);
       }
-      expect(elevationMemo.computed).toBe(c0);
+      // 引擎一次都没重新求解（上面自己算的那一次不算）
+      expect(elevationMemo.computed - solved).toBe(c0);
     });
 
     it('涂冷让峡湾、小湖群往外长；一笔一笔改的海岸类型与从头算的逐值相同', () => {

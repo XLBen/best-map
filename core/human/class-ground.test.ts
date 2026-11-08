@@ -120,7 +120,8 @@ describe('地面升向典型高度', () => {
   it('山地：一笔不跳到头，越涂越接近，不越过；保留起伏，不是平顶；类别不被改回去', () => {
     const eng = world20();
     const low = inland(eng, 8);
-    const s = disc(eng, low[Math.floor(low.length * 0.2)], 8);
+    // 第八十六轮：大陆倾斜伸进内陆更远，0.2 处的地面已有一千多米：取第一个地面在 800 m 以下的地方
+    const s = [0.2, 0.1, 0.3, 0.05, 0.4, 0.5, 0.6].map((f) => disc(eng, low[Math.floor(low.length * f)], 8)).find((c) => mean(eng, c) < 800)!;
     const code = classCode(eng.world.small, 'mountains');
     const start = mean(eng, s);
     expect(start).toBeLessThan(800);
@@ -150,7 +151,8 @@ describe('地面升向典型高度', () => {
     for (const r of [3, 6, 12]) {
       const eng = world20();
       const low = inland(eng, Math.min(r, 8));
-      const s = disc(eng, low[Math.floor(low.length * 0.3)], r);
+      // 第八十六轮：同上，取第一个地面在丘陵的典型高度（600 m）以下的地方
+      const s = [0.3, 0.2, 0.1, 0.4, 0.05, 0.5, 0.6].map((f) => disc(eng, low[Math.floor(low.length * f)], r)).find((c) => mean(eng, c) < 600)!;
       let last = 0;
       for (let k = 0; k < 4; k++) {
         eng.exec({ op: 'set_cell_class', ...s, class: 'hills', strength: 1 });

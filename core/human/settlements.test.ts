@@ -55,8 +55,8 @@ const cityIds = (w: World) => Object.keys(w.small.cities ?? {}).map(Number);
 // 第八十四轮重录（城市按人口、港口与海路，国家、人口也变了，见 docs/dev/history/第84轮.md）
 // 第八十六轮重录：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林），宜居度、人文往后都变了（见 docs/dev/history/第86轮.md）
 const RECORDED = {
-  region: { cities: 'f6cb298d30a88ee9', roads: '934e57a5cc7bb5d5', landmarks: 'e966dbd74a9ebc56' },
-  planet: { cities: '4d1e570fa21b8847', roads: '21ab6b1d40feff9f', landmarks: 'f69f42a5c71a866c' },
+  region: { cities: '354137ed02376b2a', roads: '97c85347743cba13', landmarks: '237d439f81d5fe09' },
+  planet: { cities: '850fcc20b8648a4c', roads: 'ba70ff7adc3aadf7', landmarks: 'af5059e9a1b3a918' },
 };
 const genDigest = (w: World) => ({ cities: digest(w.small.cities), roads: digest(w.small.roads), landmarks: digest(w.small.landmarks) });
 
