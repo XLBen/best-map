@@ -49,12 +49,6 @@ export function countryViewHint(small: Pick<World['small'], 'countries'>): strin
   return `${names.join('、')}用宗主的浅色`;
 }
 
-// 文化圈按文化还是按文化组
-export const CULTURE_VIEWS: [ViewMode, string][] = [
-  ['culture', '按文化'],
-  ['cultureGroup', '按文化组'],
-];
-
 // 这个世界里有没有这一层（人文的几层在没有人文的世界里没有，宜居度除外）
 export function viewAvailable(w: Pick<World, 'small'>, id: ViewMode): boolean {
   if (id === 'culture' || id === 'cultureGroup' || id === 'popDensity') return !!w.small.human;

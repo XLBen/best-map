@@ -1,10 +1,10 @@
-/* 资源库面板（packs/LibPanel.tsx，第五十九轮）：左上角一个窄的面板，层层点进去。token 都在 styles.css 的 :root */
+/* 资源库面板（packs/LibPanel.tsx，第五十九轮）：左上角一个窄的面板（第八十二轮 420 px，--lib-w），层层点进去。token 都在 styles.css 的 :root */
 .lib-panel {
   position: absolute;
-  top: 60px;
+  top: var(--top-clear);
   left: var(--sp-2);
   bottom: 84px;
-  width: min(380px, calc(100% - 16px));
+  width: var(--lib-w);
   display: flex;
   flex-direction: column;
   background: var(--glass-strong);
@@ -16,7 +16,7 @@
 /* 总表要宽 */
 .lib-panel.wide {
   width: fit-content;
-  min-width: min(380px, calc(100% - 16px));
+  min-width: var(--lib-w);
   max-width: calc(100% - 16px);
 }
 @keyframes lp-unfold {

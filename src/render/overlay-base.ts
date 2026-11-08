@@ -3,7 +3,7 @@ import type { RiverType } from '../../core/river-types';
 import type { MapStyle } from '../../core/map-style';
 import type { FeatureType, GeoFeature } from '../../core/features';
 import type { NameMode } from '../../core/name-display';
-import type { CountryLabelDraw } from './overlay-country-labels';
+import type { CountryFit, CountryLabelDraw } from './overlay-country-labels';
 import type { RoadDraw, SettleMark } from './settle-draw';
 import type { Camera } from './renderer';
 import type { World } from '../../core/world';
@@ -81,6 +81,9 @@ export interface OverlayState {
   // 片区名（第二十三轮的国名；第二十五轮也是文化、文化组、每一维的取值的名字，键是 'region:…'）：沿片区的中线弯着写、字距拉开，
   // 最先排（别的地名让它）；null 不画
   countries?: CountryLabelDraw[] | null;
+  // 国名、片区名多大（第八十二轮，见 overlay-country-labels.ts 的 CountryFit）：省略时按 COUNTRY_FIT；
+  // 只有对照冻结的旧排法的测试传旧的 COUNTRY_FIT_R81
+  countryFit?: CountryFit;
   // 城市、地标、自定义点（第二十四轮，见 settle-draw.ts）：图标与名字，排在国名之后、别的地名之前（重要的先排）；null 不画。
   // settleNames：写不写它们的名字（图层里的“地名”）。cellSize：一格多大（地图单位），按它在屏幕上的像素数决定画哪几级
   settlements?: SettleMark[] | null;

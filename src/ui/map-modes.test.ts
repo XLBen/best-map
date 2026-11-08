@@ -10,7 +10,7 @@ import { countryAt } from './domain/countries';
 import { humanViews } from './defs/layers';
 import { CATEGORY_DEFS, TOOL_DEFS, category, setTool } from './defs/tools';
 import { highlightLayers } from './map/highlights';
-import { kindOfView, mapKind, mapModes, modeDef, modeFeatures, modeOf, setMapKind } from './map/modes';
+import { kindOfView, mapKind, mapModes, modeButtonOf, modeDef, modeFeatures, modeOf, setMapKind } from './map/modes';
 import { REGION_KEY, countryDraws, regionDraws } from './map/political';
 import { settleOverlay, shownMarks } from './map/settle';
 import { showView } from './panels/LayersPanel';
@@ -110,6 +110,13 @@ describe('地图模式的表', () => {
     expect(modeOf(continents().world, 'culture')).toBe('geo');
     expect(modeOf(towns().world, 'dim:nation')).toBe('geo');
     expect(modeOf(towns().world, 'dim:religion')).toBe('dim:religion');
+  });
+
+  it('顶栏的模式按钮（第八十二轮）：写“X模式”；没有人文时没有；世界里没有的模式写第一种', () => {
+    expect(modeButtonOf(continents().world, 'geo')).toBeNull();
+    expect(modeButtonOf(towns().world, 'country')).toEqual({ label: '国家模式', title: '地图模式：国家' });
+    expect(modeButtonOf(towns().world, 'dim:religion')!.label).toBe('宗教模式');
+    expect(modeButtonOf(peoples().world, 'country')!.label).toBe('地理模式');
   });
 
   it('偏好：旧的 political 读作国家；维度的模式、不认识的', () => {

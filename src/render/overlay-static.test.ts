@@ -10,7 +10,7 @@ import { clearRegionGeometry, countryDraws, regionDraws } from '../ui/map/politi
 import { countryDrawsRef, regionDrawsRef } from '../testing/frozen/political-r39';
 import { settleOverlay } from '../ui/map/settle';
 import { modeFeatures } from '../ui/map/modes';
-import { type OverlayState, type Shape, buildPaths, drawOverlay, overlayDebug, peakLabels, placeLabels, refZoom, sameShapes } from './overlay';
+import { COUNTRY_FIT, COUNTRY_FIT_R81, type OverlayState, type Shape, buildPaths, drawOverlay, overlayDebug, peakLabels, placeLabels, refZoom, sameShapes } from './overlay';
 import { placeLabelsRef } from '../testing/frozen/place-labels-r39';
 import type { Camera } from './renderer';
 import { BoxIndex } from './settle-draw';
@@ -123,6 +123,7 @@ const plain = (r: { placed: { key: string; chars: string[]; widths: number[]; sp
   marks: r.marks,
 });
 
+// 第八十二轮：国名的字号另有上限（COUNTRY_FIT）；冻结的参照是那以前的排法，对照时传那时的大小（COUNTRY_FIT_R81），查的还是排法本身
 describe('排地名：按格子查的避让与逐个比相同（冻结的第三十九轮参照）', () => {
   for (const [name, make] of WORLDS) {
     it(name, () => {
@@ -130,7 +131,7 @@ describe('排地名：按格子查的避让与逐个比相同（冻结的第三�
       let compared = 0;
       for (const kind of ['geo', 'country'] as MapKind[]) {
         for (const nameMode of ['zh', 'both'] as const) {
-          const st = stateFor(w, kind, { nameMode, countries: modeDef(kind).regions ? regionDraws(w, modeDef(kind).regions!, nameMode) : null });
+          const st = stateFor(w, kind, { nameMode, countryFit: COUNTRY_FIT_R81, countries: modeDef(kind).regions ? regionDraws(w, modeDef(kind).regions!, nameMode) : null });
           for (const cam of cameras(w)) {
             for (const motion of [false, true]) {
               const s = { ...st, motion };
@@ -182,6 +183,35 @@ describe('排地名：按格子查的避让与逐个比相同（冻结的第三�
     }
     expect(all.length).toBeGreaterThan(200);
   });
+});
+
+describe('国名的大小（第八十二轮）', () => {
+  const px = (font: string) => Number(/(\d+)px/.exec(font)![1]);
+  const sizes = (w: World, cw: number, ch: number, fit?: typeof COUNTRY_FIT) => {
+    const st = stateFor(w, 'country', { countryFit: fit });
+    const out: number[] = [];
+    for (const cam of cameras(w)) {
+      const ks = w.mesh.kind === 'sphere' && !cam.proj ? [-1, 0, 1] : [0];
+      const r = placeLabels(measuring(cw, ch), cam, st, ks, refZoom(w, cam.zoom));
+      for (const l of r.placed) if (l.key.startsWith('country:') && l.glyphs) out.push(px(l.font));
+    }
+    return out;
+  };
+  for (const [name, make] of WORLDS) {
+    it(`${name}：不超过 40 px，也不超过画面短边的 5%`, () => {
+      const w = make();
+      for (const [cw, ch] of [
+        [1200, 800],
+        [1024, 600],
+      ]) {
+        const now = sizes(w, cw, ch);
+        expect(now.length).toBeGreaterThan(0);
+        expect(Math.max(...now)).toBeLessThanOrEqual(Math.min(COUNTRY_FIT.maxPx, COUNTRY_FIT.screen * Math.min(cw, ch)));
+        // 不是空对照：以前的大小里有更大的
+        expect(Math.max(...sizes(w, cw, ch, COUNTRY_FIT_R81))).toBeGreaterThan(Math.max(...now));
+      }
+    });
+  }
 });
 
 describe('片区名：几何与字分开缓存，结果与原来相同', () => {

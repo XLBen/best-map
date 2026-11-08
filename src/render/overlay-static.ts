@@ -1,4 +1,5 @@
 import type { Frame, OverlayPaths, OverlayState, ProvinceLabel, Shape } from './overlay-base';
+import { type CountryFit, countryFitKey } from './overlay-country-labels';
 import { type MapStyle, mapStyleKey } from '../../core/map-style';
 import type { World } from '../../core/world';
 import type { Camera } from './renderer';
@@ -24,6 +25,7 @@ export const FIELD_KIND: { [K in keyof Required<OverlayState>]: 'static' | 'shap
   nameMode: 'static',
   peaks: 'static',
   countries: 'static',
+  countryFit: 'static',
   settlements: 'static',
   settleNames: 'static',
   settleStrong: 'static',
@@ -62,6 +64,7 @@ export function fieldKey(k: keyof OverlayState, v: unknown): unknown {
   if (k === 'latitude') return v ? `${(v as { north: number }).north}|${(v as { south: number }).south}` : null;
   if (k === 'style') return mapStyleKey(v as MapStyle);
   if (k === 'settleStrong') return v ? (v as readonly string[]).join('|') : null;
+  if (k === 'countryFit') return countryFitKey(v as CountryFit | undefined);
   return v;
 }
 

@@ -100,7 +100,7 @@ export type TypePanelId =
   | 'cityrank'
   | 'landmarkpick'
   | 'pointpick';
-export type PanelId = 'world' | 'more' | 'adjust' | 'layers' | 'river' | 'province' | TypePanelId | `cat:${Category}`;
+export type PanelId = 'world' | 'more' | 'adjust' | 'layers' | 'mapkind' | 'river' | 'province' | TypePanelId | `cat:${Category}`;
 export const openPanel = signal<PanelId | null>(null);
 export function togglePanel(id: PanelId) {
   openPanel.value = openPanel.value === id ? null : id;

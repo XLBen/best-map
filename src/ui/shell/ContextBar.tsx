@@ -65,7 +65,7 @@ function PickEraseRow() {
             picking.value = !picking.value;
             if (picking.value) erasing.value = null;
           }}
-          title="吸管：点地图上一处，用那里的接着画（I；也可以按住 Alt 点）"
+          title="吸管（I）：照点到的那处接着画"
         >
           <Pipette />
         </button>
@@ -83,7 +83,7 @@ function PickEraseRow() {
         </button>
       )}
       {on && modes.length > 1 && (
-        <Seg<'auto' | 'clear'> value={on} options={modes.map((k) => [k, ERASE_NAMES[k]])} titles={{ auto: '去掉手改的，回到自动的样子', clear: CLEAR_HINTS[id] }} onChange={(v) => (erasing.value = v)} />
+        <Seg<'auto' | 'clear'> value={on} options={modes.map((k) => [k, ERASE_NAMES[k]])} titles={{ auto: '擦除手改的，恢复自动', clear: CLEAR_HINTS[id] }} onChange={(v) => (erasing.value = v)} />
       )}
       {on && modes.length === 1 && <span class="bar-note">{ERASE_NAMES[on]}</span>}
     </>

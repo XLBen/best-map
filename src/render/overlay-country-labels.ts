@@ -22,7 +22,20 @@ export const COUNTRY_HALO = 'rgba(255, 255, 255, 0.42)';
 export const COUNTRY_FONT = '"Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", serif';
 // 国名的字号：不到这么大不标，最大这么大（CSS 像素）
 export const COUNTRY_MIN_PX = 10;
-export const COUNTRY_MAX_PX = 64;
+export const COUNTRY_MAX_PX = 40;
+
+// 国名、片区名有多大（第八十二轮：以前一个国家的岛上，转着写的国名几乎盖满整座岛）：
+// 字号不超过 maxPx，也不超过画面短边的 screen 倍；字高不超过领土的粗细的 thick 倍；一行字铺满中线的 span（字距在这里面拉开）
+export interface CountryFit {
+  maxPx: number;
+  screen: number;
+  thick: number;
+  span: number;
+}
+export const COUNTRY_FIT: CountryFit = { maxPx: COUNTRY_MAX_PX, screen: 0.05, thick: 0.28, span: 0.7 };
+// 第八十一轮以前的（冻结的第三十九轮参照 src/testing/frozen/place-labels-r39.ts 按它排：对照测试传它，查的还是排法本身）
+export const COUNTRY_FIT_R81: CountryFit = { maxPx: 64, screen: Infinity, thick: 0.36, span: 0.8 };
+export const countryFitKey = (f: CountryFit | undefined) => (f ? `${f.maxPx}/${f.screen}/${f.thick}/${f.span}` : '');
 // 原文（拉丁字母）写成大写
 export const LATIN = /^[\x00-ɏ\s'’.-]+$/;
 
@@ -58,7 +71,7 @@ export function along(pts: readonly [number, number][], cum: readonly number[], 
   return { x: ax + (bx - ax) * t, y: ay + (by - ay) * t, a: Math.atan2(by - ay, bx - ax) };
 }
 
-// 一行字排在屏幕上的一条折线上（像 EU4：字距拉开，铺满中线的八成；字距最多 maxGap）。
+// 一行字排在屏幕上的一条折线上（像 EU4：字距拉开，铺满中线的 span，默认八成；字距最多 maxGap）。
 // widths1：每个字在 1 像素字号时的宽。放不下时 null
 export function layoutAlong(
   chars: readonly string[],
@@ -66,13 +79,14 @@ export function layoutAlong(
   pts: readonly [number, number][],
   fontPx: number,
   maxGap: number,
+  span = 0.8,
 ): { glyphs: { x: number; y: number; a: number }[]; gap: number; total: number } | null {
   const cum = [0];
   for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
   const L = cum[cum.length - 1];
   const W = widths1.reduce((a, b) => a + b, 0) * fontPx;
   const n = chars.length;
-  const avail = L * 0.8;
+  const avail = L * span;
   if (!(L > 0) || W > avail * 1.05) return null;
   const gap = n > 1 ? Math.max(0, Math.min(maxGap, (avail - W) / (n - 1))) : 0;
   const total = W + gap * (n - 1);
@@ -149,6 +163,8 @@ export function placeCountries(
 ) {
   const list = [...(st.countries ?? [])].sort((a, b) => b.area - a.area);
   const color = st.style.countryLabel;
+  const fitBy = st.countryFit ?? COUNTRY_FIT;
+  const maxPx = Number.isFinite(fitBy.screen) ? Math.min(fitBy.maxPx, fitBy.screen * Math.min(view.cw, view.ch)) : fitBy.maxPx;
   for (const c of list) {
     const { curve, lenU, first, w1, second, w2 } = countryMetrics(ctx, c);
     if (!(lenU > 0)) continue;
@@ -172,12 +188,12 @@ export function placeCountries(
       // 领土在屏幕上有多粗：面积 ÷ 中线的长度
       const thick = (c.area / lenU) * (L / lenU);
       const sum1 = w1.reduce((a, b) => a + b, 0);
-      const fit = Math.min(COUNTRY_MAX_PX, thick * 0.36, (L * 0.8) / Math.max(sum1, 0.5));
+      const fit = Math.min(maxPx, thick * fitBy.thick, (L * fitBy.span) / Math.max(sum1, 0.5));
       if (fit < COUNTRY_MIN_PX) continue;
       const fontPx = Math.floor(fit);
       const px2 = second ? Math.max(COUNTRY_MIN_PX - 1, Math.round(fontPx * 0.45)) : 0;
       // 两行时第一行往上挪半行
-      const l1 = layoutAlong(first, w1, offsetLine(pts, second ? -(px2 * 0.55 + 1) : 0), fontPx, fontPx * 1.8);
+      const l1 = layoutAlong(first, w1, offsetLine(pts, second ? -(px2 * 0.55 + 1) : 0), fontPx, fontPx * 1.8, fitBy.span);
       if (!l1) continue;
       const font1 = `600 ${fontPx}px ${COUNTRY_FONT}`;
       const items: PlacedLabel[] = [
@@ -186,7 +202,7 @@ export function placeCountries(
       const marks = l1.glyphs.map((g) => ({ x: g.x, y: g.y, r: fontPx * 0.55 }));
       if (second) {
         const font2 = `500 ${px2}px ${COUNTRY_FONT}`;
-        const l2 = layoutAlong(second, w2, offsetLine(pts, fontPx * 0.55 + 1), px2, px2 * 1.2);
+        const l2 = layoutAlong(second, w2, offsetLine(pts, fontPx * 0.55 + 1), px2, px2 * 1.2, fitBy.span);
         if (l2) {
           items.push({ key: c.key, chars: second, widths: w2.map((x) => x * px2), spacing: 0, total: l2.total, font: font2, color, x: 0, y: 0, angle: 0, glyphs: l2.glyphs, halo: COUNTRY_HALO, haloWidth: 2 });
           for (const g of l2.glyphs) marks.push({ x: g.x, y: g.y, r: px2 * 0.55 });

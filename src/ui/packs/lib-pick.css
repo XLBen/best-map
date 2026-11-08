@@ -1,5 +1,5 @@
 /* 资源库面板：看库就是添加（第六十七轮，LibPanel.tsx、LibSide.tsx、LibBasket.tsx、PickBox.tsx）。token 都在 styles.css 的 :root。
-   面板左右两栏：左栏 .lp-main 是原来的面板（380 px），右栏 .lp-side 勾了东西、点了一项时滑出来（面板约 720 px）。
+   面板左右两栏：左栏 .lp-main 是原来的面板（420 px，第八十二轮以前 380），右栏 .lp-side 勾了东西、点了一项时滑出来（面板约 760 px）。
    窄窗口（900 px 以下）不变宽：右栏盖在左栏上（.lib-panel.over） */
 
 .lib-panel {
@@ -12,10 +12,10 @@
   flex-direction: column;
 }
 .lib-panel.two {
-  width: min(720px, calc(100% - 16px));
+  width: min(760px, calc(100% - 16px));
 }
 .lib-panel.two .lp-main {
-  flex: 0 0 380px;
+  flex: 0 0 420px;
 }
 .lp-side {
   flex: 1 1 0;
@@ -298,21 +298,21 @@ button.lb-fold {
   margin-top: var(--sp-2);
 }
 
-/* 面板变宽时提示条、底部条挪到剩下的地图中间，不被面板盖住（面板右边在 8 + 720 = 728 px） */
+/* 面板变宽时提示条、底部条挪到剩下的地图中间，不被面板盖住（面板右边在 8 + 760 = 768 px） */
 @media (min-width: 901px) {
   .app.lib-wide .notices {
     /* 靠近右边时不按剩下的宽度缩成一条（第六十八轮走查：1024 px 宽时一行只放两三个字） */
     width: max-content;
-    left: calc((100% + 728px) / 2);
-    max-width: min(calc(100% - 768px), 440px);
+    left: calc((100% + 768px) / 2);
+    max-width: min(calc(100% - 808px), 440px);
   }
   .app.lib-wide .bottombar {
-    left: calc((100% + 728px) / 2);
-    max-width: calc(100% - 752px);
+    left: calc((100% + 768px) / 2);
+    max-width: calc(100% - 792px);
   }
   .app.lib-wide.with-sheet .bottombar {
-    left: calc((100% + 728px - var(--sheet-w) - 10px) / 2);
-    max-width: calc(100% - 728px - var(--sheet-w) - 34px);
+    left: calc((100% + 768px - var(--sheet-w) - 10px) / 2);
+    max-width: calc(100% - 768px - var(--sheet-w) - 34px);
   }
 }
 

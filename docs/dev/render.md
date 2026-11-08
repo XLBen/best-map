@@ -23,7 +23,7 @@ WebGL2 底图 + 2D 画布的矢量叠加。屏幕与导出共用同一套画法�
 - `overlay-rivers.ts` 河线（`riverLines`、`seedRivers`）、路径（`buildPaths`）、河的画法（宽度、颜色、样式）
 - `overlay-river-layer.ts` 河画进叠加层或离屏的河的图层（`riverLayer`、`riverLayerTile`、`riverLayerScene`，极地）
 - `overlay-labels.ts` 地名、山峰、城市与地标的排版（`placeLabels`：按格子避让 `BoxIndex`，移动中沿用版面）与画法（`drawLabels`；第四十二轮淡一些的点按 `alpha` 画，`settleStrong` 里的照 1 画）、`peakLabels`
-- `overlay-country-labels.ts` 国名、片区名沿中线弯着写（`smoothPath`、`layoutAlong`、`COUNTRY_KEY`、`REGION_KEY`）
+- `overlay-country-labels.ts` 国名、片区名沿中线弯着写（`smoothPath`、`layoutAlong`、`COUNTRY_KEY`、`REGION_KEY`）；第八十二轮：多大是 `CountryFit`（`COUNTRY_FIT`：不超过 40 px、画面短边的 5%、领土粗细的 0.28，铺满中线的七成；`OverlayState.countryFit` 省略时按它），以前的 `COUNTRY_FIT_R81` 只给对照冻结参照的测试用
 - `overlay-grid.ts` 经纬网、纬度刻度、比例尺
 - `overlay-shapes.ts` 工具的预览图形（圈、线、箭头、格、河）；第八十轮：一遍图形里颜色、线宽和上一个相同时不再设（`resetPen`，画出来逐像素相同）
 - `overlay-proj.ts` 投影时的叠加层（`projectedParts`）

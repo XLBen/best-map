@@ -26,7 +26,7 @@ export { riverLayer, riverLayerTile, riverLayerScene, releaseRiverTile } from '.
 export { overlayFieldKinds, staticKey, sameShapes } from './overlay-static';
 export { drawScaleBar } from './overlay-grid';
 export { hasLabels, SETTLE_KEY, placeLabels, drawLabels, PEAK_KEY, peakLabels } from './overlay-labels';
-export { type CountryLabelDraw, COUNTRY_KEY, REGION_KEY, COUNTRY_MIN_PX, COUNTRY_MAX_PX, smoothPath, layoutAlong, countryLineText } from './overlay-country-labels';
+export { type CountryLabelDraw, COUNTRY_KEY, REGION_KEY, COUNTRY_MIN_PX, COUNTRY_MAX_PX, COUNTRY_FIT, COUNTRY_FIT_R81, type CountryFit, smoothPath, layoutAlong, countryLineText } from './overlay-country-labels';
 // 一条要画的河（带子与每个河线点的类型）、一条河线画成要画的河：在 core/river-pack.ts（Worker 里描好的河也用它）
 export type { RiverDraw } from '../../core/river-pack';
 export { riverDraw } from '../../core/river-pack';

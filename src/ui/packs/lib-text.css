@@ -1,0 +1,85 @@
+/* 资源库面板的字与行距（第八十二轮）：正文是 --fs-md，灰色的 .hint 只给真的次要的话（行里的说明、段落下的注），
+   字段一行一行留得开一些。只在 .lib-panel 里，别处的编辑器（弹窗）照旧。token 都在 styles.css 的 :root */
+
+/* 字段：名字一栏宽一些、正文的字号和颜色；字段之间留 --sp-2 */
+.lib-panel .ed-fields,
+.lib-panel .lp-fields {
+  gap: var(--sp-2);
+}
+.lib-panel .ed-field {
+  grid-template-columns: 112px 1fr;
+  gap: var(--sp-3);
+}
+.lib-panel .ed-label {
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+.lib-panel .ed-group > summary,
+.lib-panel .ed-group > .ed-label {
+  font-size: var(--fs-md);
+  color: var(--text);
+  padding: var(--sp-1) 0;
+}
+.lib-panel .ed-group {
+  margin: var(--sp-2) 0;
+  padding: var(--sp-2) var(--sp-3);
+}
+/* 字段下面的一行说明：12 px（以前 11 px） */
+.lib-panel .ed-hint {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-sm);
+}
+/* 字段的滑块铺满一行（以前滑轨只有 120 px，右边空着） */
+.lib-panel .ed-number .slider-track {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 96px;
+}
+/* 滑块右边的数和正文一样大；字段里的数占一样宽的一栏，几条滑轨右端对齐 */
+.lib-panel .slider-value {
+  font-size: var(--fs-md);
+}
+.lib-panel .ed-number .slider-value {
+  min-width: 7.5em;
+}
+.lib-panel .slider.stacked {
+  margin: var(--sp-3) 0;
+}
+
+/* 列表的一行高一档 */
+.lib-panel .lp-row,
+.lib-panel .lp-row-main {
+  min-height: 36px;
+}
+.lib-panel .lp-row {
+  contain-intrinsic-size: auto 36px;
+}
+
+/* 段落里的注：灰色，但不小于 12 px，行距放宽 */
+.lib-panel p.hint {
+  line-height: 1.55;
+}
+.lib-panel .lp-note {
+  margin: var(--sp-3) 0;
+}
+/* 顶上一行（看的不是本世界时）、只读的一条：以前 11 / 12 px，现在 12 / 13 px */
+.lib-panel p.lp-banner {
+  font-size: var(--fs-sm);
+}
+.lib-panel .lp-readonly {
+  font-size: var(--fs-md);
+}
+
+/* 面包屑、菜单和清单里的小标题、“从别的库加”的一行注：以前 11 px */
+.lib-panel .lp-crumbs,
+.lib-panel .lp-crumb,
+.lib-panel .lp-menu-group,
+.lib-panel .lb-group h6,
+.lib-panel .lo-note {
+  font-size: var(--fs-sm);
+}
+
+/* 一项的页面：段与段之间、段里留得开一些 */
+.lib-panel .lp-seg-body {
+  padding: var(--sp-1) var(--sp-2) var(--sp-3);
+}

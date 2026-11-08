@@ -84,6 +84,14 @@ export function mapModes(w: Pick<World, 'small' | 'causes'> | null): ModeButton[
   ];
 }
 
+// 顶栏上的地图模式按钮（第八十二轮）：写“X模式”（和旁边的“国家”一类分得开），悬停写“地图模式：X”；没有人文时没有按钮
+export function modeButtonOf(w: Pick<World, 'small' | 'causes'> | null, k: MapKind = mapKind.value): { label: string; title: string } | null {
+  const modes = mapModes(w);
+  if (!modes.length) return null;
+  const cur = modes.find((m) => m.id === k) ?? modes[0];
+  return { label: `${cur.label}模式`, title: `地图模式：${cur.label}` };
+}
+
 // 换模式：存进偏好；底图换成这一层（地理：人文的底图换回地貌，别的底图不动）
 export function setMapKind(k: MapKind) {
   setPrefs({ map: k });

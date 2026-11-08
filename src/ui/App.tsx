@@ -39,6 +39,7 @@ import { ClassMenu, ResourceMenu } from './panels/human';
 import { CultureMenu, PopTupleMenu, ValueMenu } from './panels/culture';
 import { TerritoryMenu } from './panels/countries';
 import { LandmarkMenu, PointMenu, RankMenu } from './panels/settlements';
+import { MapKindMenu } from './shell/MapKind';
 import { MapLegend } from './shell/MapLegend';
 import { ContextBar } from './shell/ContextBar';
 import { HereCard } from './shell/HereCard';
@@ -103,6 +104,12 @@ function PanelHost({ id }: { id: PanelId }) {
       return (
         <Popover id={id} title="图层" width={320}>
           <LayersPanel />
+        </Popover>
+      );
+    case 'mapkind':
+      return (
+        <Popover id={id} title="地图模式" width={240}>
+          <MapKindMenu />
         </Popover>
       );
     case 'river':

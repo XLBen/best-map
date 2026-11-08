@@ -2,7 +2,7 @@ import { type Anchor, frameOf, glyphs, glyphWidth, LABEL_STYLE, type LabelBox, M
 import { BoxIndex, drawMark, iconScale, markRadius, nameSpots, type SettleMark } from './settle-draw';
 import type { Camera } from './renderer';
 import { FEATURE_INFO, type GeoFeature } from '../../core/features';
-import { COUNTRY_KEY, type CountryLabelDraw, placeCountries, REGION_KEY } from './overlay-country-labels';
+import { COUNTRY_KEY, type CountryLabelDraw, countryFitKey, placeCountries, REGION_KEY } from './overlay-country-labels';
 import { type Proj, screenToWorld as projScreenToWorld, trueScale, worldToScreen as projWorldToScreen } from './projection';
 import { nameText } from '../../core/name-display';
 import { cellName, peakMarks } from '../../core/human';
@@ -112,7 +112,7 @@ export function worldAt(cam: Camera, cw: number, ch: number, sx: number, sy: num
 // 第四十轮：悬停的地名只在排版用得上它时进键（layoutHover）；proj 为 false 时不带投影的朝向（转球的一次手势里沿用排好的版面时比它）
 export function labelBase(cw: number, chh: number, st: OverlayState, cam: Camera, proj = true): string {
   const p = cam.proj;
-  return `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${layoutHover(st)}|${st.nameMode ?? 'zh'}|${st.settleNames === false ? 0 : 1}|${st.cellSize ?? 0}${p ? `|${p.kind}${proj ? `|${p.lon0}|${p.lat0}` : ''}` : ''}`;
+  return `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${layoutHover(st)}|${st.nameMode ?? 'zh'}|${st.settleNames === false ? 0 : 1}|${st.cellSize ?? 0}${st.countryFit ? `|${countryFitKey(st.countryFit)}` : ''}${p ? `|${p.kind}${proj ? `|${p.lon0}|${p.lat0}` : ''}` : ''}`;
 }
 
 // 悬停、选中的地名在排版里的作用（placeLabels：它算“用户自己的”，最先放、一定标，删掉的也标）：只有它是一个地名或山峰、

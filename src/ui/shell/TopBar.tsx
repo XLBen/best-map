@@ -1,16 +1,17 @@
 import { Boxes, CircleEllipsis, Globe, Layers, MousePointer, Redo2, Undo2, WandSparkles } from 'lucide-preact';
+import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { PanelId } from '../../state';
 import { openPanel, togglePanel, world } from '../../state';
 import { CATEGORIES, category, setCategory, setTool } from '../defs/tools';
 import type { CategoryDef, Icon } from '../defs/types';
 import { mapStatus } from '../maps/store';
-import { LIBRARY_NOTE } from '../copy';
 import { libPanel, redoHere, toggleLibrary, undoHere, undoState } from '../packs/panel-store';
 import { redoTitle, undoTitle } from '../packs/copy';
-import { MapKindSwitch } from './MapKind';
+import { MapKindButton } from './MapKind';
 
 // 顶栏：左边是资源库（第四十五轮，最左边）、整个世界的事（世界、更多、调整）和撤销、重做，
-// 右边是指针、各类工具、图层（生态的色板在“自然”里）
+// 右边是指针、各类工具、图层与地图模式（生态的色板在“自然”里）。
+// 第八十二轮：最多两行——宽的窗口两组在同一行，放不下时右边那组换到第二行、靠右；地图模式不再单独占一行（MapKindButton）
 
 // 资源库：从左上角展开，再点一下关上
 function LibraryButton() {
@@ -21,7 +22,7 @@ function LibraryButton() {
         if (!libPanel.value) openPanel.value = null;
         toggleLibrary();
       }}
-      title={`资源库：${LIBRARY_NOTE}`}
+      title="资源库：文化、政体、生态、河湖、地名风格"
     >
       <Boxes size={18} />
       <span class="tb-label">资源库</span>
@@ -74,10 +75,29 @@ function UndoRedo() {
   );
 }
 
+// 顶栏有多高（一行或两行）：写进 .app 的 --top-clear，资源库面板、右边的抽屉、提示条从它下面开始，不盖住第二行
+function useTopClear(bar: { current: HTMLDivElement | null }) {
+  useLayoutEffect(() => {
+    const el = bar.current;
+    const app = el?.parentElement;
+    if (!el || !app || typeof ResizeObserver === 'undefined') return;
+    const set = () => app.style.setProperty('--top-clear', `${Math.round(el.offsetTop + el.offsetHeight + 10)}px`);
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    set();
+    return () => {
+      ro.disconnect();
+      app.style.removeProperty('--top-clear');
+    };
+  }, []);
+}
+
 export function TopBar() {
   const w = world.value;
+  const bar = useRef<HTMLDivElement>(null);
+  useTopClear(bar);
   return (
-    <div class="topbar">
+    <div class="topbar" ref={bar}>
       <div class="tb-group">
         <LibraryButton />
         <span class="tb-sep" />
@@ -95,8 +115,8 @@ export function TopBar() {
         ))}
         <span class="tb-sep" />
         <PanelButton panel="layers" icon={Layers} label="图层" disabled={!w} title="底图、地名、河流、边界、比例尺、参考图" />
+        <MapKindButton />
       </div>
-      <MapKindSwitch />
     </div>
   );
 }

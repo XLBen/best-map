@@ -7,9 +7,10 @@ import { Seg } from '../common';
 import { Slider, linear } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
 import { SEASON_NOTE } from '../copy';
-import { CULTURE_VIEWS, LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, humanViews } from '../defs/layers';
+import { LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, humanViews } from '../defs/layers';
 import { hasAnySettle } from '../domain/settlements';
-import { kindOfView } from '../map/modes';
+import { kindOfView, mapModes } from '../map/modes';
+import { MapKindSwitch } from '../shell/MapKind';
 
 // 整个星球的投影（第十三轮 G4）：只是看的方式，存在这个浏览器里，不写进世界文件
 const PROJECTIONS: [ProjectionPref, string][] = [
@@ -164,8 +165,17 @@ export function LayersPanel() {
   );
   const human = humanViews(w);
   const hint = [...VIEWS, ...human].find((v) => v.id === mode.value)?.hint;
+  // 生成过人文才有地图模式（第八十二轮：从顶栏下面单独的一排挪到这里最上面，顶栏上另有一个写着现在模式的按钮）
+  const modes = mapModes(w).length > 0;
   return (
     <>
+      {modes && (
+        <section>
+          <h5>地图模式</h5>
+          <MapKindSwitch />
+          {hint && kindOfView(mode.value) !== 'geo' && <p class="hint">{hint}</p>}
+        </section>
+      )}
       <section>
         <h5>底图</h5>
         <div class="view-grid">{VIEWS.filter((v) => !v.more).map((v) => viewButton(v.id, v.label))}</div>
@@ -183,19 +193,13 @@ export function LayersPanel() {
       <section>
         <h5>人文</h5>
         <div class="view-grid">
-          {human.map((v) =>
-            v.id === 'culture' ? (
-              <button class={mode.value === 'culture' || mode.value === 'cultureGroup' ? 'on' : ''} onClick={() => showView(mode.value === 'cultureGroup' ? 'cultureGroup' : 'culture')}>
-                {v.label}
-              </button>
-            ) : (
-              viewButton(v.id, v.label)
-            ),
-          )}
+          {/* 生成过人文时，模式能换的几层（国家、文化……）在上面的“地图模式”里，这里只剩宜居度 */}
+          {human
+            .filter((v) => !modes || kindOfView(v.id) === 'geo')
+            .map((v) => viewButton(v.id, v.label))}
         </div>
-        {(mode.value === 'culture' || mode.value === 'cultureGroup') && <Seg value={mode.value} options={CULTURE_VIEWS} onChange={showView} wide />}
         {!w.small.human && <p class="hint">生成人文后有文化圈、人口密度</p>}
-        {hint && human.some((v) => v.id === mode.value) && <p class="hint">{hint}</p>}
+        {hint && !(modes && kindOfView(mode.value) !== 'geo') && human.some((v) => v.id === mode.value) && <p class="hint">{hint}</p>}
       </section>
       <MapStyleSection w={w} />
       {planet && (

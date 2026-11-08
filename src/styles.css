@@ -74,8 +74,12 @@
   --share-4: #a07ad0;
   --share-5: #5ac0b8;
 
-  /* 右边抽屉的宽：抽屉开着时底部条按它居中 */
-  --sheet-w: min(420px, calc(100% - 80px));
+  /* 左上角资源库面板的宽（第八十二轮：380 → 420 px）；右边抽屉的宽不超过它，1024 px 宽时约三分之一，地图中间露着
+     （抽屉开着时底部条按它居中） */
+  --lib-w: min(420px, calc(100% - 16px));
+  --sheet-w: min(400px, max(340px, 34vw), calc(100% - 80px));
+  /* 顶栏下面：资源库面板、右边的抽屉、提示条从这里往下（顶栏换成两行时 TopBar.tsx 量了改大） */
+  --top-clear: 60px;
 }
 
 /* ---------- 基础 ---------- */
@@ -797,6 +801,18 @@ button.toggle {
   background: var(--fill);
   margin: 0 var(--sp-1);
 }
+/* 地图模式按钮（MapKind.tsx）的小箭头：点开是菜单 */
+.tb-chevron {
+  margin-left: calc(-1 * var(--sp-1));
+  color: var(--muted);
+}
+/* 不够宽时按钮收紧一些，右边那组一行放得下 */
+@media (max-width: 1100px) {
+  .tb-btn {
+    gap: var(--sp-1);
+    padding: 0 var(--sp-2);
+  }
+}
 @media (max-width: 900px) {
   .tb-label {
     display: none;
@@ -992,7 +1008,7 @@ button.legend-head {
 /* 顶部中间的提示条（安全模式、脚本出错的横幅在它上面，一起往下排） */
 .notices {
   position: absolute;
-  top: 60px;
+  top: var(--top-clear);
   left: 50%;
   transform: translateX(-50%);
   /* 左右的面板都开着时中间约 490 px：长的提示折行，不钻到面板下面 */
@@ -1224,7 +1240,7 @@ ol.history li.undone {
 /* 右边的抽屉（国家、城市、集团的档案） */
 .sheet {
   position: absolute;
-  top: 60px;
+  top: var(--top-clear);
   right: 10px;
   bottom: 10px;
   width: var(--sheet-w);
@@ -2332,42 +2348,13 @@ h6.choice-group {
 
 
 /* ---------- 国家（第二十三轮）：地理 / 人文的切换、旗帜、国家列表、档案的抽屉 ---------- */
-.map-kind {
-  pointer-events: auto;
-  margin-left: auto;
-  max-width: 100%;
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding: 2px;
-  background: var(--glass);
-  border: 1px solid var(--fill);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-lg);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-/* 地图模式在顶栏里单独一行、靠右 */
-.topbar > .map-kind {
-  flex: 0 1 auto;
-  order: 3;
-  /* 换行用的空行也占一道间距：收回来 */
-  margin-top: calc(-1 * var(--sp-2));
-}
-.topbar::after {
-  content: '';
-  order: 2;
-  flex-basis: 100%;
-}
+/* 地图模式（第八十二轮）：在“图层”面板最上面一排，放不下时换行；顶栏上是 MapKindButton，点开 .menu */
 .map-kind .seg {
-  display: flex;
+  flex-wrap: wrap;
 }
 .map-kind .seg button {
-  flex: none;
+  flex: 1 0 auto;
   white-space: nowrap;
-}
-.app.with-sheet .map-kind {
-  margin-right: calc(var(--sheet-w) + 10px);
-  max-width: calc(100% - var(--sheet-w) - 10px);
 }
 .flag {
   flex: none;
