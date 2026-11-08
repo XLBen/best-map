@@ -20,7 +20,7 @@ import { worldLibrary } from '../domain/packChoice';
 //   生成了才算：没有人文时不算，没有国家时政体不算，没有城市时城市等级不算。
 //
 // 一个按钮，只做一步（能撤销）：
-//   文化、时代、取值改了        重新生成人文（国家的领土不动）
+//   文化、时代、取值改了        重新生成人文（国家的领土不动）；时代里管国家的几项改了，连国家一起
 //   政体、派系、国家等级改了    重新生成国家（人口按新的国家重算，锁定的不动）
 //   两样都改了                  重新生成人文和国家
 //   只有城市等级、地标、点改了  重新生成城市（锁定的、自己放的不动）
@@ -94,6 +94,18 @@ function humanChanges(small: Small, base: Content, lib: readonly LibraryEntry[])
   return out;
 }
 
+// 时代里管国家的几项（国家大小、领海、等级比例、格局、按文化分国、集团的称号、国境外划进国家）：改了要连国家一起重新生成，
+// 只重新生成人文时国家的领土不动，这几项就白改了（第八十一轮合并时查出来的）
+const ERA_COUNTRY_KEYS = ['countryKm2', 'seaClaimKm', 'tiers', 'patterns', 'nationalism', 'relations', 'unclaimed'] as const;
+function eraCountryChange(small: Small, base: Content): boolean {
+  const id = small.human?.era;
+  if (!id) return false;
+  const now = storeOf(small.content, 'era')[id] as Record<string, unknown> | undefined;
+  const then = storeOf(base, 'era')[id] as Record<string, unknown> | undefined;
+  if (!now || !then || now === then) return false;
+  return ERA_COUNTRY_KEYS.some((k) => stableJson(now[k] ?? null) !== stableJson(then[k] ?? null));
+}
+
 const changesIn = (small: Small, base: Content, kinds: readonly string[]) => kinds.flatMap((k) => changedIds(base, small.content, k).map((id) => `${k}:${id}`));
 
 // 第八十一轮：省份划分也走这一条。“湖”改了马上整理（不算）；名字、说明不算。世界里没有时按默认的比
@@ -134,7 +146,8 @@ export function regenNeed(small: Small, base: RegenBase | null, lib: readonly Li
   if (!count) return null;
   const scopes: RegenScope[] = [];
   let label = '';
-  if (human.length && gov.length) {
+  const eraGov = hasCountries && human.length > 0 && eraCountryChange(small, base.human);
+  if (human.length && (gov.length || eraGov)) {
     scopes.push('human', 'countries');
     label = '重新生成人文和国家';
   } else if (gov.length) {

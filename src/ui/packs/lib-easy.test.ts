@@ -120,6 +120,23 @@ describe('底下的“改了 N 项 · 重新生成”', () => {
     expect(t.base()!.hand).toBeUndefined();
   });
 
+  it('时代里的国家大小改了：连国家一起重新生成（只重做人文时国家的领土不动，等于白改）；只改人口密度时国家不动', () => {
+    const e = worldOf();
+    const t = trackOf(e);
+    const before = Object.keys(e.world.small.countries!).length;
+    editIn(e, t, 'era', { popDensity: 5 }, 1);
+    expect(regenNeed(e.world.small, t.base(), BUILTIN)!.scopes).toEqual(['human']);
+    const era = kindOf('era')!.inWorld(e.world)[0] as { countryKm2?: number };
+    editIn(e, t, 'era', { countryKm2: (era.countryKm2 ?? 1.6e6) / 8 }, 2);
+    const need = regenNeed(e.world.small, t.base(), BUILTIN)!;
+    expect(need.scopes).toEqual(['human', 'countries']);
+    expect(need.what).toBe('会重做人口、文化、国家、城市；锁定的不动');
+    const cmd = regenCommand(need, e.world.small, BUILTIN);
+    e.exec(cmd);
+    e.update();
+    expect(Object.keys(e.world.small.countries!).length).toBeGreaterThan(before);
+  });
+
   it('只改国家：没手改过时不写会被换掉', () => {
     const e = worldOf();
     const t = trackOf(e);

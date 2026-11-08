@@ -34,16 +34,16 @@ export function ShareBar({ parts, values, onCommit, disabled }: { parts: readonl
     if (next) onCommit(next);
   };
   return (
-    <div class={`share-bar ${disabled ? 'off' : ''}`}>
-      <div class="share-track" ref={bar}>
+    <div class={`ratio-bar ${disabled ? 'off' : ''}`}>
+      <div class="ratio-track" ref={bar}>
         {parts.map((p, k) => (
-          <span class={`share-seg c${k % 6}`} style={{ width: `${shares[k] * 100}%` }} title={`${p.label} ${percentText(shares[k])}`}>
-            {shares[k] >= 0.1 && <span class="share-pct">{percentText(shares[k])}</span>}
+          <span class={`ratio-seg c${k % 6}`} style={{ width: `${shares[k] * 100}%` }} title={`${p.label} ${percentText(shares[k])}`}>
+            {shares[k] >= 0.1 && <span class="ratio-pct">{percentText(shares[k])}</span>}
           </span>
         ))}
         {dividers.map((x, k) => (
           <span
-            class="share-divider"
+            class="ratio-divider"
             style={{ left: `${x * 100}%` }}
             role="slider"
             tabIndex={disabled ? -1 : 0}
@@ -68,10 +68,10 @@ export function ShareBar({ parts, values, onCommit, disabled }: { parts: readonl
           />
         ))}
       </div>
-      <div class="share-legend">
+      <div class="ratio-legend">
         {parts.map((p, k) => (
-          <span class="share-key">
-            <span class={`swatch share-dot c${k % 6}`} />
+          <span class="ratio-key">
+            <span class={`swatch ratio-dot c${k % 6}`} />
             {p.label} <span class="hint">{percentText(shares[k])}</span>
           </span>
         ))}

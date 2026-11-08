@@ -1353,17 +1353,17 @@ select.ed-add {
   font-size: var(--fs-xs);
 }
 /* 分段的色条（components/ShareBar.tsx，第八十一轮） */
-.share-bar {
+.ratio-bar {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
   margin: var(--sp-1) 0;
 }
-.share-bar.off {
+.ratio-bar.off {
   opacity: 0.6;
   pointer-events: none;
 }
-.share-track {
+.ratio-track {
   position: relative;
   display: flex;
   height: 24px;
@@ -1372,7 +1372,7 @@ select.ed-add {
   background: var(--press);
   touch-action: none;
 }
-.share-seg {
+.ratio-seg {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1382,13 +1382,13 @@ select.ed-add {
   color: var(--bg);
   white-space: nowrap;
 }
-.share-seg.c0, .share-dot.c0 { background: var(--share-0); }
-.share-seg.c1, .share-dot.c1 { background: var(--share-1); }
-.share-seg.c2, .share-dot.c2 { background: var(--share-2); }
-.share-seg.c3, .share-dot.c3 { background: var(--share-3); }
-.share-seg.c4, .share-dot.c4 { background: var(--share-4); }
-.share-seg.c5, .share-dot.c5 { background: var(--share-5); }
-.share-divider {
+.ratio-seg.c0, .ratio-dot.c0 { background: var(--share-0); }
+.ratio-seg.c1, .ratio-dot.c1 { background: var(--share-1); }
+.ratio-seg.c2, .ratio-dot.c2 { background: var(--share-2); }
+.ratio-seg.c3, .ratio-dot.c3 { background: var(--share-3); }
+.ratio-seg.c4, .ratio-dot.c4 { background: var(--share-4); }
+.ratio-seg.c5, .ratio-dot.c5 { background: var(--share-5); }
+.ratio-divider {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -1397,7 +1397,7 @@ select.ed-add {
   cursor: ew-resize;
   outline: none;
 }
-.share-divider::after {
+.ratio-divider::after {
   content: '';
   position: absolute;
   top: 2px;
@@ -1408,16 +1408,16 @@ select.ed-add {
   background: var(--text);
   box-shadow: var(--shadow-sm);
 }
-.share-divider:focus-visible::after {
+.ratio-divider:focus-visible::after {
   background: var(--accent);
 }
-.share-legend {
+.ratio-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 2px var(--sp-2);
   font-size: var(--fs-sm);
 }
-.share-key {
+.ratio-key {
   display: inline-flex;
   align-items: center;
   gap: 4px;
