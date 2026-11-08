@@ -330,22 +330,76 @@ export function unpackRivers(p: PackedRivers): { lines: RiverLine[]; draws: Rive
 
 // Worker 里：描这个世界的河并打包（带子按地图上的画法：河口多画 0.3 格进水里、按河流类型的粗细）。
 // 高程数组换一份副本再描：Worker 里推导数组会就地改写，按数组认的海岸场缓存可能是旧的。
-// 描河读的东西（与 src/render/overlay.ts 的 riverLinesKey 同样几项，按内容）都没变时（比如只涂了生态）用上一次描好的（复制一份，转交的会被拿走）
-let last: { key: string; packed: PackedRivers; id: number } | null = null;
+// 描河读的东西（与 src/render/overlay.ts 的 riverLinesKey 同样几项，按内容）都没变时（比如只涂了生态）用上一次描好的（复制一份，转交的会被拿走）。
+// 第八十八轮：记最近几份（撤销、重做回到前几步时描河读的东西与那时逐值相同，照用那一份，不重描）：最多 RIVERS_KEEP 份、
+// 点数加起来不超过 RIVERS_BYTES 字节（一块 4 万格的地区一份约 2.7 MB，类地星球约 4 MB）
+const RIVERS_KEEP = 8;
+const RIVERS_BYTES = 32e6;
+interface RiversEntry {
+  key: string;
+  packed: PackedRivers;
+  id: number;
+  bytes: number;
+}
+let kept: RiversEntry[] = [];
 let packs = 0;
-function ensureRivers(world: World): { key: string; packed: PackedRivers; id: number } {
+// 测试用：只记一份（第八十七轮的写法）
+export const riversKeep = { many: true };
+function ensureRivers(world: World): RiversEntry {
   const thr = world.small.planet.riverThreshold;
   const spacing = world.mesh.spacing;
   const types = drawTypes(world);
   const key = riversKey(world, drawTypesKey(types));
-  if (last?.key !== key) {
-    const w: World = { ...world, derived: { ...world.derived, elevation: world.derived.elevation.slice() } };
-    const lines = traceRivers(w);
-    const typesKey = drawTypesKey(types);
-    const draws = memoDraws(lines, thr, spacing, types, typesKey);
-    last = { key, packed: packRivers(lines, draws, { thr, spacing, types: typesKey }), id: ++packs };
+  const at = kept.findIndex((e) => e.key === key);
+  if (at === 0) return kept[0];
+  if (at > 0) {
+    const hit = kept[at];
+    kept = [hit, ...kept.slice(0, at), ...kept.slice(at + 1)];
+    return hit;
   }
-  return last;
+  const w: World = { ...world, derived: { ...world.derived, elevation: world.derived.elevation.slice() } };
+  const lines = traceRivers(w);
+  const typesKey = drawTypesKey(types);
+  // 带子的记忆是上一次描的那份的：刚才照用的是记着的另一份时（撤销以后接着改），先换成那一份的（与只记一份时一样：比的是改之前的那份）
+  if (kept.length && drawsOf !== kept[0]) drawMemoFrom(kept[0]);
+  const draws = memoDraws(lines, thr, spacing, types, typesKey);
+  const packed = packRivers(lines, draws, { thr, spacing, types: typesKey });
+  const entry: RiversEntry = { key, packed, id: ++packs, bytes: packedBytes(packed) };
+  drawsOf = entry;
+  const next = [entry];
+  let bytes = entry.bytes;
+  for (const e of kept) {
+    if (!riversKeep.many || next.length >= RIVERS_KEEP || bytes + e.bytes > RIVERS_BYTES) break;
+    next.push(e);
+    bytes += e.bytes;
+  }
+  kept = next;
+  return entry;
+}
+
+// 带子的记忆（drawMemo）是哪一份描的
+let drawsOf: RiversEntry | null = null;
+function drawMemoFrom(e: RiversEntry): void {
+  drawsOf = e;
+  const rb = e.packed.rb;
+  if (!rb || !riverDrawDebug.memo) return;
+  const { lines, draws } = unpackRivers(e.packed);
+  const byHead = new Map<number, { sig: Float64Array; draw: RiverDraw }[]>();
+  lines.forEach((line, i) => {
+    const head = line.points.length ? line.points[0][0] : 0;
+    const entry = { sig: lineSig(line), draw: draws![i] };
+    const list = byHead.get(head);
+    if (list) list.push(entry);
+    else byHead.set(head, [entry]);
+  });
+  drawMemo = { key: `${rb.thr}|${rb.spacing}|${rb.types}`, byHead };
+}
+
+function packedBytes(p: PackedRivers): number {
+  let b = p.meta.byteLength + p.pts.byteLength + p.flow.byteLength + p.cells.byteLength + p.mul.byteLength + p.type.byteLength + p.joins.byteLength;
+  const r = p.rb;
+  if (r) b += r.count.byteLength + r.x.byteLength + r.y.byteLength + r.s.byteLength + r.nx.byteLength + r.ny.byteLength + r.hw.byteLength + r.src.byteLength + r.box.byteLength + r.tag.byteLength;
+  return b;
 }
 export function worldRivers(world: World): PackedRivers {
   return copyPacked(ensureRivers(world).packed);
@@ -368,7 +422,8 @@ function riversKey(world: World, types: string): string {
   // 两路散列放在反复用的数组里，逐个数组按 32 位字、剩下的按字节混进去（模块里的函数，第三十三轮提速：以前每个数都调一次闭包）
   keyState[0] = 0x811c9dc5;
   keyState[1] = 0x9e3779b9;
-  for (const x of [d.discharge, d.receiver, d.lake, d.elevation, d.water, d.riverType, causes.land, causes.landness, causes.fragment]) mixArray(keyState, x);
+  // 第八十八轮：再加冰盖（海岸类型的峡湾、溺谷读它）与汇水面积（海岸场的三角洲读它）：记几份时回到的那一份这几样也得相同
+  for (const x of [d.discharge, d.receiver, d.lake, d.elevation, d.water, d.riverType, causes.land, causes.landness, causes.fragment, d.ice, d.drainArea]) mixArray(keyState, x);
   return [world.settings.seed, mesh.n, mesh.spacing, small.planet.riverThreshold, guidesSignature(small.guides), small.terrain.coastRoughness, coastSeed(world), types, riversStop(small.species), keyState[0] >>> 0, keyState[1] >>> 0].join('|');
 }
 const keyState = new Int32Array(2);
