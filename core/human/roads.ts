@@ -6,6 +6,7 @@ import type { RoadMeta, SettlementRules, World } from '../world';
 import { RIVER } from './rules';
 import { type SettleInputs, cellKm, cityAt, computeCityTable, nextSettlementId } from './settlements';
 import { isMajorRank } from './settle-content';
+import { isPortCell, laneIntact, seaLanes } from './ports';
 import { distKm } from './space';
 import { cellMovement, minMovement } from './terrain-class';
 
@@ -15,9 +16,11 @@ import { cellMovement, minMovement } from './terrain-class';
 //   2. 小路：别的城市按重要的先，各自找到最近的已有道路（或已经连上的城市）接上；一块陆地上还没有路时最重要的城市做起点；
 //   3. 走过已有道路的那一段不再重复存：一条路只存新修的那一段，接在路网上（from / to 是两头的城市）。
 // 代价：km × 两格的通行难度的平均 × (1 + 高低差 / 300) × 过河（进有河的格 × 2.2，顺着河谷走 × 0.85）× 已有道路（大道 × 0.4、小路 × 0.6）；
-// 海、湖走不了
+// 海、湖走不了。第八十四轮：最后连港口之间的海路（ports.ts，kind 'sea'）
 
 export const ROAD_KINDS = ['major', 'minor'] as const;
+// 第八十四轮：港口之间的海路（ports.ts；格是“港口、水面……、港口”，不算进陆上的路网）
+export const SEA_LANE = 'sea';
 const MAJOR = 1;
 const MINOR = 2;
 const ON_MAJOR = 0.4;
@@ -61,6 +64,7 @@ const minMove = (world: World): number => minMovement(world.small);
 export function roadMask(world: World, roads: Iterable<RoadMeta>): Uint8Array {
   const on = new Uint8Array(world.mesh.n);
   for (const r of roads) {
+    if (r.kind === SEA_LANE) continue;
     const v = r.kind === 'major' ? MAJOR : MINOR;
     for (const c of r.cells) if (!on[c] || v < on[c]) on[c] = v;
   }
@@ -372,6 +376,12 @@ export function generateRoads(S: SettleInputs, _rules: SettlementRules, fresh: b
       for (const i of path) net[i] = 1;
     }
   }
+  // 第八十四轮：港口之间的海路
+  const ports = cities.filter((c) => !c.point && isPortCell(world, c.cell)).map((c) => ({ id: c.id, cell: c.cell, major: c.capital || isMajorRank(c.rank) }));
+  for (const l of seaLanes(world, ports, piece)) {
+    const id = nextSettlementId(world);
+    roads[id] = { id, ...l };
+  }
   return Object.keys(roads).length;
 }
 
@@ -513,7 +523,7 @@ export function setRoad(world: World, id: number, p: RoadPatch): string[] {
   const what: string[] = [];
   if (p.kind !== undefined) {
     r.kind = p.kind;
-    what.push(p.kind === 'major' ? '大道' : p.kind === 'minor' ? '小路' : '种类');
+    what.push(p.kind === 'major' ? '大道' : p.kind === 'minor' ? '小路' : p.kind === SEA_LANE ? '海路' : '种类');
   }
   if (p.name !== undefined) {
     if (p.name?.trim()) r.name = p.name.trim();
@@ -558,6 +568,13 @@ export function repairRoads(world: World): boolean {
   const land = world.causes.land;
   let changed = false;
   for (const r of Object.values(roads).sort((a, b) => a.id - b.id)) {
+    // 第八十四轮：海路的两头不是陆地了、中间有了陆地时整条去掉
+    if (r.kind === SEA_LANE) {
+      if (laneIntact(world, r.cells)) continue;
+      delete roads[r.id];
+      changed = true;
+      continue;
+    }
     if (r.cells.every((c) => land[c])) continue;
     changed = true;
     const runs: number[][] = [];

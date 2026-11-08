@@ -16,6 +16,7 @@ import { scriptsEnabled } from './script';
 import { resolveTerrain, shareTerrainBase, warmTerrainSteps } from './terrain';
 import { SLOTS } from './human/groups';
 import { applyPopFix, populationFix } from './human/population';
+import { computePopLayers } from './human/layers';
 import { type Derived, type Settings, type World, createWorld, kmPerUnit, settingsSchema } from './world';
 import type { WorldDoc, Timings, EngineBase, DerivedState, DoneStep, Checkpoint, UndoneStep, DocTail, PreviewResult, ProvincesPreview } from './engine-types';
 import { type RecomputeState, recomputeDerived } from './engine-recompute';
@@ -411,8 +412,8 @@ export class Engine {
     step.cmd = { ...step.cmd, provinceFix: fix };
   }
 
-  // 有人文时这一步之前的水面（海、湖）：改了陆海之后修补人口用（见 fixPopulation）
-  private waterMask(): Uint8Array | null {
+  // 有人文时这一步之前的水面（海、湖）与宜居度（第八十四轮）：改了陆海、宜居度之后修补人口用（见 fixPopulation）
+  private waterMask(): { water: Uint8Array; hab: Float32Array } | null {
     const w = this.world;
     if (!w.small.human || !w.causes.popTotal) return null;
     const n = w.mesh.n;
@@ -420,25 +421,32 @@ export class Engine {
     const lake = w.derived.lake;
     const out = new Uint8Array(n);
     for (let i = 0; i < n; i++) if (!land[i] || lake[i] === 1) out[i] = 1;
-    return out;
+    return { water: out, hab: w.derived.habitability };
   }
 
   // 人口的修补（第二十二轮，见 human/population.ts 的 populationFix）：这一步改了陆海、湖之后，变成水面的格没有人了，
-  // 新的干的陆地按宜居度补上人。结果记进这一步的命令（popFix，重放、重做时照用）与撤销记录，再重算人文的几层与名字
-  private fixPopulation(water0: Uint8Array | null) {
+  // 新的干的陆地按宜居度补上人；第八十四轮：宜居度变了的地方一带的人按新的宜居度在本国里重新分（总数不变）。结果记进这一步的命令（popFix，重放、重做时照用）与撤销记录，再重算人文的几层与名字
+  private fixPopulation(water0: { water: Uint8Array; hab: Float32Array } | null) {
     const step = this.done[this.done.length - 1];
     const w = this.world;
     if (!water0 || !step || step.dirty <= Dirty.Human || step.cmd.popFix || !w.small.human || !w.causes.popTotal) return;
-    const fix = populationFix(w, w.derived, water0);
+    const fix = populationFix(w, w.derived, water0.water, water0.hab);
     if (!fix) return;
     const c = w.causes;
-    const before = { t: c.popTotal!.slice(), g: c.popGroup!.slice(), s: c.popShare!.slice() };
+    const before = { t: c.popTotal!.slice(), g: fix.cells.length ? c.popGroup!.slice() : c.popGroup!, s: fix.cells.length ? c.popShare!.slice() : c.popShare! };
     applyPopFix(w, fix);
     const slots = fix.cells.flatMap((i) => Array.from({ length: SLOTS }, (_, k) => i * SLOTS + k));
-    addArrayUndo(step.undo, 'popTotal', fix.cells, before.t);
-    addArrayUndo(step.undo, 'popGroup', slots, before.g);
-    addArrayUndo(step.undo, 'popShare', slots, before.s);
+    addArrayUndo(step.undo, 'popTotal', fix.moves ? [...new Set([...fix.cells, ...fix.moves.cells])].sort((a, b) => a - b) : fix.cells, before.t);
+    if (fix.cells.length) {
+      addArrayUndo(step.undo, 'popGroup', slots, before.g);
+      addArrayUndo(step.undo, 'popShare', slots, before.s);
+    }
     step.cmd = { ...step.cmd, popFix: fix };
+    // 第八十四轮：只挪了人数（成分、陆海都没变）时只重算人口的几层（地名、国家的一层不看人数），不再走一遍人文
+    if (!fix.cells.length) {
+      computePopLayers(w, w.derived);
+      return;
+    }
     this.dirty = Dirty.Human;
     this.update();
   }

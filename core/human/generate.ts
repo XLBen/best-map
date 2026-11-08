@@ -5,19 +5,22 @@ import type { GenContext, GenGroup, HumanStage } from './context';
 import { fillAddedDims } from './add-dimension';
 import { snapshotCountries, snapshotPop } from './auto';
 import { claimsStage } from './claims';
+import { capitalsStage } from './countries/capitals';
 import { culturesStage } from './cultures';
 import { type CountryPlan, blocsStage, clearCountries, countriesStage, countryMixStage } from './countries';
 import { type Era, cultureGroupById, worldCultures, worldEras } from './era';
 import { compactGroups } from './groups';
 import { compilePrefs, preferenceFactorsAfter, preferenceProducts } from './habitability';
 import { ensurePopArrays, populationStage } from './population';
+import { liveResources, resourceHabitability } from './resources';
 import { cellInputs } from './rules';
 import { cellKm2 } from './space';
 import { worldTerrainClasses } from './terrain-class';
 import { generateSettlements, settlementRules } from './settle-gen';
 import { clearCities } from './settlements';
 
-// 生成人文（第二十二轮）：文化圈 → 国家（第二十三轮）→ 领土补齐 → 帝国、联邦、同盟（第二十六轮）→ 人口 → 国家的移民，每一步是一个 HumanStage（见 context.ts）。
+// 生成人文（第二十二轮）：文化圈 → 人口 → 国家（第二十三轮）→ 领土补齐 → 帝国、联邦、同盟（第二十六轮）→ 首都 → 国家的移民，
+// 每一步是一个 HumanStage（见 context.ts）。第八十四轮：人口挪到国家之前，首都挪到人口的重心一带（countries/capitals.ts），宜居度含资源的倍数
 // 结果写进原因（causes.popTotal / popGroup / popShare）与 small.human、small.popGroups，像省份一样“生成一次、之后修补”。
 // 第三十轮：生成只读世界里的内容——时代、取值、文化组、文化、地名风格、政体、派系都由界面先从资源包加进世界
 // （core/packs/import.ts 的 packImportCommands：planPack，带 from），这里不再从代码里的内置常量复制。
@@ -40,8 +43,9 @@ export interface HumanParams {
   settlements?: Partial<SettlementRules>;
 }
 
-// 第二十三轮：国家插在文化圈与人口之间，国家的移民在人口之后
-const STAGES: HumanStage[] = [culturesStage, countriesStage, populationStage, countryMixStage];
+// 第二十三轮：国家插在文化圈与人口之间，国家的移民在人口之后。
+// 第八十四轮：人口挪到国家之前（国家的起点、首都按人口挑），首都一带多出来的人在集团之后（capitals）
+const STAGES: HumanStage[] = [culturesStage, populationStage, countriesStage, capitalsStage, countryMixStage];
 
 // 加一步（第二十三轮的国家）：排在 before 之前或 after 之后（都省略时排在最后）；同一个 id 再登记一次是换掉
 export function registerHumanStage(stage: HumanStage, at: { before?: string; after?: string } = {}) {
@@ -150,6 +154,8 @@ export function generateHuman(
     } else manual.fill(0);
   }
   const seed = (params.seed ?? WORLD_SEED(world)) >>> 0;
+  // 第八十四轮：资源按世界现在的列表现算（见 resources.ts 的 liveResources）
+  const resource = liveResources(world, d, x, cls, classIds);
   let countries: CountryPlan | undefined;
   if (params.countries) {
     const rules: CountryRules = { seed: (params.countries.seed ?? seed) >>> 0 };
@@ -168,6 +174,8 @@ export function generateHuman(
     cultures,
     cultureGroup,
     hab: d.habitability,
+    resource,
+    popHab: resourceHabitability(small, d.habitability, resource),
     groupPref,
     culturePref,
     hearths: opts.hearths ?? [],

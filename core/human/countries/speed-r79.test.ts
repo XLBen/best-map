@@ -15,7 +15,8 @@ import type { CountryRun } from './state';
 // 第七十九轮的提速，新旧逐位相同（每个时代生成国家、换一个种子重新生成国家）：
 //   grow.ts：格局加的代价在长之前合成一个函数，没有时走不带它的那一份 stepTo；
 //   race-realms.ts 的 classify：所有的格只过一遍（以前每个种族一遍）。
-// 拿 vi.mock 换掉 growOwners：先按下面的旧写法（第七十八轮 8facf5e 的原样拷贝，不要改它）长一遍、记下结果，再按现在的长，逐位比；
+// 拿 vi.mock 换掉 growOwners：先按下面的旧写法（第七十八轮 8facf5e 的原样拷贝，不要改它）长一遍、记下结果，再按现在的长，逐位比
+// （第八十四轮：现在的去掉过大河、翻分水岭的倍数 g.cross 比，比完带上它再长一遍）；
 // 有种族那一维时（奇幻、科幻）classify 也新旧各算一遍比
 
 type Seen = { era: string; hooks: number; same: boolean; race?: boolean };
@@ -30,8 +31,13 @@ vi.mock('./grow', async (importOriginal) => {
     growOwners: (g: CountryRun) => {
       oldGrowOwners(g);
       const old = { owner: g.owner, dist: g.dist, edge: g.edge, thr: g.thr, home: g.home, primGroup: g.primGroup };
+      // 第八十四轮：过大河、翻分水岭的倍数（g.cross）是后加的，旧的写法没有：去掉它比，再带上它长出真正的结果
+      const cross = g.cross;
+      g.cross = undefined;
       orig.growOwners(g);
       const same = (Object.keys(old) as (keyof typeof old)[]).every((k) => sameArr(old[k], g[k]));
+      g.cross = cross;
+      orig.growOwners(g);
       let race: boolean | undefined;
       if (raceDimension(g.world.small, g.ctx.era)) {
         const a = oldClassify(g, 1.8)!;

@@ -174,7 +174,8 @@ describe('“城市”一类', () => {
     const w = towns().world;
     world.value = w;
     const t = roadTool(zoomOf(w));
-    const road = Object.values(w.small.roads!).sort((a, b) => b.cells.length - a.cells.length)[0];
+    // 第八十四轮：海路不算（不在陆上）
+    const road = Object.values(w.small.roads!).filter((r) => r.kind !== 'sea').sort((a, b) => b.cells.length - a.cells.length)[0];
     const pts = roadPoints(w, road.cells);
     // 沿着一条已有的路画（都在陆地上）
     setOptions({ roadKind: 'major' });
@@ -366,7 +367,8 @@ describe('缩放分级与图标', () => {
     }
     // 同样的道路同一份
     expect(roadSet(w)).toBe(set);
-    expect(set.draw.major.length + set.draw.minor.length).toBe(Object.keys(w.small.roads!).length);
+    // 第八十四轮：海路另成一组
+    expect(set.draw.major.length + set.draw.minor.length + (set.draw.sea?.length ?? 0)).toBe(Object.keys(w.small.roads!).length);
   });
 });
 

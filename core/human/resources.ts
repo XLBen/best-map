@@ -37,8 +37,71 @@ export const resourceSchema = z.object({
   cluster: z.number().min(10).max(5000).default(300),
   // 噪声的种子（省略时按 id；撞 id 改名时用原来的，分布不变）
   seedKey: typeIdSchema.optional(),
+  // 第八十四轮：生成人文时这一格的宜居度 × 这么多（肥沃的土地、渔场……；省略时按种类，见 RESOURCE_EFFECT）
+  habitability: z.number().min(0.2).max(3).optional(),
+  // 第八十四轮：城市选址的分数 × 这么多（矿山、港口、商品……；省略时按种类）
+  cityBonus: z.number().min(0.2).max(5).optional(),
 });
 export type Resource = z.output<typeof resourceSchema>;
+
+// 第八十四轮：资源没写 habitability、cityBonus 时按种类：农、渔、牧让人多一些，矿、奢侈品、奇幻的资源让城市更愿意建在这里
+export const RESOURCE_EFFECT: Record<ResourceCategory, { habitability: number; cityBonus: number }> = {
+  farm: { habitability: 1.2, cityBonus: 1.05 },
+  fish: { habitability: 1.12, cityBonus: 1.15 },
+  herd: { habitability: 1.06, cityBonus: 1 },
+  wood: { habitability: 1, cityBonus: 1 },
+  ore: { habitability: 1, cityBonus: 1.35 },
+  luxury: { habitability: 1.04, cityBonus: 1.4 },
+  magic: { habitability: 1, cityBonus: 1.3 },
+};
+
+// 每种资源（编号 = 下标 + 1；0 没有资源）的两项倍数
+export function resourceEffects(small: ResSmall): { hab: Float64Array; city: Float64Array } {
+  const list = worldResources(small);
+  const hab = new Float64Array(list.length + 1).fill(1);
+  const city = new Float64Array(list.length + 1).fill(1);
+  list.forEach((r, k) => {
+    const def = RESOURCE_EFFECT[r.category] ?? { habitability: 1, cityBonus: 1 };
+    hab[k + 1] = r.habitability ?? def.habitability;
+    city[k + 1] = r.cityBonus ?? def.cityBonus;
+  });
+  return { hab, city };
+}
+
+// 生成人文时这一格的资源（第八十四轮）：按世界现在的资源列表现算（一批命令里先加资源、再生成人文时，推导里的 d.resource 还是加之前的编号）。
+// 资源的噪声按网格记着（fieldOf），现算只是逐格查规则
+// 推导里的 d.resource 按哪一份资源列表、哪一份画的资源算的（index.ts 的 computeHuman 记下）：对得上时直接用它
+const noted = new WeakMap<Uint8Array, { list: readonly Resource[]; painted: string }>();
+const paintedKey = (painted: Uint8Array | undefined) => (painted ? `${painted.length}:${hashBytes(painted)}` : '');
+function hashBytes(a: Uint8Array): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < a.length; i++) if (a[i]) h = Math.imul(h ^ (i * 31 + a[i]), 0x01000193);
+  return h >>> 0;
+}
+export function noteResources(res: Uint8Array, list: readonly Resource[], painted: Uint8Array | undefined) {
+  noted.set(res, { list, painted: paintedKey(painted) });
+}
+export function liveResources(world: World, d: { resource: Uint8Array }, x: CellInputs, cls: Uint8Array, classIds: readonly string[]): Uint8Array {
+  const list = worldResources(world.small);
+  const n = noted.get(d.resource);
+  if (n && n.list === list && n.painted === paintedKey(world.causes.resource)) return d.resource;
+  return effectiveResources(distributeResources(world, x, cls, list, classIds), world.causes.resource, x.dry, list.length);
+}
+
+// 生成人文用的宜居度（第八十四轮）：推导的宜居度 × 这一格资源的倍数（最多 1.2：最好的地方再好一点）。图层上的宜居度是推导的那一份，不含资源
+export function resourceHabitability(small: ResSmall, hab: Float32Array, resource: Uint8Array): Float32Array {
+  const { hab: f } = resourceEffects(small);
+  let any = false;
+  for (let k = 1; k < f.length; k++) if (f[k] !== 1) any = true;
+  if (!any) return hab;
+  const out = new Float32Array(hab.length);
+  for (let i = 0; i < hab.length; i++) {
+    const r = resource[i];
+    const v = r && r < f.length ? hab[i] * f[r] : hab[i];
+    out[i] = v > 1.2 ? 1.2 : v;
+  }
+  return out;
+}
 
 type ResSmall = Pick<Partial<SmallState>, 'content'>;
 

@@ -4,7 +4,7 @@ import type { Command } from '../../core/commands';
 import type { Engine } from '../../core/engine';
 import { blocsCsv, countriesCsv, exportPart } from '../../core/export';
 import { ISLET_FRAG } from '../../core/features';
-import { autoBlocName, blocById, blocCells, blocList, blocOf, blocsOf, countryList } from '../../core/human';
+import { autoBlocName, blocById, blocCells, blocList, blocOf, blocsOf, countryList, countryStats } from '../../core/human';
 import { brushCells } from '../../core/select';
 import { continents, snapshot, humanExec, lastOf } from '../../core/testing/fixtures';
 import type { Bloc, World } from '../../core/world';
@@ -197,9 +197,12 @@ describe('国家模式里的集团', () => {
     const items = legendFor(w, 'country')!.items;
     const names = items.map((x) => x.label);
     const members = new Set(fed.members.map((id) => w.small.countries![id].name));
-    // 联邦大，排在前面
-    expect(names).toContain(fed.name);
+    // 成员邦不单列；联邦是一行（第八十四轮起国家按人口长，这个世界的联邦人口不在前 LEGEND_TOP 时算进“其他”）
     expect(names.some((n) => members.has(n))).toBe(false);
+    const fedPop = fed.members.reduce((a, id) => a + (countryStats(w, id)?.population ?? 0), 0);
+    const shown = items.filter((x) => !x.label.startsWith('其他'));
+    if (names.includes(fed.name)) expect(items.find((x) => x.label === fed.name)!.count).toBeCloseTo(fedPop, -2);
+    else expect(fedPop).toBeLessThanOrEqual(shown[shown.length - 1].count! + 1e-6);
   });
 });
 

@@ -3,7 +3,7 @@ import type { MapStyle } from '../../core/map-style';
 import type { RiverLine } from '../../core/rivers';
 import type { World } from '../../core/world';
 import { type Frame, type OverlayParts, type OverlayPaths, type OverlayState, type Shape, PROVINCE_LABEL_COLOR, drawLabels, drawScaleBar, hasLabels, refZoom, riverDraw, riverScale, riverStroke, riverTypeColor } from './overlay';
-import { ROAD_SMOOTH_PX, type RoadDraw, roadStyle } from './settle-draw';
+import { ROAD_SMOOTH_PX, type RoadDraw, roadStyle, seaLaneStyle } from './settle-draw';
 import { drawFlows, releaseFlows } from './wind-layer';
 import { type Proj, type ProjCamera, effectiveZoom, inverse, screenToPlane, screenToWorld, trueScale, worldToScreen } from './projection';
 
@@ -220,6 +220,14 @@ function drawRoadsProjected(ctx: CanvasRenderingContext2D, r: RoadDraw, P: Proje
     ctx.stroke();
   };
   const rs = roadStyle(r, style);
+  if (r.sea?.length) {
+    const ss = seaLaneStyle(r, style);
+    ctx.strokeStyle = ss.color;
+    ctx.lineWidth = ss.width;
+    ctx.setLineDash(ss.dash);
+    stroke(r.sea);
+    ctx.setLineDash([]);
+  }
   if (cellPx >= r.minorPx && r.minor.length) {
     ctx.strokeStyle = rs.minor.color;
     ctx.lineWidth = rs.minor.width;

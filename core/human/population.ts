@@ -9,15 +9,18 @@ import { type CompiledPrefs, compilePrefs, prefAt } from './habitability';
 import { type CellInputs, cellInputs } from './rules';
 import { cellKm2, nearestBy, noiseAt } from './space';
 import { worldTerrainClasses } from './terrain-class';
+import { SPREAD_DIMS, SPREAD_FLOOR, type ValueSpread, spreadSlots, spreadValues } from './religion-spread';
 
 // 人口（第二十二轮）：总人口按宜居度分到各格，每格的成分按当地的文化（文化圈的边上掺一些邻近的文化）与文化的默认倾向
 // （宗教、种族……）组成，记前 4 个群体（见 groups.ts）。
 //
-// 人数：每格的权重 = 面积（km²）× (宜居度 × 偏好)^sparsity，宜居度低于时代的 minHabitability 时再 × nomads；
+// 人数：每格的权重 = 面积（km²）× (宜居度 × 偏好)^sparsity，宜居度低于时代的 minHabitability 时再 × nomads（第八十四轮：这里的宜居度含资源的倍数，
+// ctx.popHab，见 resources.ts 的 resourceHabitability；人口在国家之前，首都一带多出来的人在国家之后按文化不变的总数再分，见 scalePopulation）；
 // 每个文化分到的人数 = 总人口 × 组的权重比例 × 组里文化的权重比例（某个文化的地盘里一格能住人的都没有时，它的那份分给别的文化），
 // 在它的地盘里按权重分。
 // 成分：每一维按文化的倾向（权重）× 取值的偏好 × e^(1.6·噪声)，再取 2.5 次方归一（噪声按地图上的位置、波长约 1200 km：
-// 同一种宗教成片，不是星星点点），占比不到 4% 的去掉，每维最多留 3 种
+// 同一种宗教成片，不是星星点点），占比不到 4% 的去掉，每维最多留 3 种。
+// 第八十四轮：宗教不按噪声，按发源地传播（religion-spread.ts）：噪声那一项换成“传到这里的 1、交界的另一种按掺的比例、别的 0.3”
 
 const MIX = 0.5;
 const VALUE_WAVE_KM = 1200;
@@ -83,6 +86,8 @@ export interface DimPlan {
   dim: Dimension;
   // 每个文化（ctx.cultures 的下标）的候选取值与权重；空的是这一维没有取值
   options: { id: string; w: number; prefs: CompiledPrefs | null; seed: number }[][];
+  // 第八十四轮：按发源地传播（宗教，见 religion-spread.ts；生成人口时放进来，没有时按噪声）
+  spread?: ValueSpread | null;
 }
 
 export function dimPlans(world: World, era: string, cultures: readonly (Culture | undefined)[], dims: readonly Dimension[], biomes: readonly { id: string; terrain: string }[], classIds: readonly string[], seed: number): DimPlan[] {
@@ -117,13 +122,19 @@ function valueDistAt(world: World, plan: DimPlan, c: number, x: CellInputs, cls:
   if (scores.length < m) scores = new Float64Array(2 * m);
   const score = scores;
   let sum = 0;
+  // 第八十四轮：宗教按传到这里的那一种（见 religion-spread.ts）；没传到时照用噪声
+  const sl = plan.spread ? spreadSlots(plan.spread, c, i) : null;
   for (let j = 0; j < m; j++) {
     const o = opts[j];
-    let f = noise.get(o.seed);
-    if (!f) noise.set(o.seed, (f = new Float32Array(world.mesh.n).fill(NaN)));
-    let v = f[i];
-    if (v !== v) v = f[i] = noiseAt(world, o.seed, VALUE_WAVE_KM, i);
-    const sc = Math.pow(o.w * prefAt(o.prefs, x, cls, i) * Math.exp(VALUE_NOISE * v), VALUE_SHARP);
+    let g = sl ? (j === sl.win ? 1 : j === sl.other ? sl.mix : SPREAD_FLOOR) : NaN;
+    if (g !== g) {
+      let f = noise.get(o.seed);
+      if (!f) noise.set(o.seed, (f = new Float32Array(world.mesh.n).fill(NaN)));
+      let v = f[i];
+      if (v !== v) v = f[i] = noiseAt(world, o.seed, VALUE_WAVE_KM, i);
+      g = Math.exp(VALUE_NOISE * v);
+    }
+    const sc = Math.pow(o.w * prefAt(o.prefs, x, cls, i) * g, VALUE_SHARP);
     score[j] = sc;
     sum += sc;
   }
@@ -241,7 +252,8 @@ function composeCellSlow(world: World, ctx: Pick<GenContext, 'x' | 'cls' | 'cult
 }
 
 function populate(ctx: GenContext) {
-  const { world, x, hab, era, cultures, cultureOf, keep } = ctx;
+  const { world, x, era, cultures, cultureOf, keep } = ctx;
+  const hab = ctx.popHab ?? ctx.hab;
   if (!cultureOf) throw new Error('人口要在文化圈之后算');
   ensurePopArrays(world);
   const causes = world.causes;
@@ -264,7 +276,6 @@ function populate(ctx: GenContext) {
     if (e < 1e-3) continue;
     let w = cellKm2(world, i) * Math.pow(e, k);
     if (hab[i] < minH) w *= nomads;
-    if (ctx.popScale) w *= ctx.popScale[i];
     if (!(w > 0)) continue;
     W[i] = w;
     sumBy[c] += w;
@@ -294,6 +305,8 @@ function populate(ctx: GenContext) {
     ctx.classIds,
     ctx.seed,
   );
+  // 第八十四轮：宗教按发源地传播
+  for (const plan of plans) if (SPREAD_DIMS.includes(plan.dim.id)) plan.spread = spreadValues(ctx, plan.options, plan.dim.id, (owner) => borderMix(world, x, owner));
   const table = new GroupTable(world.small);
   const noise = new Map<number, Float32Array>();
   let sumW = 0;
@@ -312,9 +325,40 @@ function populate(ctx: GenContext) {
   }
   table.commit();
   ctx.perWeight = sumW > 0 ? sumP / sumW : 0;
+  ctx.popWeight = W;
 }
 
 export const populationStage: HumanStage = { id: 'population', run: populate };
+
+// 第八十四轮：首都一带的人多一些（国家一步之后，见 countries/capitals.ts）：每格的人 × scale，每个文化的总人数不变
+// （和以前在人口一步里把权重 × scale 再按文化分人逐值等价的算法，只是数按单精度存过一次）
+export function scalePopulation(ctx: GenContext, scale: Float32Array) {
+  const { world, keep } = ctx;
+  const cultureOf = ctx.cultureOf!;
+  const pop = world.causes.popTotal;
+  const W = ctx.popWeight;
+  if (!pop || !W) return;
+  const n = world.mesh.n;
+  const K = ctx.cultures.length;
+  const before = new Float64Array(K);
+  const after = new Float64Array(K);
+  for (let i = 0; i < n; i++) {
+    if (!W[i] || keep?.[i] || !(pop[i] > 0)) continue;
+    const c = cultureOf[i];
+    before[c] += pop[i];
+    after[c] += pop[i] * scale[i];
+  }
+  let sumW = 0;
+  let sumP = 0;
+  for (let i = 0; i < n; i++) {
+    if (!W[i] || keep?.[i] || !(pop[i] > 0)) continue;
+    const c = cultureOf[i];
+    pop[i] = (pop[i] * scale[i] * before[c]) / after[c];
+    sumW += W[i] * scale[i];
+    sumP += pop[i];
+  }
+  ctx.perWeight = sumW > 0 ? sumP / sumW : 0;
+}
 
 // ---------- 修补：改地形之后（见 engine.ts 的 fixPopulation） ----------
 
@@ -324,6 +368,8 @@ export interface PopFix {
   total: number[];
   groups: number[];
   shares: number[];
+  // 第八十四轮：宜居度变了的一带挪了人的格与新的人数（成分不动；按格的编号排）
+  moves?: { cells: number[]; total: number[] };
 }
 
 // 一个文化（含它的组）的偏好
@@ -335,8 +381,11 @@ function culturePrefs(world: World, id: string, classIds: readonly string[]): Co
 }
 
 // 改了陆海之后：变成水面（海、湖）的格去掉人口；以前是水面、现在是干的陆地、还没有人的格，按宜居度补上人口，
-// 成分照最近的有人的格。wasWater：这一步之前的水面。别处的人数不动（宜居度变了也不动，要整体重来时重新生成）
-export function populationFix(world: World, d: Derived, wasWater: Uint8Array): PopFix | null {
+// 成分照最近的有人的格。wasWater：这一步之前的水面。
+// 第八十四轮：hab0（这一步之前的宜居度）给了、宜居度变了时，变了的格（至少 HAB_STEP）与它们两圈以内的格（干的陆地、有人、不是手改过的）的人
+// 按新旧宜居度之比（(宜居度)^sparsity，低于 minHabitability 再 × nomads）重新分，每个国家（无主地算一份）在这一片里的总人数不变；
+// 成分不动（记在 moves 里，只有人数）。变了的格超过 MAX_MOVED（或干的陆地的 MAX_MOVED_SHARE）时是大范围的改动，不挪。别处的人数不动
+export function populationFix(world: World, d: Derived, wasWater: Uint8Array, hab0?: Float32Array): PopFix | null {
   const { causes, small } = world;
   const h = small.human;
   const era = worldEra(small);
@@ -351,7 +400,8 @@ export function populationFix(world: World, d: Derived, wasWater: Uint8Array): P
       if (pop[i] > 0 || causes.popGroup![i * SLOTS]) lost.push(i);
     } else if (wasWater[i] && !(pop[i] > 0)) gained.push(i);
   }
-  if (!lost.length && !gained.length) return null;
+  const moved = hab0 && hab0 !== d.habitability ? habitabilityMoves(world, d, x, hab0, era, wasWater) : null;
+  if (!lost.length && !gained.length && !moved) return null;
   const fix: PopFix = { cells: [], total: [], groups: [], shares: [] };
   const put = (i: number, total: number, comp: { g: number[]; s: number[] }) => {
     fix.cells.push(i);
@@ -388,7 +438,9 @@ export function populationFix(world: World, d: Derived, wasWater: Uint8Array): P
     }
   }
   for (const i of lost) put(i, 0, empty);
-  if (!fix.cells.length) return null;
+  const moves = moved ? { cells: [...moved.keys()].sort((a, b) => a - b), total: [] as number[] } : undefined;
+  if (moves) moves.total = moves.cells.map((i) => moved!.get(i)!);
+  if (!fix.cells.length && !moves) return null;
   // 按格的编号排（命令里的样子固定）
   const order = fix.cells.map((_, q) => q).sort((a, b) => fix.cells[a] - fix.cells[b]);
   return {
@@ -396,7 +448,75 @@ export function populationFix(world: World, d: Derived, wasWater: Uint8Array): P
     total: order.map((q) => fix.total[q]),
     groups: order.flatMap((q) => fix.groups.slice(q * SLOTS, q * SLOTS + SLOTS)),
     shares: order.flatMap((q) => fix.shares.slice(q * SLOTS, q * SLOTS + SLOTS)),
+    ...(moves ? { moves } : {}),
   };
+}
+
+// 宜居度至少变了这么多的格才算“变了”（改气候时远处的河、湿度跟着有极小的变化，那些地方的人不动）
+const HAB_STEP = 0.005;
+// 变了的格最多这么多（或干的陆地的这么多成），再多是大范围的改动，人不挪
+const MAX_MOVED = 1500;
+const MAX_MOVED_SHARE = 0.08;
+const landCount = (x: CellInputs) => {
+  let k = 0;
+  for (let i = 0; i < x.n; i++) k += x.dry[i];
+  return k;
+};
+
+// 宜居度变了的一带的人按新的宜居度重新分（见 populationFix）：返回 格 → 新的人数（只有变了的格）；没有要改的时 null
+function habitabilityMoves(world: World, d: Derived, x: CellInputs, hab0: Float32Array, era: { sparsity: number; unclaimed: { minHabitability: number; nomads: number } }, wasWater: Uint8Array): Map<number, number> | null {
+  const { mesh, causes } = world;
+  const n = mesh.n;
+  const hab = d.habitability;
+  const pop = causes.popTotal!;
+  const manual = causes.popManual;
+  const ring: number[] = [];
+  const mark = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!(Math.abs(hab0[i] - hab[i]) >= HAB_STEP) || !x.dry[i] || wasWater[i]) continue;
+    mark[i] = 1;
+    ring.push(i);
+  }
+  // 大范围的改动（湿度、纬度、整个星球的设置）人不挪：变了的格太多时不挪（命令里记不下、也不像一次搬迁）
+  if (!ring.length || ring.length > Math.max(MAX_MOVED, MAX_MOVED_SHARE * landCount(x))) return null;
+  // 两圈以内
+  let front = ring.slice();
+  for (let step = 0; step < 2; step++) {
+    const next: number[] = [];
+    for (const i of front)
+      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+        const j = mesh.adj[e];
+        if (mark[j] || !x.dry[j] || wasWater[j]) continue;
+        mark[j] = 1;
+        next.push(j);
+        ring.push(j);
+      }
+    front = next;
+  }
+  const k = era.sparsity;
+  const { minHabitability: minH, nomads } = era.unclaimed;
+  const weight = (h: number) => Math.pow(Math.min(1.5, h), k) * (h < minH ? nomads : 1) + 1e-6;
+  const country = causes.country;
+  // 每个国家（−1 无主）这一片的人、按新宜居度的人
+  const sum = new Map<number, { before: number; after: number }>();
+  const next = new Map<number, number>();
+  for (const i of ring) {
+    if (!(pop[i] > 0) || manual?.[i]) continue;
+    const v = pop[i] * (weight(hab[i]) / weight(hab0[i]));
+    const t = country ? country[i] : -1;
+    let a = sum.get(t);
+    if (!a) sum.set(t, (a = { before: 0, after: 0 }));
+    a.before += pop[i];
+    a.after += v;
+    next.set(i, v);
+  }
+  const out = new Map<number, number>();
+  for (const [i, v] of next) {
+    const a = sum.get(country ? country[i] : -1)!;
+    const total = Math.fround(a.after > 0 ? (v * a.before) / a.after : pop[i]);
+    if (total !== pop[i]) out.set(i, total);
+  }
+  return out.size ? out : null;
 }
 
 // 照修补的结果改（执行、重放都走这里）
@@ -410,6 +530,7 @@ export function applyPopFix(world: World, fix: PopFix) {
       c.popShare![i * SLOTS + k] = fix.shares[q * SLOTS + k];
     }
   });
+  if (fix.moves) fix.moves.cells.forEach((i, q) => (c.popTotal![i] = fix.moves!.total[q]));
 }
 
 // ---------- 笔刷（见 commands.ts 的 paint_pop、paint_culture、set_cell_pop） ----------

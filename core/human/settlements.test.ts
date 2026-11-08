@@ -8,7 +8,8 @@ import { continents, engineFor, snapshot, humanExec, type HumanCommand } from '.
 import type { World } from '../world';
 import { allCountryStats, cellArchive, cityArchive, cityList, detectLandmarks, dragRoadHandle, landmarkList, pointList, rankFor, roadHandles, roadPaths, settleInputs, traceRoad, worldCityRanks } from './index';
 import { RIVER } from './rules';
-import { roadCosts } from './roads';
+import { isPortCell, laneIntact } from './ports';
+import { roadCosts, roadMask } from './roads';
 import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS } from '../packs/settlements';
 
 // 第二十四轮：城市、道路、地标、自定义点、导出
@@ -51,9 +52,10 @@ const cityIds = (w: World) => Object.keys(w.small.cities ?? {}).map(Number);
 // 第四十四轮重录：政体限谁用，国家的政体变了（城市化、扩张性跟着变）
 // 第五十五轮重录：生态跟高度走
 // 第七十四轮重录：国家有意改了（中世纪的集权帝国、游牧汗国、民族主义），城市跟着国家、人口走
+// 第八十四轮重录（城市按人口、港口与海路，国家、人口也变了，见 docs/dev/history/第84轮.md）
 const RECORDED = {
-  region: { cities: '4a3b34e223f4ebc5', roads: '32269ebfd87ef506', landmarks: '1ca26fbb7f69f177' },
-  planet: { cities: '38affa9b9a381055', roads: '2336e772a6c20ff9', landmarks: 'f4b02dac54017c63' },
+  region: { cities: 'f83067ae60dfbb05', roads: 'f0c06d2fe2fdf878', landmarks: '932dc873ef7f3243' },
+  planet: { cities: 'd80af75f9b7a2d58', roads: 'f41a81c03d7cd9ba', landmarks: 'ccf603cd42ccc697' },
 };
 const genDigest = (w: World) => ({ cities: digest(w.small.cities), roads: digest(w.small.roads), landmarks: digest(w.small.landmarks) });
 
@@ -330,7 +332,11 @@ describe('城市', () => {
     expect(w.causes.land[c1.cell]).toBe(0);
     expect(w.small.cities![c1.id]).toBeUndefined();
     expect(w.causes.land[c2.cell]).toBe(0);
-    for (const r of Object.values(w.small.roads ?? {})) for (const c of r.cells) expect(w.causes.land[c]).toBe(1);
+    // 第八十四轮：海路两头在陆上、中间在水上
+    for (const r of Object.values(w.small.roads ?? {})) {
+      if (r.kind === 'sea') expect(laneIntact(w, r.cells)).toBe(true);
+      else for (const c of r.cells) expect(w.causes.land[c]).toBe(1);
+    }
     const moved = w.small.cities![c2.id];
     expect(moved).toBeTruthy();
     expect(w.causes.land[moved.cell]).toBe(1);
@@ -342,7 +348,8 @@ describe('城市', () => {
 describe('道路', () => {
   it('每块陆地上的城市都连得上；只走陆地、前后相邻；大道连首都与大城市', () => {
     const w = settled().world;
-    const roads = Object.values(w.small.roads!);
+    // 第八十四轮：海路另外查（下一个测试）
+    const roads = Object.values(w.small.roads!).filter((r) => r.kind !== 'sea');
     expect(roads.length).toBeGreaterThan(20);
     expect(roads.some((r) => r.kind === 'major')).toBe(true);
     for (const r of roads) {
@@ -370,6 +377,28 @@ describe('道路', () => {
       expect(edges.has(key)).toBe(false);
       edges.add(key);
     }
+  });
+
+  it('第八十四轮：海路连港口——两头是避风的港口城市、中间都是不结冰的水面、前后相邻；不进陆上的路网', () => {
+    const w = settled().world;
+    const lanes = Object.values(w.small.roads!).filter((r) => r.kind === 'sea');
+    expect(lanes.length).toBeGreaterThan(0);
+    const list = cityList(w);
+    const byId = new Map(list.map((c) => [c.id, c]));
+    expect(list.some((c) => c.port)).toBe(true);
+    for (const r of lanes) {
+      expect(laneIntact(w, r.cells)).toBe(true);
+      for (let k = 1; k < r.cells.length; k++) expect(adjacent(w, r.cells[k - 1], r.cells[k])).toBe(true);
+      for (const c of r.cells.slice(1, -1)) expect(w.derived.tMean[c]).toBeGreaterThanOrEqual(-6);
+      const a = byId.get(r.from!)!;
+      const b = byId.get(r.to!)!;
+      expect([a.cell, b.cell]).toEqual([r.cells[0], r.cells[r.cells.length - 1]]);
+      expect(a.port && b.port).toBe(true);
+      expect(isPortCell(w, a.cell)).toBe(true);
+    }
+    // 海路的格不算道路的格（陆上找路不当它是路）
+    const on = roadMask(w, Object.values(w.small.roads!));
+    for (const r of lanes) for (const c of r.cells.slice(1, -1)) expect(on[c]).toBe(0);
   });
 
   it('按地形的代价找路：比直线走过去便宜，绕开难走的地方', () => {

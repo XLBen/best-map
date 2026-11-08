@@ -1,6 +1,6 @@
 import type { Derived, World } from '../world';
 import { findPeaks, peakList } from './peaks';
-import { type Resource, distributeResources, effectiveResources, worldResources } from './resources';
+import { type Resource, distributeResources, effectiveResources, noteResources, worldResources } from './resources';
 import { type CellInputs, cellInputs } from './rules';
 import { type TerrainClass, classifyTerrain, effectiveClasses, worldTerrainClasses } from './terrain-class';
 import { computeHabitability, habitabilityKey } from './habitability';
@@ -57,6 +57,7 @@ export function computeHuman(world: World, d: Derived, natural = true): void {
   d.terrainClass = cls;
   d.resourceAuto = rAuto;
   d.resource = effectiveResources(rAuto, world.causes.resource, x.dry, resources.length);
+  noteResources(d.resource, resources, world.causes.resource);
   d.peak = findPeaks(world.mesh, d.elevation, x.dry, cls, classes);
   // 第二十二轮：宜居度（自然、地形类别变了才重算）与人口的几层（按原因从头算）
   d.habitability = computeHabitability(world, d, x, cls, classes, false);
@@ -103,6 +104,7 @@ function naturalHuman(world: World, d: Derived, x: CellInputs, classes: readonly
   d.terrainClass = cls;
   d.resourceAuto = rAuto;
   d.resource = effectiveResources(rAuto, world.causes.resource, x.dry, resources.length);
+  noteResources(d.resource, resources, world.causes.resource);
   d.peak = findPeaks(mesh, d.elevation, x.dry, cls, classes);
   // 宜居度另看流量（有河的格）：再加上有河、流量（按位）变了的格
   const habKey = habitabilityKey(world, classes);
@@ -350,7 +352,7 @@ export {
   countryCities,
   hasCities,
 } from './settlements';
-export { type RoadPath, ROAD_KINDS, dragRoadHandle, roadHandles, roadKm, roadPaths, roadPoints, routeRoad, smoothRoad, spliceRoad, traceRoad } from './roads';
+export { type RoadPath, ROAD_KINDS, SEA_LANE, dragRoadHandle, roadHandles, roadKm, roadPaths, roadPoints, routeRoad, smoothRoad, spliceRoad, traceRoad } from './roads';
 export { type LandmarkInfo, detect as detectLandmarks, landmarkArchive, landmarkList, landmarkName } from './landmarks';
 export { type PointInfo, pointList } from './points';
 export { type SettlementCounts, type SettlementPlan, generateSettlements, settlementRules } from './settle-gen';

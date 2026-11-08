@@ -553,7 +553,7 @@ export function roadTool(zoom: () => number): ToolHandler {
       if (hotRoad !== null) {
         const r = w.small.roads?.[hotRoad];
         const glow = r ? [roadGlow(w, r.cells)] : [];
-        return { layers: [], shapes: [...glow, ...handles], hint: r ? `${r.name ? `${r.name} · ` : ''}${r.kind === 'major' ? '大道' : '小路'}` : null };
+        return { layers: [], shapes: [...glow, ...handles], hint: r ? `${r.name ? `${r.name} · ` : ''}${r.kind === 'major' ? '大道' : r.kind === 'sea' ? '海路' : '小路'}` : null };
       }
       return { layers: [], shapes: handles, hint: null };
     },

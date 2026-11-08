@@ -6,7 +6,7 @@ import { cellKm2, distKm } from '../space';
 import { type CountryPlan, ensureCountryArray } from './base';
 import { cleanupOwners } from './cleanup';
 import { countCountries } from './count';
-import { growOwners } from './grow';
+import { crossingCosts, growOwners } from './grow';
 import { param, patternUses, runPatterns } from './patterns';
 import { COLONIES, colonies, settleColonies } from './patterns/colonies';
 import './patterns/index';
@@ -14,7 +14,7 @@ import { typical, writeRecords } from './records';
 import { placeSeeds } from './seeds';
 import { type CountryRun, newRun } from './state';
 
-// 国家（第二十三轮）：在文化圈与人口之间的一步（见 generate.ts 的 registerHumanStage）。
+// 国家（第二十三轮）：在文化圈与人口之间的一步（见 generate.ts 的 registerHumanStage；第八十四轮起在人口之后，起点按人口挑）。
 //   1. 几个国家：能住人的陆地面积 ÷（时代的 countryKm2 × “统一 ↔ 分裂”的倍数），按各文化能住人的面积分给文化；
 //   2. 每个国家先按时代与文化的倾向挑一个政体，再在本文化的地盘里挑一个起点（宜居度高、偏海岸的政体挑海边），彼此隔开；
 //   3. 各国从起点按代价同时往外长（与文化圈同一套走一条边的代价，再按政体：越过文化的边界——扩张性弱的更难，内陆——偏海岸的更难，
@@ -22,7 +22,8 @@ import { type CountryRun, newRun } from './state';
 //      不进（游牧的政体按 nomadic 放宽），离起点太远的不要：这些是无主地。海只能穿过，不归国家（领海是推导，见 country-layers.ts）；
 //   4. 整理：湖归湖岸上最多的那一国；不连着首都、挨着别国的小块并给邻国；
 //   5. 档案：名字（文化的风格起的地名 + 政体的称号）、颜色、旗帜、统治者、建国年份、兼容的文化组、外交（附庸、同盟、敌对）、历史；
-//   6. 人口一步之前：首都一带的人口多一些（ctx.popScale，按政体的城市化）；人口一步之后：扩张性强的国家在异族的地方掺进主流文化的人。
+//   6. 首都一带的人口多一些（按政体的城市化；第八十四轮起人口在国家之前，这一遍在集团之后，见 capitals.ts）；
+//      最后扩张性强的国家在异族的地方掺进主流文化的人。
 // 锁定的国家（重新生成时 keepLocked）领土、档案都不动
 // 第二十六轮：每国一个等级（第四十二轮起是世界里的国家等级，见 tiers.ts；按时代的 tiers 或格局 countryRules.layout），面积预算 = 平均的国家 × 等级的倍数 ×（0.7–1.3）
 //   （不超过能住人的地方的 MAX_SHARE）；国家按“文化 × 陆块”分。第 3 步分两遍：先各长到预算就停，剩下能占的地方再接着长到预算的
@@ -87,6 +88,7 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
   }
   openRegions(g);
   runPatterns(g, 'grow');
+  g.cross = crossingCosts(g);
   growOwners(g);
   cleanupOwners(g);
   runPatterns(g, 'after');
@@ -134,7 +136,6 @@ function placeCountries(ctx: GenContext) {
   // 第三十轮：政体、派系只用世界里的（界面先从时代包加进来）；世界里一个政体都没有时不生成国家（见 growCountries）
   if (plan.mode === 'generate') growCountries(ctx, plan);
   else keepCountries(ctx);
-  ctx.popScale = countryPopScale(ctx);
 }
 
 // 人口之后：扩张性强的国家在异族的地方（占多数的文化组不兼容）掺进 0.35 × 扩张性 的主流文化的人（官吏、移民）；

@@ -2,7 +2,7 @@ import type { Bloc } from '../../world';
 import { autoBlocName, blocAreas, classOf, tidyBlocs } from '../blocs';
 import type { GenContext, HumanStage } from '../context';
 import { runPatterns } from './patterns';
-import { countryPopScale, countryRun } from './stage';
+import { countryRun } from './stage';
 
 // 帝国、联邦、同盟（第二十六轮；领土补齐之后、人口之前，只在重新长国家时）。第七十三轮从 blocs.ts 的 makeBlocs 搬来：
 // 这里只备好集团一步共用的东西（g.bloc：共用的随机流 'blocs'、领土补齐之后的面积、这一次的集团），帝国、联邦、同盟是格局的 relate 钩子
@@ -37,7 +37,6 @@ function relateCountries(ctx: GenContext) {
   if (blocs.length) small.blocs = blocs;
   else delete small.blocs;
   tidyBlocs(world);
-  if (g.bloc.split) ctx.popScale = countryPopScale(ctx);
 }
 
 export const blocsStage: HumanStage = { id: 'blocs', run: relateCountries };

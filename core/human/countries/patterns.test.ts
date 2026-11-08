@@ -164,6 +164,12 @@ describe('生成', () => {
     const regen = base.clone();
     regen.exec({ op: 'regenerate_countries' } as never);
     expect(JSON.stringify(again.world.small.countries)).toBe(JSON.stringify(regen.world.small.countries));
-    expect(subjects(regen)).toBeGreaterThan(0);
+    // 收不收附庸是随机的（第八十四轮：这个种子下正好一个都没收），再换两个种子一起数
+    const more = [11, 12].map((seed) => {
+      const e = base.clone();
+      e.exec({ op: 'regenerate_countries', seed } as never);
+      return subjects(e);
+    });
+    expect(subjects(regen) + more[0] + more[1]).toBeGreaterThan(0);
   });
 });

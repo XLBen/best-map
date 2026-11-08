@@ -112,6 +112,8 @@ export interface CountryRun {
   compOf: Int32Array;
   // grow 钩子加的代价
   stepCost: StepCost[];
+  // 第八十四轮：过大河、翻分水岭的倍数（grow.ts 的 crossingCosts，长之前放进来；没有时不加）
+  cross?: Float32Array;
   // grow.ts 的结果：每格归第几国（seeds 的下标；−1 无主，−2 锁定的国家）、走到这里的代价、走边的代价、各国的宜居度下限、起点的陆块、主流文化组
   owner: Int32Array;
   dist: Float64Array;

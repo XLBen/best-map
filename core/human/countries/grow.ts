@@ -1,7 +1,7 @@
 import { HeapLite } from '../../mesh';
-import { edgeCosts } from '../cultures';
+import { genEdgeCosts } from '../cultures';
 import type { Government } from '../government';
-import { COAST } from '../rules';
+import { COAST, RIVER } from '../rules';
 import { cellKm2 } from '../space';
 import { NOBODY } from './base';
 import type { CountryRun } from './state';
@@ -19,6 +19,52 @@ const LOW_HAB_WEIGHT = 0.5;
 // 越过文化的边界的代价倍数（扩张性弱的更难）：进同一文化组的别的文化、进别的文化组。第七十四轮的多民族大国按它们的比放宽
 export const sameCultureMul = (gv: Pick<Government, 'expansion'>): number => 1 + 0.6 * (1 - gv.expansion);
 export const otherCultureMul = (gv: Pick<Government, 'expansion'>): number => 1 + 2.5 * (1 - gv.expansion);
+
+// 第八十四轮：国界顺着大河、山脊走——往外长时走一条边再乘的倍数（与 mesh.adj 对齐，1 是不加）：
+//   过大河：从流量 ≥ MAJOR_RIVER × 画河的门槛的河格走到岸上（不是河的格），1 + 2.5 × min(1, 0.4 + 0.3 · lg(流量 ÷ 门槛 ÷ MAJOR_RIVER))，
+//     先到河边的一国占着河，对岸归另一国；顺着河走（河格到河格）不加；
+//   翻分水岭：两格在不同的流域、两边都高过 RIDGE_FROM m 时 1 + 2 × min(1, (较低的一边 − RIDGE_FROM) ÷ 1200)。
+// 常数写在这里（不进时代包）
+const MAJOR_RIVER = 2;
+// 不按山河长的格局里的国家（Seed.role；按模块里的常数写，不引用它们，免得绕成圈）：大河帝国顺着河、集权帝国与多民族帝国跨过山河、
+// 汗国在草原上游荡、种族王国按森林 / 山地 / 荒原圈地
+const FREE_ROLES = ['river-empire', 'central-empire', 'multiethnic', 'khanate'];
+const freeRole = (role: string | undefined) => !!role && (FREE_ROLES.includes(role) || role.startsWith('race-realms:'));
+const RIDGE_FROM = 300;
+export function crossingCosts(g: Pick<CountryRun, 'ctx' | 'world'>): Float32Array {
+  const { ctx, world } = g;
+  const { x, d } = ctx;
+  const { mesh } = world;
+  const thr = world.small.planet.riverThreshold;
+  const big = MAJOR_RIVER * thr;
+  const out = new Float32Array(mesh.adj.length).fill(1);
+  const elev = x.elevation;
+  const basin = d.basin;
+  const q = d.discharge;
+  for (let i = 0; i < mesh.n; i++) {
+    if (!x.dry[i]) continue;
+    const river = (x.flags[i] & RIVER) !== 0 && q[i] >= big ? 1 + 4 * Math.min(1, 0.35 + 0.35 * Math.log10(q[i] / big)) : 1;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const j = mesh.adj[e];
+      if (!x.dry[j]) continue;
+      let m = 1;
+      if (river > 1 && !(x.flags[j] & RIVER)) m = river;
+
+      if (basin[i] !== basin[j]) {
+        const low = Math.min(elev[i], elev[j]);
+        if (low > RIDGE_FROM) m *= 1 + 5 * Math.min(1, (low - RIDGE_FROM) / 1200);
+      }
+      out[e] = m;
+    }
+  }
+  return out;
+}
+
+function withCrossing(edge: Float32Array, cross: Float32Array): Float32Array {
+  const out = new Float32Array(edge.length);
+  for (let e = 0; e < edge.length; e++) out[e] = edge[e] * cross[e];
+  return out;
+}
 
 export function growOwners(g: CountryRun) {
   const { ctx, world, seeds, country, minH, region, T, area } = g;
@@ -67,7 +113,11 @@ export function growOwners(g: CountryRun) {
     home[o] = comps[s.cell];
     conf[o] = s.region;
   });
-  const edge = edgeCosts(ctx);
+  const base = genEdgeCosts(ctx);
+  // 第八十四轮：过大河、翻分水岭贵一些（g.cross，见 crossingCosts）；格局里不按山河长的国家不加（FREE_ROLES）
+  const crossed = g.cross ? withCrossing(base, g.cross) : base;
+  const plainEdge = new Uint8Array(k);
+  seeds.forEach((s, o) => (plainEdge[o] = freeRole(s.role) ? 1 : 0));
   const owner = new Int32Array(n).fill(-1);
   const dist = new Float64Array(n).fill(Infinity);
   const done = new Uint8Array(n);
@@ -98,7 +148,7 @@ export function growOwners(g: CountryRun) {
   let limit = 1;
   // o 从 i（距离 di）走边 e 到 j 的距离（进不去时为 Infinity）。两份只差格局的代价那一行
   const plainStep = (o: number, di: number, e: number, j: number): number => {
-    let c = edge[e];
+    let c = plainEdge[o] ? base[e] : crossed[e];
     if (land[j]) {
       if (lake[j] !== 1) {
         if (comps[j] === home[o]) {
@@ -117,7 +167,7 @@ export function growOwners(g: CountryRun) {
     return di + (c / spd[o]) * (1 + (coh[o] * di) / (2 * Rp[o]));
   };
   const hookStep = (o: number, di: number, e: number, j: number): number => {
-    let c = edge[e];
+    let c = plainEdge[o] ? base[e] : crossed[e];
     if (land[j]) {
       if (lake[j] !== 1) {
         // 游牧的放宽只在起点所在的陆块上：别的陆块按时代的下限（不去没人住的岛）。
@@ -207,7 +257,7 @@ export function growOwners(g: CountryRun) {
   for (let i = 0; i < n; i++) if (owner[i] >= 0 && x.dry[i] && hab[i] < thr[owner[i]]) owner[i] = -1;
   g.owner = owner;
   g.dist = dist;
-  g.edge = edge;
+  g.edge = base;
   g.thr = thr;
   g.home = home;
   g.primGroup = primGroup;

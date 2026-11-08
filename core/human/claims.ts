@@ -1,7 +1,7 @@
 import { HeapLite } from '../mesh';
 import type { GenContext, HumanStage } from './context';
-import { countryPopScale } from './countries';
 import { ISLET_STEPS } from './country-layers';
+import { crossingCosts } from './countries/grow';
 
 // 领土补齐（第二十六轮）：国家一步之后、人口之前（generate.ts 里排在 countries 后面）。
 // 只在重新长国家时运行（ctx.countries.mode === 'generate'），只把无主的陆地写进 causes.country；锁定的国家当作一个邻国算，但不往里加。
@@ -11,7 +11,7 @@ import { ISLET_STEPS } from './country-layers';
 //   2. 不超过 SMALL_GAP 格、挨着国家的无主小块：归共享边界最长的邻国；四周是海的这么小的岛归 ISLET_STEPS 格海路以内最近的国家；
 //   3. 贴着国境的一圈：从各国往外在陆地上走，时代的 unclaimed.bandKm 以内的无主格归最近的国家（山、荒漠、冰川也要：国与国之间的山脊归两边）；
 //      远处（极地的冰盖、大漠的深处）仍然无主。
-// 最后没有主的湖归湖岸上最多的那一国，再重算首都一带的人口倍数（ctx.popScale）。
+// 最后没有主的湖归湖岸上最多的那一国（第八十四轮起首都一带的人口倍数在集团之后才算，见 countries/capitals.ts）。
 // 之后手画的无主地不会被补上：这一步只在生成时有（不在命令之后的整理里）
 
 export const SMALL_GAP = 8;
@@ -32,7 +32,6 @@ function claimLand(ctx: GenContext) {
   const lake = d.lake;
   const locked = new Set(Object.values(metas).filter((m) => m.locked).map((m) => m.id));
   const free = (i: number) => land[i] === 1 && lake[i] !== 1 && country[i] < 0;
-  let changed = false;
 
   // ---- 1、2：无主的块 ----
   const seen = new Uint8Array(n);
@@ -79,13 +78,14 @@ function claimLand(ctx: GenContext) {
     }
     if (to < 0 || locked.has(to)) continue;
     for (const i of cells) country[i] = to;
-    changed = true;
   }
 
   // ---- 3：贴着国境的一圈 ----
   const band = era.unclaimed.bandKm ?? 0;
   if (band > 0) {
     const km = world.kmPerUnit;
+    // 第八十四轮：翻过分水岭、过大河的那一步按 crossingCosts 的倍数算远（山脊、大河两边归两国）
+    const cross = ctx.countryRun?.cross ?? crossingCosts({ ctx, world });
     const dist = new Float64Array(n).fill(Infinity);
     const own = new Int32Array(n).fill(-1);
     const heap = new HeapLite(1024);
@@ -106,7 +106,7 @@ function claimLand(ctx: GenContext) {
       for (let e = off[i]; e < off[i + 1]; e++) {
         const j = adj[e];
         if (!free(j)) continue;
-        const nd = di + mesh.dist[e] * km;
+        const nd = di + mesh.dist[e] * km * cross[e];
         if (nd > band || nd >= dist[j]) continue;
         dist[j] = nd;
         own[j] = own[i];
@@ -116,7 +116,6 @@ function claimLand(ctx: GenContext) {
     for (let i = 0; i < n; i++) {
       if (own[i] < 0 || country[i] >= 0) continue;
       country[i] = own[i];
-      changed = true;
     }
   }
 
@@ -152,10 +151,8 @@ function claimLand(ctx: GenContext) {
       best = id;
     }
     for (const i of comp) country[i] = best;
-    changed = true;
   }
 
-  if (changed) ctx.popScale = countryPopScale(ctx);
 }
 
 // 从这几格（一个小岛）往外在海里按步数走，最先碰到的有主的陆地（锁定的不算；同一步碰到几国时编号小的）；走不到为 −1

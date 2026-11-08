@@ -49,9 +49,12 @@ export function popText(n: number): string {
 // 简介（自动的）：“X 是 Y 的首都，位于 Z 河畔，人口约 N。”
 function autoDescription(c: CityInfo, a: Pick<CityArchive, 'coastal' | 'river' | 'rankName' | 'countryName'>): string {
   const where = a.coastal && a.river ? '位于河口' : a.coastal ? '位于海边' : a.river ? '位于河畔' : '';
+  // 第八十四轮：港口另写一句
+  const port = c.port ? '是一座港口' : '';
   const role = c.capital ? `${a.countryName ?? ''}的首都` : c.secondCapital ? `${a.countryName ?? ''}的陪都` : a.countryName ? `${a.countryName}的${a.rankName}` : `一座${a.rankName}`;
   const parts = [`${c.name}是${role}`];
   if (where) parts.push(where);
+  if (port) parts.push(port);
   if (c.population > 0) parts.push(`人口约 ${popText(c.population)}`);
   return `${parts.join('，')}。`;
 }

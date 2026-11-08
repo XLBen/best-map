@@ -113,9 +113,9 @@ describe('奇幻：种族王国', () => {
     const elf = shareOf(w, st.land, FOREST, role(ROLE_FOREST));
     expect(elf).toBeGreaterThan(0.5);
     expect(elf).toBeGreaterThan(1.5 * shareOf(w, st.land, FOREST));
-    // 守着古林是 0 时和别的国家一样，森林少得多
+    // 守着古林是 0 时和别的国家一样，森林少一些（第八十四轮：起点按人口挑，精灵住在林子里，不守古林的精灵国家也多在林子里，以前差 0.1 以上）
     const off = regenWith(eng, 'race-realms', { forest: 0 });
-    expect(shareOf(off.world, st.land, FOREST, role(ROLE_FOREST))).toBeLessThan(elf - 0.1);
+    expect(shareOf(off.world, st.land, FOREST, role(ROLE_FOREST))).toBeLessThan(elf - 0.03);
   });
 
   it('矮人：山里几个要塞小国，在一个同盟里；国土多半是山地', () => {

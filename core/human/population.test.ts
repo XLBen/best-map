@@ -73,9 +73,10 @@ const peopledCells = (w: World) => [...Array(w.mesh.n).keys()].filter((i) => w.c
 // 第四十三轮重录：内置的文化换成 EU4 的（三组换成日耳曼、汉、阿尔泰，组的偏好、倾向都是新的）
 // 第五十五轮重录：生态跟高度走（宜居度变了）
 // 第七十七轮：human 只记组的 id、countryRules 只有种子，只重录两项 human（人口、群体一个没变）；核对过两边的世界只差这几样（见 docs/dev/history/第77轮.md）
+// 第八十四轮重录（资源进宜居度、宗教按发源地传播、首都一带的人在国家之后加，见 docs/dev/history/第84轮.md）
 const RECORDED = {
-  region: { popTotal: '44aaf71c756825c3', popGroup: 'f937fb6e65f47da2', popShare: 'f25f10906d3d318d', human: '64a5ac560407c07a' },
-  planet: { popTotal: 'd97cb336d4422d86', popGroup: 'e46748e549810fbd', popShare: 'f41309eec0f6acab', human: '7a744faaabfa427b' },
+  region: { popTotal: '9664810b7ec6b1a5', popGroup: '139ca8ea818887c5', popShare: 'b1edcaa1583fe97b', human: 'bc22dd5cf732b9e9' },
+  planet: { popTotal: '39c56dbc939363c0', popGroup: '1df5362c660d9dcb', popShare: 'c9ebbfa28a0bf978', human: 'e12d65773f9481bd' },
 };
 const genDigest = (w: World) => ({ popTotal: digest(w.causes.popTotal!), popGroup: digest(w.causes.popGroup!), popShare: digest(w.causes.popShare!), human: digest(w.small.human!) });
 
@@ -296,9 +297,10 @@ describe('生成人文', () => {
     expect(totalPop(p.world)).toBe(0);
   });
 
-  it('生成的步骤可以插一步：排在人口之前，能改每格的权重（第二十三轮的国家就是这样插进来的）', () => {
-    // 第二十六轮：国家之后有领土补齐（claims）与集团（blocs）两步
-    expect(humanStages()).toEqual(['cultures', 'countries', 'claims', 'blocs', 'population', 'country-mix']);
+  it('生成的步骤可以插一步：排在国家之前，能读人口（第八十四轮起人口在国家之前）', () => {
+    // 第二十六轮：国家之后有领土补齐（claims）与集团（blocs）两步；第八十四轮：人口在国家之前，集团之后挪首都（capitals）
+    const STAGES = ['cultures', 'population', 'countries', 'claims', 'blocs', 'capitals', 'country-mix'];
+    expect(humanStages()).toEqual(STAGES);
     let ran = 0;
     registerHumanStage(
       {
@@ -306,13 +308,13 @@ describe('生成人文', () => {
         run: (ctx) => {
           ran++;
           expect(ctx.cultureOf).toBeDefined();
-          ctx.popScale = new Float32Array(ctx.world.mesh.n).fill(1);
+          expect(ctx.popWeight).toBeDefined();
         },
       },
-      { before: 'population' },
+      { before: 'countries' },
     );
     try {
-      expect(humanStages()).toEqual(['cultures', 'countries', 'claims', 'blocs', 'test-countries', 'population', 'country-mix']);
+      expect(humanStages()).toEqual(['cultures', 'population', 'test-countries', 'countries', 'claims', 'blocs', 'capitals', 'country-mix']);
       const eng = continents();
       humanExec(eng, GEN);
       expect(ran).toBe(1);
@@ -320,8 +322,7 @@ describe('生成人文', () => {
     } finally {
       unregisterHumanStage('test-countries');
     }
-    // 第二十六轮：国家之后有领土补齐（claims）与集团（blocs）两步
-    expect(humanStages()).toEqual(['cultures', 'countries', 'claims', 'blocs', 'population', 'country-mix']);
+    expect(humanStages()).toEqual(STAGES);
   });
 });
 
@@ -563,7 +564,8 @@ describe('改地形以后的修补', () => {
     });
     const c0 = coastal[Math.floor(coastal.length / 3)];
     const disc = [...Array(w.mesh.n).keys()].filter((i) => Math.hypot(w.mesh.x[i] - w.mesh.x[c0], w.mesh.y[i] - w.mesh.y[c0]) < w.mesh.spacing * 3);
-    const elsewhere = peopledCells(w).filter((i) => !disc.includes(i));
+    // 第八十四轮：宜居度变了的一带（新海岸两圈以内）人会挪，离得远的不动
+    const elsewhere = peopledCells(w).filter((i) => Math.hypot(w.mesh.x[i] - w.mesh.x[c0], w.mesh.y[i] - w.mesh.y[c0]) > w.mesh.spacing * 9);
     const keep = elsewhere.slice(0, 200).map((i) => w.causes.popTotal![i]);
     eng.exec({ op: 'paint_land', cells: disc, t: disc.map(() => 0), mode: 'sea' });
     const lost = disc.filter((i) => !w.causes.land[i]);
@@ -589,6 +591,42 @@ describe('改地形以后的修补', () => {
     expect(doc.commands.at(-2)!.popFix).toBeDefined();
     expect(popDigest(Engine.fromDoc(doc, w.mesh).world)).toEqual(popDigest(w));
     eng.undo();
+    eng.undo();
+    expect(popDigest(w)).toEqual(before);
+  });
+
+  it('第八十四轮：改气候让宜居度变了，那一带的人按新的宜居度在本国里重新分（每国的总数不变），远处不动；记进命令，重放一致；撤销退回', () => {
+    const eng = peopled();
+    const w = eng.world;
+    const before = popDigest(w);
+    const pop0 = w.causes.popTotal!.slice();
+    const hab0 = w.derived.habitability;
+    const cells = peopledCells(w);
+    const c0 = cells[Math.floor(cells.length / 2)];
+    const near = (i: number, r: number) => Math.hypot(w.mesh.x[i] - w.mesh.x[c0], w.mesh.y[i] - w.mesh.y[c0]) < w.mesh.spacing * r;
+    const disc = [...Array(w.mesh.n).keys()].filter((i) => near(i, 3) && w.causes.land[i]);
+    eng.exec({ op: 'paint', field: 'tempOffset', cells: disc, values: disc.map(() => -15), mode: 'add' });
+    expect(w.derived.habitability).not.toBe(hab0);
+    const pop1 = w.causes.popTotal!;
+    const moved = [...pop1.keys()].filter((i) => pop1[i] !== pop0[i]);
+    expect(moved.length).toBeGreaterThan(3);
+    // 冷了的地方人少了，挪到旁边
+    const inDisc = (p: Float32Array) => disc.reduce((a, i) => a + p[i], 0);
+    expect(inDisc(pop1)).toBeLessThan(inDisc(pop0));
+    // 每个国家（无主地算一份）的总数不变（单精度的误差以内）
+    const country = w.causes.country;
+    const totals = (p: Float32Array) => {
+      const m = new Map<number, number>();
+      for (let i = 0; i < p.length; i++) if (p[i] > 0) m.set(country?.[i] ?? -1, (m.get(country?.[i] ?? -1) ?? 0) + p[i]);
+      return m;
+    };
+    const t0 = totals(pop0);
+    for (const [c, v] of totals(pop1)) expect(Math.abs(v - t0.get(c)!) / t0.get(c)!).toBeLessThan(1e-5);
+    // 远处不动
+    for (const i of moved) expect(near(i, 8)).toBe(true);
+    const doc = eng.toDoc();
+    expect(doc.commands.at(-1)!.popFix).toBeDefined();
+    expect(popDigest(Engine.fromDoc(doc, w.mesh).world)).toEqual(popDigest(w));
     eng.undo();
     expect(popDigest(w)).toEqual(before);
   });

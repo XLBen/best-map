@@ -10,6 +10,7 @@ import { HeapLite } from '../mesh';
 import { worldEra } from './era';
 import { governmentById } from './government';
 import { arraysToken } from '../world-token';
+import { isPortCell } from './ports';
 
 // 一座城市管多远：格距的这么多倍
 const CATCH_CELLS = 4;
@@ -68,6 +69,8 @@ export interface CityInfo {
   population: number;
   // 占本国人口的比例（无主的城市按无主地的总人口）
   share: number;
+  // 港口（第八十四轮：在避风的海岸上，见 ports.ts 的 isPortCell）
+  port: boolean;
   auto: boolean;
   locked: boolean;
 }
@@ -260,6 +263,7 @@ export function computeCityTable(world: World): CityTable {
       secondCapital: second,
       population: cityPop[q],
       share,
+      port: isPortCell(world, s.cell),
       auto: !!meta?.auto,
       locked: !!meta?.locked,
     };

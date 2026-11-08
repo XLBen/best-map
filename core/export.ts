@@ -635,7 +635,10 @@ export function roadsImage(world: World, land: Uint8Array, width: number, height
   const sx = width / mesh.width;
   const sy = height / mesh.height;
   const scale = Math.max(1, width / 2048);
-  const roads = Object.values(world.small.roads ?? {}).sort((a, b) => (a.kind === 'major' ? 1 : 0) - (b.kind === 'major' ? 1 : 0) || a.id - b.id);
+  // 第八十四轮：海路不画进道路图（游戏里的道路在陆上）
+  const roads = Object.values(world.small.roads ?? {})
+    .filter((r) => r.kind !== 'sea')
+    .sort((a, b) => (a.kind === 'major' ? 1 : 0) - (b.kind === 'major' ? 1 : 0) || a.id - b.id);
   for (const r of roads) {
     const major = r.kind === 'major';
     const col = major ? [200, 30, 30] : [230, 140, 40];

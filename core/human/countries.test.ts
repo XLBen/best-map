@@ -87,9 +87,10 @@ function countryDigest(w: World): Record<string, string> {
 // 第五十五轮重录：生态跟高度走
 // 第七十四轮重录：中世纪多了集权帝国、游牧汗国，长国家时按时代的民族主义（0.2）
 // 第七十五轮重录 countries：档案多了格局里的角色（role：神圣帝国的成员、集权帝国……）；领土 country 没变，去掉 role 时与第七十四轮的值相同
+// 第八十四轮重录（人口在国家之前、首都挪到人口的重心、国界顺着山河，见 docs/dev/history/第84轮.md）
 const RECORDED = {
-  region: { country: 'd88a0cdbf6c198e8', countries: '69fe257422df5694' },
-  planet: { country: 'e73e7457bbbe594b', countries: '8a57e4c509be178d' },
+  region: { country: '228da22d29dff23c', countries: 'b28e0ef8059befbc' },
+  planet: { country: 'f68b1bb9dc7e0f12', countries: '3ca813b05dff1f39' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;

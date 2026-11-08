@@ -13,7 +13,8 @@ import { apportion, landComponents } from './count';
 import { cultureContext } from './records';
 import type { CountryRun } from './state';
 
-// 挑政体、等级与起点（第二十三轮；第二十六轮按“文化 × 陆块”分、先挑政体再挑等级）。第七十三轮从 countries.ts 搬来（原样）
+// 挑政体、等级与起点（第二十三轮；第二十六轮按“文化 × 陆块”分、先挑政体再挑等级）。第七十三轮从 countries.ts 搬来（原样）。
+// 第八十四轮：人口在国家之前，各块按人口分国家、起点挑人多的地方
 
 // 一国的面积预算最多占能住人的地方的几成（第二十六轮）
 export const MAX_SHARE = 0.12;
@@ -75,6 +76,19 @@ function within(world: World, src: number, km: number, visit: (i: number) => voi
   }
 }
 
+// 这一格与邻格的人口密度（人 / km²）
+function localDensity(world: World, pop: Float32Array, i: number): number {
+  const { mesh } = world;
+  let p = pop[i];
+  let a = cellKm2(world, i);
+  for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+    const j = mesh.adj[e];
+    p += pop[j];
+    a += cellKm2(world, j);
+  }
+  return a > 0 ? p / a : 0;
+}
+
 // 分给各文化在各陆块上的地方（按能住人的面积，正好分完）、挑等级与政体、起点；最后接上预留的地方里的起点（reserve 钩子放的）。
 // 第二十六轮：按“文化 × 陆块”分（不按文化），大的岛、别的大陆上住着人的地方也有自己的国家，不靠隔海的国家去占
 export function placeSeeds(g: CountryRun) {
@@ -83,6 +97,7 @@ export function placeSeeds(g: CountryRun) {
   const cultureOf = ctx.cultureOf!;
   const { mesh } = world;
   const n = g.n;
+  const pop = world.causes.popTotal;
   const { id: compOf, size: islandSize } = landComponents(world);
   g.compOf = compOf;
   const unitOf = new Map<number, number>();
@@ -103,7 +118,8 @@ export function placeSeeds(g: CountryRun) {
       areaList.push(0);
     }
     const a = cellKm2(world, i);
-    massList[u] += a * hab[i];
+    // 第八十四轮：按人口分国家（人口一步在国家之前）；还没有人口时（测试里换掉了那一步）按宜居的面积
+    massList[u] += pop ? pop[i] : a * hab[i];
     areaList[u] += a;
   }
   // 起点不放在太小的岛上（别处都没有地方时才放）
@@ -183,12 +199,14 @@ export function placeSeeds(g: CountryRun) {
     const cands = cellsU[u];
     const ns = mixSeed(seed, hashString(`country-seed:${culture.id}`));
     const jitter = Float32Array.from(cands, (i) => 1 + 0.35 * noiseAt(world, ns, 500, i));
+    // 第八十四轮：起点挑人多的地方（这一格与邻格的人口密度开方：住得密的谷地、海岸；没有人口时按宜居度）
+    const base = pop ? Float32Array.from(cands, (i) => Math.sqrt(localDensity(world, pop, i))) : Float32Array.from(cands, (i) => hab[i]);
     for (const slot of slots) {
       const gov = slot.gov;
       const score = (q: number) => {
         const i = cands[q];
         const coast = (x.flags[i] & COAST) !== 0;
-        return hab[i] * jitter[q] * (coast ? 1 + 2 * gov.coastal : 1 - 0.6 * gov.coastal);
+        return base[q] * jitter[q] * (coast ? 1 + 2 * gov.coastal : 1 - 0.6 * gov.coastal);
       };
       let best = -1;
       let bs = -Infinity;

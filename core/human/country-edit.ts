@@ -8,6 +8,8 @@ import { type Culture, type SubjectKind, cultureById, worldCultures, worldEra } 
 import { type FlagSpec, makeFlag } from './flags';
 import { type Government, eraGovernments, govAllowed, govRestricted, governmentById } from './government';
 import { SLOTS } from './groups';
+import { bestCapital } from './countries/capitals';
+import { COAST, LAKE, RIVER } from './rules';
 
 // 改国家（第二十三轮，命令见 commands.ts）：画领土、新建、合并、拆分、改档案、删除、挪首都；改地形之后的修补；
 // 每次改完的整理（tidyCountries：首都丢了换一个、指向没了的国家的外交去掉）。都只看原因，执行、重放一样
@@ -20,6 +22,19 @@ export function countryOf(world: World, id: number): CountryMeta {
   return m;
 }
 
+// 一格的 COAST / RIVER / LAKE（同 rules.ts 的 cellInputs）
+function cellFlags(world: World, i: number): number {
+  const { mesh, causes, derived: d } = world;
+  let f = 0;
+  for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+    const j = mesh.adj[e];
+    if (!causes.land[j]) f |= COAST;
+    else if (d.lake[j] === 1) f |= LAKE;
+  }
+  if (d.discharge[i] >= world.small.planet.riverThreshold) f |= RIVER;
+  return f;
+}
+
 // 一国的格（陆地，按编号）
 export function countryCells(world: World, id: number): number[] {
   const c = world.causes.country;
@@ -28,17 +43,14 @@ export function countryCells(world: World, id: number): number[] {
   return out;
 }
 
-// 自动的首都：人最多的格（一样多时编号小的）；没有人时离领土的中心最近的格
+// 自动的首都：第八十四轮起和生成时一样，人口的重心一带最好的城址（countries/capitals.ts 的 bestCapital；以前是人最多的格）；
+// 没有人时离领土的中心最近的格
 export function autoCapital(world: World, cells: readonly number[]): number | undefined {
   if (!cells.length) return undefined;
-  const pop = world.causes.popTotal;
+  const dry = cells.filter((i) => world.causes.land[i] && world.derived.lake[i] !== 1);
+  const cap = bestCapital(world, dry, (i) => cellFlags(world, i));
+  if (cap !== undefined) return cap;
   let best = -1;
-  let bp = 0;
-  if (pop) for (const i of cells) if (pop[i] > bp) {
-    bp = pop[i];
-    best = i;
-  }
-  if (best >= 0) return best;
   const { mesh } = world;
   let x = 0;
   let y = 0;

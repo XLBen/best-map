@@ -217,6 +217,12 @@ function CityView({ w, id }: { w: World; id: number }) {
           <b>{a.elevation} m</b>
           <span class="hint">道路</span>
           <b>{a.roads} 条</b>
+          {a.port && (
+            <>
+              <span class="hint">港口</span>
+              <b>是</b>
+            </>
+          )}
           {a.terrainClass && (
             <>
               <span class="hint">地形</span>

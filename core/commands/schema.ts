@@ -459,7 +459,8 @@ export const baseCommands = [
 // provinceFix：这一步改了湖（放湖、删湖、湖干了、地形变了）之后，湖与陆地省份的整理（见 provinces.ts 的 lakeProvinceFix），
 // 同样由引擎在推导算好之后记下，重放、重做时照用。
 // provinceOrig（第二十轮）：新起的省名里有原文的那些（省份编号 → 原文），和 provinceNames 一起记、一起用。
-// popFix（第二十二轮）：改了陆海之后人口的修补（变成水面的格没有人了，新的陆地按宜居度补上人，见 human/population.ts 的 populationFix），
+// popFix（第二十二轮）：改了陆海之后人口的修补（变成水面的格没有人了，新的陆地按宜居度补上人，见 human/population.ts 的 populationFix；
+// 第八十四轮的 moves：宜居度变了的一带挪了人的格），
 // 同样由引擎在推导算好之后记下，重放、重做时照用
 export type Command = (z.input<(typeof baseCommands)[number]> | { op: 'batch'; label?: string; commands: Command[] }) & {
   provinceNames?: Record<string, string>;
@@ -497,8 +498,11 @@ export const popFixSchema = z
     total: z.array(z.number().min(0)),
     groups: z.array(z.number().int().min(0).max(65535)),
     shares: z.array(z.number().int().min(0).max(255)),
+    // 第八十四轮：宜居度变了的一带挪了人的格（只改人数，成分不动）
+    moves: z.object({ cells: z.array(z.number().int().min(0)), total: z.array(z.number().min(0)) }).optional(),
   })
-  .refine((f) => f.cells.length === f.total.length && f.groups.length === f.cells.length * 4 && f.shares.length === f.cells.length * 4, '人口修补的长短不对');
+  .refine((f) => f.cells.length === f.total.length && f.groups.length === f.cells.length * 4 && f.shares.length === f.cells.length * 4, '人口修补的长短不对')
+  .refine((f) => !f.moves || f.moves.cells.length === f.moves.total.length, '人口修补的长短不对');
 
 // 命令里记下的地名（见 Command 的 nameCarry）：键是“类型:锚点格”或“guide:河道 id”
 export const featureKey = z.string().regex(/^\w+:\S+$/);

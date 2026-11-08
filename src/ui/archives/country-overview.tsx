@@ -102,7 +102,7 @@ export function ColorCapital({ w, m }: { w: World; m: CountryMeta }) {
           </button>
         )}
         {m.capitalLocked && (
-          <button class="small" onClick={() => void run({ op: 'move_capital', id: m.id, cell: null })}>
+          <button class="small" onClick={() => void run({ op: 'move_capital', id: m.id, cell: null })} title="回到人口的重心一带最好的城址">
             恢复自动
           </button>
         )}

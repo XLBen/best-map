@@ -227,7 +227,7 @@ function fillFrom(g: CountryRun, use: (o: number) => boolean, may: (o: number, j
   const cultureOf = g.ctx.cultureOf!;
   const src = Uint8Array.from(seeds, (_, o) => (use(o) ? 1 : 0));
   const low = Math.max(g.minH, FILL_HAB);
-  const free = (i: number) => owner[i] === -1 && x.dry[i] === 1 && hab[i] >= low && cultureOf[i] >= 0;
+  const free = (i: number) => owner[i] === -1 && g.country[i] < 0 && x.dry[i] === 1 && hab[i] >= low && cultureOf[i] >= 0;
   // 预留的地方里的格只归它的成员
   const fits = (o: number, j: number) => (region[j] < 0 || region[j] === seeds[o].region) && may(o, j);
   const dist = new Float64Array(g.n).fill(Infinity);

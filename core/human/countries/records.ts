@@ -177,7 +177,8 @@ export function writeRecords(g: CountryRun) {
   const n = g.n;
   const k = seeds.length;
   const ids = seeds.map(() => g.next++);
-  for (let i = 0; i < n; i++) if (owner[i] >= 0) country[i] = ids[owner[i]];
+  // 锁定的国家的格不改（第八十四轮：长完以后的格局——种族王国补空地——把整理时还原成 −1 的锁定的格当成了空地）
+  for (let i = 0; i < n; i++) if (owner[i] >= 0 && country[i] < 0) country[i] = ids[owner[i]];
   small.nextCountry = g.next;
   const used = new Set(g.kept.map((m) => m.color));
   const taken = new Set(g.kept.map((m) => m.name));

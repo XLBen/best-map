@@ -43,6 +43,14 @@ export function edgeCosts(ctx: Pick<GenContext, 'world' | 'x' | 'cls'>): Float32
   return out;
 }
 
+// 第八十四轮：一次生成里文化圈、国家往外长、宗教传播共用同一份（按 GenContext 记下；数组只读）
+const edgeMemo = new WeakMap<object, Float32Array>();
+export function genEdgeCosts(ctx: Pick<GenContext, 'world' | 'x' | 'cls'>): Float32Array {
+  let e = edgeMemo.get(ctx);
+  if (!e) edgeMemo.set(ctx, (e = edgeCosts(ctx)));
+  return e;
+}
+
 // 离 cell 最近的干的陆地格（按步数；cell 本身是就是它）。没有干的陆地时为 −1
 function nearestDry(world: World, dry: Uint8Array, cell: number): number {
   if (dry[cell]) return cell;
@@ -143,7 +151,7 @@ function placeCultures(ctx: GenContext) {
   const { mesh } = world;
   const n = mesh.n;
   const dry = x.dry;
-  const edge = edgeCosts(ctx);
+  const edge = genEdgeCosts(ctx);
   // 宜居的面积（km² × 宜居度）
   const mass = new Float64Array(n);
   const cands: number[] = [];

@@ -166,7 +166,7 @@ export function RoadBar() {
   return (
     <>
       <span class="bar-note">{road.name ? `“${road.name}”` : '选中的道路'}</span>
-      <Seg value={road.kind === 'major' ? 'major' : 'minor'} options={ROAD_KINDS} onChange={(kind) => kind !== road.kind && void exec(roadKindCommand(road.id, kind), '正在保存…')} />
+      {road.kind === 'sea' ? <span class="bar-note">海路</span> : <Seg value={road.kind === 'major' ? 'major' : 'minor'} options={ROAD_KINDS} onChange={(kind) => kind !== road.kind && void exec(roadKindCommand(road.id, kind), '正在保存…')} />}
       <button class="bar-btn icon" onClick={() => deleteSelected(['road'])} title="删除（Delete）">
         <Trash2 />
       </button>

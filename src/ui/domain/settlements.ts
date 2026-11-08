@@ -13,6 +13,7 @@ import {
   pointList,
   pointTypeById,
   roadPaths,
+  SEA_LANE,
   smoothRoad,
   worldCityRanks,
   worldLandmarkTypes,
@@ -347,7 +348,8 @@ export function roadSet(w: World): RoadSet | null {
   const minorIdx: number[] = [];
   paths.forEach((p, k) => {
     const line = smoothRoad(p.points);
-    if (p.kind === 'major') {
+    if (p.kind === SEA_LANE) (draw.sea ??= []).push(line);
+    else if (p.kind === 'major') {
       draw.major.push(line);
       draw.majorRaw.push(p.points);
       majorIdx.push(k);

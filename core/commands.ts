@@ -181,13 +181,14 @@ export function applyCommand(
   const popParsed = popInput === undefined ? undefined : popFixSchema.safeParse(popInput);
   if (popParsed && !popParsed.success) throw new CommandError(`命令里的人口修补无效：${formatIssues(popParsed.error)}`);
   const popFix = popParsed?.data;
-  if (popFix && popFix.cells.some((c) => c >= world.mesh.n)) throw new CommandError('命令里的人口修补不属于这张地图');
+  if (popFix && (popFix.cells.some((c) => c >= world.mesh.n) || popFix.moves?.cells.some((c) => c >= world.mesh.n))) throw new CommandError('命令里的人口修补不属于这张地图');
   const parsed = commandSchema.safeParse(raw);
   if (!parsed.success) throw new CommandError(`命令参数无效：${formatIssues(parsed.error)}`);
   const cmd = parsed.data;
   const touched = touchedArrays(world, cmd);
   if (provinceFix && !touched.includes('province')) touched.push('province');
-  if (popFix) for (const k of POP_ARRAYS) if (!touched.includes(k)) touched.push(k);
+  // 第八十四轮：只挪了人数的修补（moves）只改 popTotal
+  if (popFix) for (const k of popFix.cells.length ? POP_ARRAYS : (['popTotal'] as const)) if (!touched.includes(k)) touched.push(k);
   const keys = touched.filter((k) => getArray(world, k));
   const before = keys.map((k) => Float64Array.from(getArray(world, k)!));
   const smallBefore = copySmall(world.small);

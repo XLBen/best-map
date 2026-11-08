@@ -76,6 +76,15 @@ export interface RoadDraw {
   minorRaw: [number, number][][];
   minorPx: number;
   clear?: boolean;
+  // 第八十四轮：港口之间的海路（平滑过的；没有海路时省略，画法与以前逐像素相同）
+  sea?: [number, number][][];
+}
+
+// 海路（第八十四轮）：细的长虚线，颜色同小路
+export const SEA_LANE_WIDTH = { quiet: 0.7, clear: 1 };
+export const SEA_LANE_DASH: [number, number] = [5, 4];
+export function seaLaneStyle(r: Pick<RoadDraw, 'clear'>, style: Pick<MapStyle, 'roadMinor' | 'quietRoadMinor'>): { color: string; width: number; dash: [number, number] } {
+  return r.clear ? { color: style.roadMinor, width: SEA_LANE_WIDTH.clear, dash: SEA_LANE_DASH } : { color: style.quietRoadMinor, width: SEA_LANE_WIDTH.quiet, dash: SEA_LANE_DASH };
 }
 
 // 清楚的样子（第二十四轮，现在只在“道路”工具里）：大道是浅色的衬边上一道深色的线，小路是深色的细虚线。
@@ -462,8 +471,17 @@ export function drawRoads(
     for (const c of list) if (c.x1 + 2 * k >= view.x0 - pad && c.x0 + 2 * k <= view.x1 + pad && c.y1 >= view.y0 - pad && c.y0 <= view.y1 + pad) f(c.path);
   };
   const rs = roadStyle(r, style);
+  const sea = r.sea?.length ? chunks(r.sea) : null;
+  const ss = sea ? seaLaneStyle(r, style) : null;
   for (const k of ks) {
     setT(k);
+    if (sea && ss) {
+      ctx.strokeStyle = ss.color;
+      ctx.lineWidth = ss.width * unit;
+      ctx.setLineDash([ss.dash[0] * unit, ss.dash[1] * unit]);
+      each(sea, k, (p) => ctx.stroke(p));
+      ctx.setLineDash([]);
+    }
     if (minor) {
       ctx.strokeStyle = rs.minor.color;
       ctx.lineWidth = rs.minor.width * unit;
