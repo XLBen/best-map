@@ -1,7 +1,7 @@
 import { COUNTRY_ALPHA, FEDERATION_GROUP, ISLET_FLAT, SEA_CLAIM_ALPHA } from '../colors';
 import { NEAR_MAX } from '../near';
 import { FX_BEGIN, FX_END, glsl, NOISE_GLSL, PATTERN_GLSL, SPECK_MARK, TEX_W } from './common';
-import { HAND_CALL, HAND_GLSL, HAND_UNIFORMS } from './hand';
+import { HAND_CALL, HAND_GLSL, HAND_INK, HAND_UNIFORMS } from './hand';
 import { FOCUS_GLSL, PROV_CELL } from './plane';
 
 // 合成着色器（平面；星球、投影由 sphere.ts 按它替换出来）（第四十一轮从 renderer.ts 原样搬来）
@@ -314,8 +314,8 @@ void main() {
     col = col * (1.0 - rv.a) + rv.rgb;
   }
 
-  // 海岸线：地形层画好的抗锯齿细线
-  col = mix(col, uCoastLine.rgb, base.a * uCoastLine.a / sqrt(max(uScenePx, 1.0)));
+  // 海岸线：地形层画好的抗锯齿细线（手绘时挤成一团的淡下去，见 shaders/hand.ts 的 handInk）
+${HAND_INK}  col = mix(col, uCoastLine.rgb, base.a * inkK * uCoastLine.a / sqrt(max(uScenePx, 1.0)));
 ${HAND_CALL}
   // 分组边界（省份）：扭曲坐标下相邻像素的分组不同。淡出为 0、离省界远的像素不取相邻像素（第三十九轮）
   if (provLines && pc >= 0 && !nearSkip(nearH.r, nearA + 1.5 * nearPx(), nearW + 1.5 * nearPx())) {

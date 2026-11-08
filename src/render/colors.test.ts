@@ -399,7 +399,7 @@ describe('生态的颜色脚本、花纹与发光', () => {
       expect(tiers, name).toContain('col = uSeaTier[0];');
       expect(tiers.indexOf('col = mix(col, fc.rgb, fc.a);'), name).toBeGreaterThan(tiers.indexOf('col = uSeaTier[0];'));
       expect(tiers.indexOf('col *= mix(1.0, uTierShade.x + uTierShade.y * shade, uShade);'), name).toBeGreaterThan(tiers.indexOf('col = mix(col, fc.rgb, fc.a);'));
-      expect(src, name).toContain('col = mix(col, uCoastLine.rgb, base.a * uCoastLine.a / sqrt(max(uScenePx, 1.0)));');
+      expect(src, name).toContain('col = mix(col, uCoastLine.rgb, base.a * inkK * uCoastLine.a / sqrt(max(uScenePx, 1.0)));');
       expect(src, name).toContain('* (fx.b / 255.0) * uGlowGain;');
     }
   });

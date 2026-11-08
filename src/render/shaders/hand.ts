@@ -37,8 +37,23 @@ float handNear(vec2 sUv, float px) {
   float B = max(2.0 * px / max(uScenePx, 1e-3), 1.0);
   return textureLod(uSceneColor, sUv, log2(B)).a * B / 1.3;
 }
-// col：这一点的颜色；sUv：场景上的位置；s：海岸场（高度纹理的 g，小湖群的水面是 SPECK_MARK）；line：地形层画的海岸线的浓淡
-vec3 handLook(vec3 col, vec2 world, vec2 sUv, float s, bool land, float line) {
+// 小水面、小岛上的墨线淡下去（第八十九轮修黑点）：碎的海岸、小湖群里只有一两个像素大的水面（或小岛），一圈海岸线把它整个盖住，
+// 深色的墨线画出来是一个个黑点。这一点（或加浓的墨线）在海岸线上时，看周围 3.5 个屏幕像素的一圈 8 个点：真的海岸两边都有，
+// 少的那一边至少两个点；一圈全在同一边（陆上的小水面、海上的小岛比这一圈还小）时墨线只留一成多，少的一边一个点时留一半多。
+// 返回海岸线浓淡的倍数（合成里那一行与 handLook 里加浓的墨线都乘它）。取样写成合成里取周围像素的样子（投影的那一份照样换成世界坐标）
+float handInk(vec2 sUv, float line) {
+  if (line <= 0.0 && textureLod(uSceneColor, sUv, 1.0 - log2(max(uScenePx, 1e-3))).a <= 0.0) return 1.0;
+  float nL = 0.0;
+  for (int k = 0; k < 8; k++) {
+    float a = float(k) * 0.7853982;
+    vec2 o1 = vec2(cos(a), sin(a)) * 3.5 * uTexel;
+    nL += textureLod(uSceneHeight, (vUv + o1) * uSceneXf.xy + uSceneXf.zw, 0.0).g > 0.0 ? 1.0 : 0.0;
+  }
+  return mix(0.12, 1.0, smoothstep(0.0, 2.0, min(nL, 8.0 - nL)));
+}
+// col：这一点的颜色；sUv：场景上的位置；s：海岸场（高度纹理的 g，小湖群的水面是 SPECK_MARK）；line：地形层画的海岸线的浓淡；
+// inkK：海岸线浓淡的倍数（handInk）
+vec3 handLook(vec3 col, vec2 world, vec2 sUv, float s, bool land, float line, float inkK) {
   // 导数（fwidth）都在这里算：调用它的地方是 uHand 的一致分支，下面再按陆海分开
   float rv[4];
   float rw[4];
@@ -69,7 +84,7 @@ vec3 handLook(vec3 col, vec2 world, vec2 sUv, float s, bool land, float line) {
     }
     col = mix(col, uRipple.rgb, rip);
   }
-  if (!speck) col = mix(col, uCoastLine.rgb, 0.25 * uPaper.a * ink);
+  if (!speck) col = mix(col, uCoastLine.rgb, 0.25 * uPaper.a * ink * inkK);
   // 纸：乘上纸的颜色，加纤维与几格大小的旧痕
   float grain = handGrain(world, uSpacing / max(uCellPx, 1e-6));
   float stain = fbmSub(world / uSpacing * 0.08 + vec2(-4.0, 9.0), 3);
@@ -81,5 +96,8 @@ vec3 handLook(vec3 col, vec2 world, vec2 sUv, float s, bool land, float line) {
 
 // 合成里的那一行：海岸线之后、省界之前
 export const HAND_CALL = `  // 手绘（第八十七轮，shaders/hand.ts）：写实、地图册不走
-  if (uHand == 1) col = handLook(col, world, sUv, hs.g, land, base.a);
+  if (uHand == 1) col = handLook(col, world, sUv, hs.g, land, base.a, inkK);
+`;
+// 海岸线浓淡的倍数（第八十九轮）：手绘时挤成一团的墨线淡下去（handInk），别的画风是 1（乘 1 逐位不变）
+export const HAND_INK = `  float inkK = uHand == 1 ? handInk(sUv, base.a) : 1.0;
 `;

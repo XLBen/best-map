@@ -68,7 +68,9 @@ describe('手绘画风', () => {
   it('合成着色器：手绘那一段只在 uHand == 1 时走，平面、星球两份都有', () => {
     for (const src of Object.values(COMPOSE_SOURCES)) {
       expect(src).toContain('uniform int uHand;');
-      expect(src).toContain('if (uHand == 1) col = handLook(col, world, sUv, hs.g, land, base.a);');
+      expect(src).toContain('if (uHand == 1) col = handLook(col, world, sUv, hs.g, land, base.a, inkK);');
+      // 第八十九轮：海岸线浓淡的倍数只在手绘时不是 1
+      expect(src).toContain('float inkK = uHand == 1 ? handInk(sUv, base.a) : 1.0;');
     }
   });
 });

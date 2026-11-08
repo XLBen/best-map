@@ -373,7 +373,7 @@ export const PROJ_PROLOGUE = `  // 投影（第十三轮 G4）：画面上的位
 export const FS_COMPOSE_PROJ = (() => {
   let s = FS_COMPOSE_PLANET;
   // 场景上的位置：画面上的位置 × uSceneXf → 世界坐标的 toScene
-  s = mustAll(s, /(\(vUv \+ o[12]\)|\buv\b|\bvUv\b) \* uSceneXf\.xy \+ uSceneXf\.zw/g, 'toScene($1)', 7);
+  s = mustAll(s, /(\(vUv \+ o[12]\)|\buv\b|\bvUv\b) \* uSceneXf\.xy \+ uSceneXf\.zw/g, 'toScene($1)', 8);
   // 这个像素的位置换成世界坐标（pW）；画面上的位置只在开头算投影时用
   s = s.replace(/\bvUv\b/g, 'pW');
   s = must(s, 'in vec2 pW;', 'in vec2 vUv;\nvec2 pW;\nvec2 uDX;\nvec2 uDY;\nvec2 uPlane;\nfloat uRho;\nfloat uEdge;');
