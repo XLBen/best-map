@@ -73,7 +73,7 @@ export const SHELTER_RINGS = 3;
 interface ShelterMemo {
   mesh: World['mesh'];
   land: Uint8Array;
-  // 陆地的比例；NaN 是还没算
+  // 陆地的比例；−1 是不挨着海的陆地格（取 0），NaN 是还没算
   frac: Float64Array;
   mark: Int32Array;
   queue: Int32Array;
@@ -148,9 +148,6 @@ export function shelterGetter(world: World, d: Derived): FieldGetter {
   const one = [0];
   return (i) => {
     if (land[i] !== 1) return 0;
-    let coast = false;
-    for (let e = off[i]; e < off[i + 1] && !coast; e++) if (land[adj[e]] === 0) coast = true;
-    if (!coast) return 0;
     // 中间别的世界（同一个网格）对过另一份陆海：再对一次自己的
     if (memo !== shelterMemo || memo.ver !== ver) {
       memo = shelterSync(mesh, land);
@@ -158,13 +155,20 @@ export function shelterGetter(world: World, d: Derived): FieldGetter {
     }
     let f = memo.frac[i];
     if (Number.isNaN(f)) {
-      let dry = 0;
-      one[0] = i;
-      const total = rings(memo, one, (b) => {
-        if (land[b] === 1) dry++;
-      });
-      f = memo.frac[i] = total ? dry / total : 0;
+      let coast = false;
+      for (let e = off[i]; e < off[i + 1] && !coast; e++) if (land[adj[e]] === 0) coast = true;
+      if (!coast) f = -1;
+      else {
+        let dry = 0;
+        one[0] = i;
+        const total = rings(memo, one, (b) => {
+          if (land[b] === 1) dry++;
+        });
+        f = total ? dry / total : 0;
+      }
+      memo.frac[i] = f;
     }
+    if (f < 0) return 0;
     const t = Math.max(0, Math.min(1, (q[i] - 300) / 2700));
     return Math.min(1, f + 0.25 * t * t * (3 - 2 * t));
   };
