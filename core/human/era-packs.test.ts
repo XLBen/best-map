@@ -41,6 +41,7 @@ const BUILTIN_RESOURCES_IDS = () => GENERAL_RESOURCES.map((r) => r.id);
 // 第八十五轮只重录 countries（13 项）：档案去掉了 ruler，统治者是 small.archive 里的一份名单；别的一项没变（见 docs/dev/history/第85轮.md）
 // R29_RECORD=1 npx vitest run core/human/era-packs.test.ts（只在有意改变结果时）
 // 第七十七轮：生成的命令不再写权重、“分裂 ↔ 统一”、格局，human 只记组的 id、countryRules 只有种子，组带着库里的比重，没有格局。只重录 13 项的 human（人口、国家、城市、地名……一个没变）；核对过两边的世界只差这几样（见 docs/dev/history/第77轮.md）
+// 第八十六轮：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林、推导多了冰盖），用这一轮的代码重录全部（见 docs/dev/history/第86轮.md）
 const record = !!process.env.R29_RECORD;
 const old: Record<string, unknown> = record ? {} : saved;
 const check = (got: unknown, key: string) => {
@@ -308,7 +309,8 @@ describe('生态、地形类别自己带的字段替代按 id 查的算法表', 
   const OLD_CLASS: Record<string, number> = { plains: 1, hills: 0.92, highlands: 0.82, mountains: 0.5, peaks: 0.09 };
 
   it('内置 13 种生态（第五十五轮多的两种高山生态不算）的宜居度、通行难度、大类与原来的表逐个相同；5 种地形类别的宜居倍数也相同', () => {
-    for (const sp of DEFAULT_SPECIES.filter((x) => !x.id.startsWith('alpine_'))) {
+    // 第八十六轮的红树林以前没有，也不算
+    for (const sp of DEFAULT_SPECIES.filter((x) => !x.id.startsWith('alpine_') && x.id !== 'mangrove')) {
       expect(biomeHabitability(sp), sp.id).toBe(OLD_HAB[sp.id]);
       expect(biomeMovement(sp), sp.id).toBe(OLD_MOVE[sp.id]);
       expect(sp.group, sp.id).toBe(OLD_GROUP[sp.id]);

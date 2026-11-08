@@ -3,6 +3,11 @@ import { encodePath, traceRivers } from './rivers';
 import { SINK_LOOP, emptyPlan, isRiverCell, overlapsOf, planCourse, riverStem } from './select';
 import { continents } from './testing/fixtures';
 import type { World } from './world';
+import { useRound85Terrain } from './testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 第十三轮：画完就消失的河绕回自己旁边（画成一个圈）、贴着别的河流、改道后旧河道还有水——重叠分析；
 // 补水（画的河整条是河）按路由实际的下游，强制方向绕成圈时不再沿河道往下补

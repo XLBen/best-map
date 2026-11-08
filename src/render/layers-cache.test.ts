@@ -7,6 +7,7 @@ import { worldDimensions } from '../../core/human';
 import { ISLAND_CODE_MASK, allIslandTypes, islandTint } from '../../core/island-types';
 import { seamLayers } from '../../core/seams';
 import { COAST_AMP } from '../../core/terrain';
+import { SEA_ICE, seaIceAt } from '../../core/sea-ice';
 import { continents, humanExec, seededEngine, snapshot } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import type { ViewMode } from '../state';
@@ -73,7 +74,12 @@ function oldCellLayers(world: World, o: ColorOptions): CellLayers {
     const land = causes.land[i] === 1;
     if (!land) {
       // alpha：海水暖度，决定浅水的颜色。海水温度底图：海面按海水的冷暖（整个星球上已含洋流），与“气温”同一条色带
-      const c: RGB = seaTemp ? tempRgb(seasonal(d.tMean, d.tS, d.tW, i)) : terrainLike || o.mode === 'elevation' || o.mode === 'uplift' ? ramp(SEA, d.elevation[i]) : [40, 50, 70];
+      let c: RGB = seaTemp ? tempRgb(seasonal(d.tMean, d.tS, d.tW, i)) : terrainLike || o.mode === 'elevation' || o.mode === 'uplift' ? ramp(SEA, d.elevation[i]) : [40, 50, 70];
+      // 例外（第八十六轮）：地貌一类的底图上冷海盖一层海冰（core/sea-ice.ts），照 colors.ts 的写法
+      if (terrainLike) {
+        const k = seaIceAt(d, i, o.season) * SEA_ICE.ALPHA;
+        if (k > 0) c = [c[0] + (SEA_ICE.RGB[0] - c[0]) * k, c[1] + (SEA_ICE.RGB[1] - c[1]) * k, c[2] + (SEA_ICE.RGB[2] - c[2]) * k];
+      }
       put(smooth, i, c, warmth(world, i));
       continue;
     }

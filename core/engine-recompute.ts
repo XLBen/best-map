@@ -4,7 +4,9 @@ import { type ClimateEffects, computeClimate, finalizeClimate } from './climate'
 import { Dirty } from './commands';
 import { checkConstraints, type SolveResult, solveConstraints } from './constraints';
 import { computeClimateSphere, prepareClimateSphere } from './planet-climate';
-import { carveBeds, computeElevation, userLakeMask } from './elevation';
+import { carveBeds, computeElevation, glacialTerrain, rememberCoast, userLakeMask } from './elevation';
+import { iceStrength, sameIce } from './glacial';
+import { glacialLegacy } from './glacial-legacy';
 import { assignNames, detectFeatures, guideFeatures, prepareFeatures, regionFeatures } from './features';
 import { computeEffects } from './effects';
 import { computeHydrology, shapeLakeBeds } from './hydrology';
@@ -72,7 +74,9 @@ export function* recomputeDerived(e: RecomputeState): Generator<void, Derived> {
   let climate = e.dirty >= Dirty.Climate;
   if (e.dirty >= Dirty.Elevation || !terrain) {
     // 总是从固定初值求解：推导只取决于原因，与编辑历史无关，重放与撤销都逐值一致
-    terrain = computeElevation(w).elevation;
+    const el = computeElevation(w);
+    terrain = el.elevation;
+    rememberCoast(terrain, el.coastKm);
     climate = true;
     lap('elevation');
     yield;
@@ -90,11 +94,15 @@ export function* recomputeDerived(e: RecomputeState): Generator<void, Derived> {
     // 整个星球用球面版本（没有地图边，风带绕星球一圈）。按没挖河床的地形算：画河不改变气候
     const base = w.mesh.kind === 'sphere' ? computeClimateSphere(w, terrain, d) : computeClimate(w, terrain, d);
     e.base = { ...base, terrain };
+    // 冰盖（第八十六轮）：按现在的纬度、冷暖笔刷、太阳（core/glacial.ts）。没变时还是原来的数组
+    const ice = iceStrength(w, glacialLegacy.on);
+    if (!sameIce(ice, d.ice)) d.ice = ice;
     lap('climate');
     yield;
   }
-  // 推导里的高程 = 地形再挖出只挖河床的河。每次都从地形重新挖，结果只取决于原因；没有这种河时就是地形
-  d.elevation.set(terrain);
+  // 推导里的高程 = 地形挖出冰川的小洼（第八十六轮）、再挖出只挖河床的河。每次都从地形重新挖，结果只取决于原因；
+  // 气候按没挖冰川的地形算（冷暖笔刷改冰川时不用重算气候的地形那一层）
+  d.elevation.set(glacialLegacy.on ? terrain : glacialTerrain(w, terrain, d.ice));
   carveBeds(w, d.elevation);
   if (d.share.length !== w.mesh.n * w.small.species.length) {
     const fresh = emptyDerived(w.mesh.n, w.small.species.length);

@@ -45,7 +45,7 @@ import { DEFAULT_PROVINCE_RULES } from '../province-rules';
 //     奇幻另有 biomes、rivers、lakes：奇幻的生态（带它们用到的自定义场）、河、湖；第五十七轮起新建奇幻世界时默认带上（worldPartsOf），换库照旧不带
 //   世界的底子（LIBRARY_BASE_PACKS，每个库都有，新建世界时放在生成之前）：
 //     base              基础：地形类别、通用资源、城市等级、不分时代的地标、点的类型、岛的种类、省份划分（第七十八轮，province-rules.ts）
-//     nature            自然：15 种普通生态（packs/nature.ts）
+//     nature            自然：16 种普通生态（packs/nature.ts）
 //     names ▸ zh        地名 ▸ 中文：中文·默认
 //     names ▸ <地区>    别的地名风格按地区分（地区表见 STYLE_REGIONS，没列的放“其他”）
 //     forms             星球形态：以前向导里写死的六种星球（packs/planet-forms.ts），奇幻的另有几种

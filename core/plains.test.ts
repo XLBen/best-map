@@ -129,7 +129,17 @@ for (const [label, settings] of SETTINGS) {
     expect(changed).toBeGreaterThan(0);
   });
 
+  // 第八十六轮：冰川按现在的冷暖（冷暖笔改冰川挖的小洼，见 lakes-coasts.test.ts），这里只看平原：冰川刻蚀关掉
   it(`改气候不改高程（有三角洲、平原的世界）：${label}`, () => {
+    const saved = glacialOn.on;
+    glacialOn.on = false;
+    try {
+      changeClimate();
+    } finally {
+      glacialOn.on = saved;
+    }
+  });
+  function changeClimate() {
     const e = seededEngine(settings, fresh(meshFor(settings)));
     const f0 = plainStats.flood;
     const d0 = plainStats.deltas;
@@ -148,7 +158,7 @@ for (const [label, settings] of SETTINGS) {
       expect(digestWorld(e.world)['derived.elevation']).toBe(terrain);
     }
     expect(elevationMemo.computed).toBe(c0);
-  });
+  }
 }
 
 describe('冲积平原', () => {

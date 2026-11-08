@@ -1,3 +1,4 @@
+import { blocList } from '../../core/human';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Engine } from '../../core/engine';
@@ -102,8 +103,9 @@ describe('地图模式的表', () => {
     expect(mapModes(null)).toEqual([]);
     expect(mapModes(peoples().world).map((m) => m.id)).toEqual(['geo', 'culture', 'cultureGroup', 'dim:religion', 'popDensity']);
     const b = mapModes(towns().world);
-    // 第二十六轮：这个世界里有帝国（中世纪的邦联），多一个“同盟”
-    expect(b.map((m) => m.label)).toEqual(['地理', '国家', '同盟', '文化', '文化组', '宗教', '人口']);
+    // 第二十六轮：世界里有帝国、联邦、同盟时多一个“同盟”（第八十六轮：地形变了，这个世界的中世纪没有长出帝国；按世界里有没有查）
+    const blocs = blocList(towns().world.small).length > 0;
+    expect(b.map((m) => m.label)).toEqual(['地理', '国家', ...(blocs ? ['同盟'] : []), '文化', '文化组', '宗教', '人口']);
     for (const m of b) expect(m.title.length).toBeGreaterThan(0);
     // 世界里没有那一层时是地理
     expect(modeOf(peoples().world, 'country')).toBe('geo');

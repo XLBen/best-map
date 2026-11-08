@@ -6,7 +6,7 @@ import { glacialLakes } from '../tools/realism';
 import { LOOK, barrierBump, barrierDetail, barrierIsle, coastStyle, decodeStyleB, displayStyle, fjordData, speckApply, speckK, speckW, styleWeight } from './coast-style';
 import type { Command } from './commands';
 import { displayCellAt } from './display';
-import { computeElevation, elevationMemo } from './elevation';
+import { computeElevation, elevationMemo, glacialTerrain } from './elevation';
 import type { Engine } from './engine';
 import { GLACIAL, glacialField, glacialOn, glacialStats } from './glacial';
 import type { Mesh } from './mesh';
@@ -62,24 +62,27 @@ for (const [label, settings] of SETTINGS) {
       const c0 = glacialStats.carved;
       const e = build(settings);
       expect(glacialStats.carved).toBeGreaterThan(c0);
-      // 关掉冰川刻蚀：冰盖没到过的陆块逐值相同
+      // 第八十六轮：求解不再挖冰川，流水线在求解的地形上另挖（glacialTerrain）。关掉冰川刻蚀时就是求解的地形
       const w = e.world;
+      const terrain = withMemo(false, () => computeElevation(w).elevation);
       const off = (() => {
         const saved = glacialOn.on;
         glacialOn.on = false;
         try {
-          return withMemo(false, () => computeElevation(w).elevation);
+          return glacialTerrain(w, terrain, w.derived.ice);
         } finally {
           glacialOn.on = saved;
         }
       })();
-      const on = withMemo(false, () => computeElevation(w).elevation);
+      expect(off).toBe(terrain);
+      const on = glacialTerrain(w, terrain, w.derived.ice);
       const f = glacialField(w);
       let diff = 0;
       for (let i = 0; i < w.mesh.n; i++) {
         if (!w.causes.land[i] || on[i] === off[i]) continue;
         diff++;
         expect(f.depth[i]).toBeGreaterThan(0);
+        expect(on[i]).toBeLessThan(off[i]);
       }
       expect(diff).toBeGreaterThan(0);
     });
@@ -145,23 +148,58 @@ for (const [label, settings] of SETTINGS) {
       expect(other).toBeGreaterThan(0);
     });
 
-    it('改气候不改高程（湿度、冷暖笔、挪纬度或轴倾角）', () => {
+    // 第八十六轮：冰盖按现在的纬度、冷暖笔刷、太阳。改气候从不重新求解高程；湿度、轴倾角不改冰盖，高程一格不变；
+    // 涂冷让冰盖往外长，高程只在冰盖变了的格上变（挖出新的小洼）
+    it('改气候不重新求解高程；只有冷暖笔、挪纬度改冰川（只在冰盖变了的地方）', () => {
       const e = build(settings);
-      const terrain = digestWorld(e.world)['derived.elevation'];
+      const w0 = e.world;
+      const elev0 = w0.derived.elevation.slice();
+      const ice0 = w0.derived.ice;
       const c0 = elevationMemo.computed;
-      const land = [...Array(e.world.mesh.n).keys()].filter((i) => e.world.causes.land[i]).slice(0, 400);
-      for (const cmd of [
-        { op: 'set_planet', patch: { humidity: 0.5 } },
-        { op: 'paint', field: 'tempOffset', cells: land, value: -8, mode: 'add' },
-        { op: 'set_planet', patch: 'globe' in settings ? { tilt: 35 } : { latShift: -12 } },
-      ] as Command[]) {
-        e.exec(cmd);
-        expect(digestWorld(e.world)['derived.elevation']).toBe(terrain);
+      e.exec({ op: 'set_planet', patch: 'globe' in settings ? { humidity: 0.5, tilt: 35 } : { humidity: 0.5 } });
+      expect(e.world.derived.ice).toEqual(ice0);
+      expect(e.world.derived.elevation).toEqual(elev0);
+      const land = [...Array(w0.mesh.n).keys()].filter((i) => w0.causes.land[i]);
+      e.exec({ op: 'paint', field: 'tempOffset', cells: land, value: -8, mode: 'add' });
+      const ice1 = e.world.derived.ice;
+      let grew = 0;
+      for (let i = 0; i < w0.mesh.n; i++) {
+        expect(ice1[i]).toBeGreaterThanOrEqual(ice0[i]);
+        if (ice1[i] > ice0[i]) grew++;
+      }
+      expect(grew).toBeGreaterThan(0);
+      let moved = 0;
+      for (let i = 0; i < w0.mesh.n; i++) {
+        if (!w0.causes.land[i] || e.world.derived.lake[i] || e.world.derived.elevation[i] === elev0[i]) continue;
+        moved++;
+        expect(ice1[i]).toBeGreaterThan(0);
+      }
+      // 湖格不算（湖的范围随气候变，湖底跟着修）；5000 格的星球上新挖出的小洼都蓄成了湖
+      if (!('globe' in settings)) expect(moved).toBeGreaterThan(0);
+      if (!('globe' in settings)) {
+        e.exec({ op: 'set_planet', patch: { latShift: -12 } });
+        expect(e.world.derived.ice).not.toEqual(ice1);
       }
       expect(elevationMemo.computed).toBe(c0);
     });
 
-    it('海岸类型只按生成器与新建时的纬度：画陆地、改气候都不变', () => {
+    it('涂冷让峡湾、小湖群往外长；一笔一笔改的海岸类型与从头算的逐值相同', () => {
+      const settingsB = settings;
+      const e = build(settingsB);
+      const before = coastStyle(e.world)!.packed.slice();
+      const land = [...Array(e.world.mesh.n).keys()].filter((i) => e.world.causes.land[i]);
+      const cmd: Command = { op: 'paint', field: 'tempOffset', cells: land, value: -6, mode: 'add' };
+      e.exec(cmd);
+      const after = coastStyle(e.world)!;
+      expect(after.packed).not.toEqual(before);
+      // 换一个网格对象（海岸类型按网格缓存）从头算
+      const f = build(settingsB);
+      f.exec(cmd);
+      expect(coastStyle(f.world)!.packed).toEqual(after.packed);
+      expect(fjordData(f.world)?.tex).toEqual(fjordData(e.world)?.tex);
+    });
+
+    it('海岸类型只按生成器、新建时的纬度与冰盖：画陆地、改湿度都不变', () => {
       const e = build(settings);
       const st = coastStyle(e.world)!;
       expect(st).not.toBeNull();

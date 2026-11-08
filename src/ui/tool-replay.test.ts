@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { useRound85Terrain } from '../../core/testing/round85';
 import type { Command } from '../../core/commands';
 import { brushCells } from '../../core/select';
 import { continents } from '../../core/testing/fixtures';
@@ -33,6 +34,9 @@ import {
 
 // 第十九轮 A（工具解耦）之前录下的：一串脚本化的手势依次交给各个工具，记下发出的命令、提示条与按住时的预览。
 // 拆文件、合并重复之后再跑，逐条相同（录下的文件不重录：变了就是行为变了）
+// 第八十六轮：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解），录下的快照不重录：
+// 这个文件里把地形退回第八十五轮（几个测试用的开关），查的是工具的行为，不是地形
+useRound85Terrain();
 
 vi.mock('../state', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../state')>();

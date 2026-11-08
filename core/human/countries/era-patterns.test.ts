@@ -20,6 +20,11 @@ import { NATION_STATE, type NationStateLog } from './patterns/nation-state';
 import { RIVER_EMPIRE } from './patterns/river-empire';
 import { UNIFICATION } from './patterns/unification';
 import type { CountryRun, Seed } from './state';
+import { useRound85Terrain } from '../../../core/testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 第七十四轮：各时代的历史格局（城邦群、大河帝国、集权帝国、汗国、殖民地、民族统一、多民族帝国、民族国家、前殖民地国家）与民族主义。
 // 都在几块大陆的地区（continents：1.2 万格，种子 1、地形种子 5）上，各时代用默认的文化组生成；生成时记下这一次的 CountryRun（加一步 peek）

@@ -5,6 +5,11 @@ import { findCell, graphDistance, ringDistance } from './mesh';
 import { type WordPack, generateName, hashString } from './names';
 import { NO_CURRENTS, continents, engineFor, snapshot, seededEngine, ZH_STYLE, wordPackCommand } from './testing/fixtures';
 import { featuresCsv } from './export';
+import { useRound85Terrain } from './testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 人工构造的地图：一块带半岛和海湾的大陆，东边两个岛之间隔着一道窄海峡
 function handmade() {

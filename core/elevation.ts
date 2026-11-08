@@ -1,5 +1,6 @@
 // 高程：计算的入口、记下来的上一次、收尾（第八十三轮拆开：求解 elevation-solve.ts，海底 seafloor.ts / seafloor-coast.ts，湖与河床 elevation-lakes.ts；这里照旧全部导出）
-import { type Mesh, graphDistance } from './mesh';
+import { type Mesh, graphDistance, graphDistanceSame } from './mesh';
+import { glacialFieldOf, scourTerrain } from './glacial';
 import { LAYOUT_R } from './planet-gen';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed } from './rng';
 import { reliefFields } from './terrain';
@@ -7,7 +8,7 @@ import { FREE_HEIGHT, type World } from './world';
 import { RAW_TO_M, bitsOf, solveLand } from './elevation-solve';
 import { lagoonFloor } from './seafloor-coast';
 import { seafloor } from './seafloor';
-import { carvePocketLakes, lakeBedShape, lakeRadiusUnits } from './elevation-lakes';
+import { carvePocketLakes, lakeBedShape, lakeRadiusUnits, userLakeMask } from './elevation-lakes';
 export { UPLIFT_FLOOR, windwardFactor, SOLVE, plainsOn, carvePits } from './elevation-solve';
 export { lagoonFloor, oceanSteps } from './seafloor-coast';
 export { seafloorStats, seafloor, seafloorSameLand } from './seafloor';
@@ -385,4 +386,47 @@ function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): 
   const fixed = causes.islandHeight;
   if (fixed) for (let i = 0; i < n; i++) if (land[i] && fixed[i] !== FREE_HEIGHT) elevation[i] = fixed[i];
   return { elevation, coastKm };
+}
+
+// ---------- 冰川（第八十六轮） ----------
+// 地形（computeElevation 的结果）的离海距离：算高程时记下（按数组对象），没有时（打开检查点后）现算一遍，与求解里的逐值相同
+const coastOfTerrain = new WeakMap<Float32Array, Float64Array>();
+export function rememberCoast(terrain: Float32Array, coastKm: Float64Array): void {
+  coastOfTerrain.set(terrain, coastKm);
+}
+function coastOf(world: World, terrain: Float32Array): Float64Array {
+  let c = coastOfTerrain.get(terrain);
+  if (c) return c;
+  const { mesh, kmPerUnit } = world;
+  const land = world.causes.land;
+  const seeds: number[] = [];
+  for (let i = 0; i < mesh.n; i++) {
+    if (!land[i]) continue;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      if (!land[mesh.adj[e]]) {
+        seeds.push(i);
+        break;
+      }
+    }
+  }
+  const d = graphDistanceSame(mesh, seeds, Infinity, land);
+  c = new Float64Array(mesh.n).fill(1e5);
+  for (let i = 0; i < mesh.n; i++) if (land[i] && Number.isFinite(d[i])) c[i] = d[i] * kmPerUnit;
+  coastOfTerrain.set(terrain, c);
+  return c;
+}
+
+// 挖过冰川的地形：冰盖的强度 ice（derived.ice）下，terrain 挖出冰川的小洼（core/glacial.ts 的 scourTerrain）。
+// 放的湖、湖里定了高度的岛不挖。没有要挖的时返回 terrain 本身
+export function glacialTerrain(world: World, terrain: Float32Array, ice: Float64Array): Float32Array {
+  const f = glacialFieldOf(world, ice);
+  if (!f.any) return terrain;
+  let skip: Uint8Array | null = null;
+  if (world.small.lakes.length) skip = userLakeMask(world);
+  const fixed = world.causes.islandHeight;
+  if (fixed) {
+    skip ??= new Uint8Array(world.mesh.n);
+    for (let i = 0; i < world.mesh.n; i++) if (fixed[i] !== FREE_HEIGHT) skip[i] = 1;
+  }
+  return scourTerrain(world, terrain, ice, f, coastOf(world, terrain), skip);
 }

@@ -5,6 +5,11 @@ import { findCell, graphDistance } from './mesh';
 import { brushCells, cutProvinces, provinceCells } from './select';
 import { previewLand, restoreStroke } from './terrain';
 import type { World } from './world';
+import { useRound85Terrain } from './testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 第五轮：恢复原样（地形、气候的橡皮擦）、剪刀沿线切省、最小的笔刷正好一格
 

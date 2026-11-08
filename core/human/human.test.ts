@@ -27,9 +27,10 @@ const autoDigest = (w: World) => ({ classes: digest(w.derived.terrainClassAuto),
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 // 第五十五轮：生态跟高度走，只有资源变了（类别、山峰不变）
 // 第五十七轮：毛皮多一种生态（高山苔原），只有地区的资源变了
+// 第八十六轮重录：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林），宜居度、人文往后都变了（见 docs/dev/history/第86轮.md）
 const RECORDED = {
-  region: { classes: '90d63b51331db1bd', resources: 'f13effd6a06a1f5f', peaks: 'a638ddc660d55eb4' },
-  planet: { classes: '638d8eb12c518db4', resources: 'd4428d57a3df5ffa', peaks: '25d1d1eeb6845f9e' },
+  region: { classes: '128393096a904fba', resources: '14d60c76f8aa497a', peaks: '3080aea6a1a39c81' },
+  planet: { classes: '73eb67d59e2c2587', resources: 'b8c061922fde760c', peaks: '42abdf5782305ccf' },
 };
 
 const planet = () => {

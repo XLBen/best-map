@@ -4,7 +4,9 @@ import { type World, latitudeOf } from './world';
 import { gradGeo, graphDistanceSame, type Mesh } from './mesh';
 import { Router, accumulate, type Routing } from './routing';
 import { applyPlains } from './plains';
-import { glacialScour, glacialField } from './glacial';
+import { wetWeights } from './elevation-precip';
+import { glacialFieldOf, iceStrength } from './glacial';
+import { glacialLegacy, glacialScourInSolve } from './glacial-legacy';
 
 // 高程 = 抬升与河流下切的稳态（stream power law，n = 1）：
 //   dh/dt = U − K·A^m·S = 0  ⇒  沿河道 h_i = h_下游 + U_i·L / (K_i·A_i^m)
@@ -94,6 +96,10 @@ export function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: 
   const geo = gradGeo(mesh);
   const up = causes.uplift;
   for (let i = 0; i < n; i++) if (todo[i]) solveInputs(world, geo, i, fu, fk, Tm, coastKm, u, K, areaKm, T, fade);
+  // 降水（第八十六轮，见 elevation-precip.ts）：汇水面积按降水代理加权成流量（湿处下切多、干处少）
+  const wet = new Float64Array(n);
+  const areaQ = new Float64Array(n);
+  const pitL = wetWeights(world, todo, T, coastKm, fk, pitM, areaKm, wet, areaQ);
   // 画的河不改地形的求解：求解之后再挖河床（carveBeds），周围的山不动
 
   // 初始高程：按离海距离给一个缓坡加噪声，再加上大半个基准面（固定的 12 轮一开始就按大陆倾斜汇流；固定初值，结果只取决于原因）
@@ -116,9 +122,11 @@ export function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: 
   let r = router.route(h);
   for (let it = 0; it < ITERATIONS; it++) {
     if (it > 0) r = router.route(h);
-    accumulate(r, areaKm, A);
+    accumulate(r, areaQ, A);
     solvePass(mesh, r, land, edge, st, h);
   }
+  // 平原、洼地按真的面积（km²）：最后一轮的流向再累加一次
+  accumulate(r, areaKm, A);
 
   // 坡面过程：轻度扩散，削掉单格尖峰
   const tmp = Float64Array.from(h);
@@ -127,11 +135,12 @@ export function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: 
     h.set(tmp);
   }
 
-  carvePits(world, todo, r, u, areaKm, pitM, fade, h);
+  carvePits(world, todo, r, u, areaKm, pitL, fade, h, wet);
   // 平原与河口（第三十三轮）：冲积平原、冲积扇、三角洲平原，按最后一轮的流向与汇水面积一遍过
-  if (plainsOn.on) applyPlains({ mesh, todo, land, up, areaKm, r, A, kmPerUnit, mToRaw: M_TO_RAW, pitM }, h);
-  // 冰川刻蚀（第三十四轮）：新建时纬度高、低于 250–800 m 的陆地挖 8–68 m 的小洼（core/glacial.ts），水文蓄成湖群
-  glacialScour(glacialField(world), mesh, todo, land, coastKm, kmPerUnit, M_TO_RAW, h);
+  if (plainsOn.on) applyPlains({ mesh, todo, land, up, areaKm, r, A, kmPerUnit, mToRaw: M_TO_RAW, pitM: pitL }, h);
+  // 冰川刻蚀（第三十四轮）：第八十六轮起不在这里挖，按现在的冷暖在流水线里另挖（core/glacial.ts 的 scourTerrain）。
+  // 测试退回第八十五轮时（glacialLegacy）照旧在这里挖
+  if (glacialLegacy.on) glacialScourInSolve(glacialFieldOf(world, iceStrength(world, true)), mesh, todo, land, coastKm, kmPerUnit, M_TO_RAW, h);
 }
 
 // 第三十五轮（提速）：solveLand 开头几段逐格的循环（原样照搬，结果逐值相同）。
@@ -255,7 +264,7 @@ function inPit(todo: Uint8Array, pitM: Float32Array, i: number): boolean {
 // 往下挖 pit·(1 − f)：山上来的沙填满的成了平原（平到岸的高度），孤立的留成平底的洼地；
 // 水文按气候定它是湖、内流湖还是干盐湖。
 // 挨着海的洼地不取平底（岸是海），只往下挖。只动 todo 里的格，结果只取决于这块陆地
-export function carvePits(world: World, todo: Uint8Array, r: Routing, u: Float64Array, areaKm: Float64Array, pitM: Float32Array, fade: Float64Array, h: Float64Array) {
+export function carvePits(world: World, todo: Uint8Array, r: Routing, u: Float64Array, areaKm: Float64Array, pitM: Float32Array, fade: Float64Array, h: Float64Array, wet?: Float64Array) {
   const { mesh, causes } = world;
   const n = mesh.n;
   const land = causes.land;
@@ -268,7 +277,7 @@ export function carvePits(world: World, todo: Uint8Array, r: Routing, u: Float64
   const sed = new Float64Array(n);
   for (let k = 0; k < count; k++) {
     const i = order[k];
-    sed[i] = u[i] * areaKm[i];
+    sed[i] = u[i] * areaKm[i] * (wet ? wet[i] : 1);
   }
   const S = new Float64Array(n);
   accumulate(r, sed, S);

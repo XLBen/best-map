@@ -4,6 +4,11 @@ import { planeLayers } from './climate';
 import { meshFor, seededEngine } from './testing/fixtures';
 import { zonalBelt } from './ocean';
 import { type PlaneOceanInputs, planeGrid, planeOcean, planeOceanCache, planeSea } from './ocean-plane';
+import { useRound85Terrain, withoutIce } from './testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 区域地图的洋流（第四十六轮，ocean-plane.ts）
 
@@ -193,7 +198,7 @@ describe('区域的洋流进了气候', () => {
     expect(z.world.derived.sstAnom.every((v) => v === 0)).toBe(true);
     expect(e.world.derived.tS.some((v, i) => v !== z.world.derived.tS[i])).toBe(true);
     // 强弱为 0：整个世界与第四十五轮（899d2fb，还没有区域的洋流）逐值相同
-    expect(digest(digestWorld(z.world))).toBe(R45_CURRENTS0);
+    expect(digest(withoutIce(digestWorld(z.world)))).toBe(R45_CURRENTS0);
   });
 
   it('分层缓存开着与关着逐值相同', () => {

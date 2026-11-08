@@ -6,6 +6,11 @@ import { packImportCommands } from '../packs/import';
 import { settingsAt } from '../presets';
 import { engineFor } from '../testing/fixtures';
 import { worldEra } from './era';
+import { useRound85Terrain } from '../../core/testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 第八十四轮的回归：向导里“一块大陆 · 一片海域”（约 5000 km 宽）的世界，时代的国家大小按大世界定（中世纪平均 150 万 km²），
 // 以前只有 2 个国家、一国最多占能住人的地方的 12%，七成的地方无主。现在至少约 9 国（够盖满），能住人的地方大半有主。

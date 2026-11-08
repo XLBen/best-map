@@ -576,6 +576,9 @@ export interface Derived {
   currentX: Float32Array;
   currentY: Float32Array;
   sstAnom: Float32Array;
+  // 冰盖（第八十六轮，见 glacial.ts 的 iceStrength）：每格“冰的纬度”超过冰盖南界多少度（0 是冰盖没到过），
+  // 按现在的纬度、冷暖笔刷、太阳算，气候这一层更新。冰川刻蚀、峡湾、小湖群读它；内容变了时换一个新数组（不就地改：海岸类型按数组对象记）
+  ice: Float64Array;
   // ---------- 第三批：只在用到时才有（从来没用过脚本的世界里没有这些键；用过又去掉了的为 undefined） ----------
   // 长在哪里的脚本的系数：n × P，P 是带这种脚本的生态个数（按生态的顺序，见 biome-scripts.ts 的 placementSlots）
   placeF?: Float32Array;
@@ -725,6 +728,7 @@ export function emptyDerived(n: number, speciesCount: number): Derived {
     currentX: f(),
     currentY: f(),
     sstAnom: f(),
+    ice: new Float64Array(n),
     terrainClassAuto: new Uint8Array(n),
     terrainClass: new Uint8Array(n),
     resourceAuto: new Uint8Array(n),
@@ -739,7 +743,7 @@ function defaultSmall(): SmallState {
     terrain: { gen: null, coastRoughness: 1 },
     featureNames: {},
     planet: planetSchema.parse({}),
-    // 第三十轮：新世界里没有生态（界面从资源包加进来，默认是库里“自然”的 15 种）
+    // 第三十轮：新世界里没有生态（界面从资源包加进来，默认是库里“自然”的 16 种）
     species: [],
     constraints: [],
     guides: [],

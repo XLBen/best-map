@@ -11,6 +11,11 @@ import { provinceCells } from './select';
 import { rasterizeWorld } from './subcell';
 import { NO_CURRENTS, snapshot, seededEngine } from './testing/fixtures';
 import type { World } from './world';
+import { useRound85Terrain } from './testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 第八轮：剪刀切出的边就是画的线。切线附近的像素按“在线的哪一边”分省，屏幕（着色器）与导出（provinces.bmp）同一条规则；
 // 合并后自动失效，重新划分时删掉，撤销、重放照旧；只在切开的那几块之间换像素，邻省不动。

@@ -7,6 +7,11 @@ import { hashString } from './names';
 import { isRiverCell, lassoBandKm, lassoStroke, planRiver, traceRiver } from './select';
 import { landStroke, previewLand } from './terrain';
 import type { World } from './world';
+import { useRound85Terrain } from './testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 第四轮：画河能汇入别的河、能改道、能选大小；画的河逐值不变（固定的哈希）
 

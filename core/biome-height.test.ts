@@ -78,7 +78,7 @@ describe('高度范围的含义', () => {
       if (sp.id.startsWith('alpine_')) expect(sp.height!.low).toBeGreaterThan(0);
       else expect(sp.height!.low, sp.id).toBe(0);
     }
-    expect(DEFAULT_SPECIES.length).toBe(15);
+    expect(DEFAULT_SPECIES.length).toBe(16);
     expect(DEFAULT_SPECIES.map((s) => s.id)).toEqual(expect.arrayContaining(['alpine_meadow', 'alpine_tundra']));
   });
 
@@ -196,10 +196,12 @@ describe('地图上', () => {
     expect(digestWorld(Engine.fromDoc(eng.toDoc(), w.mesh).world)).toEqual(digestWorld(w));
     eng.undo();
     expect(digestWorld(w)).toEqual(before);
+    // 第八十六轮：这个世界上 600 m 以上已经没有能长沼泽的平地（地形变了），改查 300 m 以上的沼泽比有上限时多
+    const highBefore = cellsOf(w, 'wetland').filter((i) => height(w, i) > 300).length;
     eng.exec({ op: 'update_species', id: 'wetland', patch: { height: null } });
     expect(w.small.species[indexOf(w, 'wetland')].height).toBeUndefined();
-    const high = cellsOf(w, 'wetland').filter((i) => height(w, i) > 300 + HEIGHT_MARGIN);
-    expect(high.length).toBeGreaterThan(0);
+    const high = cellsOf(w, 'wetland').filter((i) => height(w, i) > 300);
+    expect(high.length).toBeGreaterThan(highBefore);
   });
 
   it('“这一格为什么”说得出高度；涂在低地的高山草甸没涂成时原因里有海拔', () => {

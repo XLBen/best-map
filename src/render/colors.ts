@@ -11,6 +11,7 @@ import { ISLAND_CODE_MASK, allIslandTypes, islandTint } from '../../core/island-
 import { type World } from '../../core/world';
 import type { ViewMode } from '../state';
 import type { CellLayers } from './renderer';
+import { SEA_ICE, seaIceAt } from '../../core/sea-ice';
 import { type RGB, ramp, SEA, HYPSO, tempRgb, SEA_TEMP_LAND, SEA_TEMP_LAKE, TEMP, PRECIP, MOIST, DIVERGE, HABIT, DENSITY, densityLevel, UNIT, type ColorOptions, isLake, warmth, snowAmount, humanMode, terrainLikeMode, ISLAND_TINT, fragColors } from './color-ramps';
 import { humanFlat, countryBorderGroups, lithLayer, landCellLayer, provinceFlat, provinceGroups } from './colors-human';
 import { fillOther } from './ghost-buffer';
@@ -160,7 +161,12 @@ export function baseLayers(world: World, o: Pick<ColorOptions, 'mode' | 'season'
     const land = causes.land[i] === 1;
     if (!land) {
       // alpha：海水暖度，决定浅水的颜色。海水温度底图：海面按海水的冷暖（整个星球上已含洋流），与“气温”同一条色带
-      const c: RGB = seaTemp ? tempRgb(seasonal(d.tMean, d.tS, d.tW, i)) : terrainLike || o.mode === 'elevation' || o.mode === 'uplift' ? ramp(SEA, d.elevation[i]) : [40, 50, 70];
+      let c: RGB = seaTemp ? tempRgb(seasonal(d.tMean, d.tS, d.tW, i)) : terrainLike || o.mode === 'elevation' || o.mode === 'uplift' ? ramp(SEA, d.elevation[i]) : [40, 50, 70];
+      // 海冰（第八十六轮，core/sea-ice.ts）：地貌一类的底图上，冷海按季节盖一层浅色（着色器里浅水的颜色不再盖过它）
+      if (terrainLike) {
+        const k = seaIceAt(d, i, o.season) * SEA_ICE.ALPHA;
+        if (k > 0) c = [c[0] + (SEA_ICE.RGB[0] - c[0]) * k, c[1] + (SEA_ICE.RGB[1] - c[1]) * k, c[2] + (SEA_ICE.RGB[2] - c[2]) * k];
+      }
       put(smooth, i, c, warmth(world, i));
       continue;
     }

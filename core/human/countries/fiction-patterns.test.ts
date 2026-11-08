@@ -14,6 +14,11 @@ import { OUTPOSTS } from './patterns/outposts';
 import { FOREST, RACE_REALMS, ROLE_FOREST, ROLE_HOLD, ROLE_HORDE, type RaceRealmState, UPLAND, WASTE } from './patterns/race-realms';
 import { subjectText } from './records';
 import type { CountryRun } from './state';
+import { useRound85Terrain } from '../../../core/testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 第七十五轮：奇幻的种族王国（race-realms）、科幻的殖民据点（outposts）。几块大陆的地区（continents：1.2 万格，种子 1、地形种子 5），
 // 各时代用默认的文化组生成；生成时记下这一次的 CountryRun（加一步 peek）

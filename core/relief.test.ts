@@ -1,3 +1,4 @@
+import { glacialOn } from './glacial';
 import { describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
 import type { Command } from './commands';
@@ -56,7 +57,17 @@ for (const [label, settings] of SETTINGS) {
     both((e) => e.redo());
   });
 
+  // 第八十六轮：冰川按现在的冷暖、纬度、太阳（挖的小洼跟着变，见 lakes-coasts.test.ts），这里只看大格局：冰川刻蚀关掉
   it(`改气候永远不重算、不改高程：${label}`, () => {
+    const saved = glacialOn.on;
+    glacialOn.on = false;
+    try {
+      changeClimate();
+    } finally {
+      glacialOn.on = saved;
+    }
+  });
+  function changeClimate() {
     const e = seededEngine(settings, fresh(meshFor(settings)));
     e.exec({ op: 'set_worldgen', params: { seed: 7, type: 'continents' }, reset: true });
     const w = e.world;
@@ -79,7 +90,7 @@ for (const [label, settings] of SETTINGS) {
     }
     expect(elevationMemo.computed).toBe(c0);
     expect(Array.from(e.world.derived.elevation)).toEqual(Array.from(before));
-  });
+  }
 
   it(`重画一片不挪海平面：圈外的海陆、陆地高度不变：${label}`, () => {
     const e = seededEngine(settings, fresh(meshFor(settings)));

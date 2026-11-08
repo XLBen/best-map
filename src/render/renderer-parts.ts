@@ -113,8 +113,9 @@ export interface CellLayers {
   // 离边界远的格（第三十九轮，near.ts 的 nearLayer）：每格 RGBA 字节，r、g、b 是省份、国家、集团往外几步之内没有会与它连成线的格；省略、null 时不跳过
   near?: Uint8Array | null;
 }
-// 描格（第三十七轮）：离格心几格以内的像素才算 focusAt（描出的范围一块地区不过约 1.9 格，星球两极附近约 2.9 格，core/display-cell.test.ts 查）
-export const FOCUS_REACH = 3.2;
+// 描格（第三十七轮）：离格心几格以内的像素才算 focusAt（描出的范围一块地区不过约 1.9 格，星球两极附近约 2.9 格，core/display-cell.test.ts 查）。
+// 第八十六轮：测试的星球北极边上有了一个湖，湖面的像素离湖格约 3.4 格（两极附近按经纬度铺开的画面），3.2 → 3.7（测试留 0.25 格的余量）
+export const FOCUS_REACH = 3.7;
 
 // 河的图层（第十三轮，overlay.ts 的 riverLayer 画的）：一张预乘之前的 RGBA 画布，合成时只混进画成陆地的像素。
 // version 变了才重新上传；toUv：地图单位 → 这张图上的位置（0–1，v 向上），u = x·a + b，v = y·c + d

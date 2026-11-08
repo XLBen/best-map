@@ -5,6 +5,11 @@ import { pointIsLand, shownCoastValues } from './subcell';
 import { coastStyle } from './coast-style';
 import { continents, engineFor, snapshot } from './testing/fixtures';
 import type { World } from './world';
+import { useRound85Terrain } from './testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 第十二轮：河口画到画面上的岸线（与地形层画海岸线的同一个海岸场，湖也一样），出湖的河从湖岸画起；
 // 河画成一条连续的带子（宽度平滑、往下游不变窄，源头收尖，河口略张开）

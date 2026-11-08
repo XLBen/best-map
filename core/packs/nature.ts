@@ -1,7 +1,7 @@
 import { type BiomeGroup, type ConditionId, HEIGHT_MAX, type Rect, type Species, withCondition, withRect } from '../species';
 import { BIOME_ID as B } from './biome-ids';
 
-// 内置的 15 种生态（每个库的“自然”这个小包，见 builtin-tree.ts）。第三十轮以前新世界自带它们（world.ts 的 defaultSmall），
+// 内置的 16 种生态（第八十六轮加了红树林）（每个库的“自然”这个小包，见 builtin-tree.ts）。第三十轮以前新世界自带它们（world.ts 的 defaultSmall），
 // 现在和别的内容一样从资源包加进世界（新建时默认勾上“自然”）。只在主线程用：计算 Worker 只读世界里的生态。
 //
 // 写明“自然生成”（natural: true）：从资源包加进世界时没写的会关掉（packs.ts 的 finalize），普通的生态要照常长。
@@ -38,7 +38,15 @@ export const DEFAULT_SPECIES: Species[] = [
   make(B.alpineMeadow, '高山草甸', '#9cc08f', 'highlands', 3.5, { t0: -9, t1: -1, m0: 0.4, m1: 50 }, { habitability: 0.2, movement: 1.5, height: { low: 1000, high: TOP } }),
   make(B.alpineTundra, '高山苔原', '#b4aca8', 'arctic', 4, { t0: -17, t1: -6, m0: 0, m1: 50 }, { habitability: 0.04, movement: 2, group: 'tundra', height: { low: 1000, high: TOP } }),
   make(B.desert, '荒漠', '#efd8a8', 'desert', 1, { t0: -6, t1: 40, m0: 0, m1: 0.15 }, { habitability: 0.042, movement: 1.5, group: 'desert', height: { low: 0, high: TOP } }),
+  // 第八十六轮：红树林——热带（年均 20 °C 以上）、低平（12 m 以下、平地）、紧挨海（大陆度 0.06 以下才满）的海岸与河口，湿；
+  // 竞争力比沼泽强，在热带低平的海岸上占上风
+  mangrove(),
 ];
+
+function mangrove(): Species {
+  const sp = make(B.mangrove, '红树林', '#36603a', 'marsh', 7, { t0: 20, t1: 40, m0: 0.6, m1: 50 }, { habitability: 0.12, movement: 2.2, group: 'wetland', height: { low: 0, high: 12 } }, ['flat']);
+  return { ...sp, tolerances: [...sp.tolerances, { field: 'continentality', min: 0, optLow: 0, optHigh: 0.06, max: 0.14 }] };
+}
 
 // 内置生态里属于某一大类的 id（按上面的先后）。“森林类都算”这样的规则（奇幻的侵占、资源）用它，不再手写一串 id
 export function builtinBiomesIn(group: BiomeGroup): string[] {

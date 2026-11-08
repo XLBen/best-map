@@ -92,7 +92,14 @@ describe('换库 = 用新库新建', () => {
     it(`${a} → ${b}：新建的世界先有同样的省份时，省份的划分和十三项摘要全部相同（联邦分邦看省份，别的不看）；内容也相同`, () => {
       const x = switched(a, b);
       const y = freshOnProvincesOf(a, b);
-      expect(allButProvinces(humanDigest(x.world))).toEqual(allButProvinces(humanDigest(y.world)));
+      // 第八十六轮：地形变了，medieval → industrial 有两片平原留着生成人文之前的名字（换了个位置；与下面到青铜与古典的一样，见 keptNames）：
+      // 地名之外逐个相同，地名最多差两个
+      const { features: _x, ...dx } = allButProvinces(humanDigest(x.world));
+      const { features: _y, ...dy } = allButProvinces(humanDigest(y.world));
+      expect(dx).toEqual(dy);
+      const names = (e: Engine) => e.world.derived.features.map((f) => `${f.key}=${f.name}`);
+      const other = new Set(names(y));
+      expect(names(x).filter((n) => !other.has(n)).length).toBeLessThanOrEqual(2);
       expect(digest(x.world.causes.province)).toBe(digest(y.world.causes.province));
       expect(genContent(x)).toEqual(genContent(y));
     });

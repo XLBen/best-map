@@ -53,9 +53,10 @@ const cityIds = (w: World) => Object.keys(w.small.cities ?? {}).map(Number);
 // 第五十五轮重录：生态跟高度走
 // 第七十四轮重录：国家有意改了（中世纪的集权帝国、游牧汗国、民族主义），城市跟着国家、人口走
 // 第八十四轮重录（城市按人口、港口与海路，国家、人口也变了，见 docs/dev/history/第84轮.md）
+// 第八十六轮重录：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林），宜居度、人文往后都变了（见 docs/dev/history/第86轮.md）
 const RECORDED = {
-  region: { cities: 'f83067ae60dfbb05', roads: 'f0c06d2fe2fdf878', landmarks: '932dc873ef7f3243' },
-  planet: { cities: 'd80af75f9b7a2d58', roads: 'f41a81c03d7cd9ba', landmarks: 'ccf603cd42ccc697' },
+  region: { cities: 'f6cb298d30a88ee9', roads: '934e57a5cc7bb5d5', landmarks: 'e966dbd74a9ebc56' },
+  planet: { cities: '4d1e570fa21b8847', roads: '21ab6b1d40feff9f', landmarks: 'f69f42a5c71a866c' },
 };
 const genDigest = (w: World) => ({ cities: digest(w.small.cities), roads: digest(w.small.roads), landmarks: digest(w.small.landmarks) });
 

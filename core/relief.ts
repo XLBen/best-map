@@ -287,8 +287,11 @@ export interface ReliefOut {
 // 低起伏的隆起与盆地
 const BASE_H = 420;
 // 大陆倾斜：汇聚边的高度、随离汇聚交界的距离衰减的长度
+// 第八十六轮：衰减长度 0.2 → 0.35（倾斜伸进内陆更远，大河从汇聚边一路流到另一边；
+// 与山带集中到中间（terrain.ts 的 beltCore）一起：高地少了、中等高度的多了）
 const TILT_H = 800;
-const TILT_L = 0.2;
+// 测试退回第八十五轮时改成 0.2
+export const RELIEF_TUNING = { TILT_L: 0.35 };
 // 倾斜、穹隆、隆起从海岸往内陆抬起：大陆场 0.02 → RAMP_C
 const RAMP_C = 0.6;
 // 上盘的高原：高、分段的门槛（越低高原越多）、离交界多远开始变低
@@ -329,7 +332,7 @@ export function reliefAt(p: ReliefInput, o: ReliefOut) {
   // 带陡崖的穹隆：顶上平、边上陡
   const Tswell = p.swellH * (1 - smoothstep(0.72, 1, p.swellR));
   // 大陆倾斜：汇聚边高、被动边低
-  const Ttilt = p.plates ? TILT_H * Math.exp(-dC / TILT_L) : 0;
+  const Ttilt = p.plates ? TILT_H * Math.exp(-dC / RELIEF_TUNING.TILT_L) : 0;
   let Tp = 0;
   let trough = 0;
   if (p.plates && dC < 0.4) {

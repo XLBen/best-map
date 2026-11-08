@@ -74,9 +74,10 @@ const peopledCells = (w: World) => [...Array(w.mesh.n).keys()].filter((i) => w.c
 // 第五十五轮重录：生态跟高度走（宜居度变了）
 // 第七十七轮：human 只记组的 id、countryRules 只有种子，只重录两项 human（人口、群体一个没变）；核对过两边的世界只差这几样（见 docs/dev/history/第77轮.md）
 // 第八十四轮重录（资源进宜居度、宗教按发源地传播、首都一带的人在国家之后加，见 docs/dev/history/第84轮.md）
+// 第八十六轮重录：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林），宜居度、人文往后都变了（见 docs/dev/history/第86轮.md）
 const RECORDED = {
-  region: { popTotal: '9664810b7ec6b1a5', popGroup: '139ca8ea818887c5', popShare: 'b1edcaa1583fe97b', human: 'bc22dd5cf732b9e9' },
-  planet: { popTotal: '39c56dbc939363c0', popGroup: '1df5362c660d9dcb', popShare: 'c9ebbfa28a0bf978', human: 'e12d65773f9481bd' },
+  region: { popTotal: '9ae1a4a5675e73fe', popGroup: '44186d924381604e', popShare: 'e340a2ec1a5ded36', human: 'b596a35a910c840c' },
+  planet: { popTotal: '9a2e859d107acdc3', popGroup: '0310cb830cd7c8f9', popShare: 'b9620e0fb58af006', human: '1fb9d9971b1fd6db' },
 };
 const genDigest = (w: World) => ({ popTotal: digest(w.causes.popTotal!), popGroup: digest(w.causes.popGroup!), popShare: digest(w.causes.popShare!), human: digest(w.small.human!) });
 
@@ -401,7 +402,11 @@ describe('人口笔刷', () => {
     const w = eng.world;
     const cells = stroke(w, 400, 40);
     const culture0 = cells.map((i) => w.derived.popCulture![i]);
-    expect(eng.exec({ op: 'paint_pop', cells, mode: 'value', dimension: 'religion', value: 'tengri', amount: 1 })).toBe(`宗教改为“腾格里” · ${cells.length} 格`);
+    // 数的是改了的格（第八十六轮：地形变了，这一笔里有几格本来就信腾格里）
+    const said = eng.exec({ op: 'paint_pop', cells, mode: 'value', dimension: 'religion', value: 'tengri', amount: 1 }) as string;
+    const k = Number(/^宗教改为“腾格里” · (\d+) 格$/.exec(said)?.[1]);
+    expect(k).toBeGreaterThanOrEqual(cells.length * 0.8);
+    expect(k).toBeLessThanOrEqual(cells.length);
     cells.forEach((i, k) => {
       expect(w.derived.popCulture![i]).toBe(culture0[k]);
       for (const x of readComp(w.causes, i)) if (x.code) expect(w.small.popGroups![x.code].values.religion).toBe('tengri');
@@ -620,7 +625,10 @@ describe('改地形以后的修补', () => {
       for (let i = 0; i < p.length; i++) if (p[i] > 0) m.set(country?.[i] ?? -1, (m.get(country?.[i] ?? -1) ?? 0) + p[i]);
       return m;
     };
-    const t0 = totals(pop0);
+    // 第八十六轮：涂冷让冰盖往外长，冰川挖出的小洼可能蓄成湖：变成水面的格没有人了（与画出湖时一样，见 populationFix），
+    // 这些人不算进“总数不变”
+    const wet0 = pop0.map((v, i) => (w.derived.lake[i] === 1 ? v : 0));
+    const t0 = totals(pop0.map((v, i) => v - wet0[i]));
     for (const [c, v] of totals(pop1)) expect(Math.abs(v - t0.get(c)!) / t0.get(c)!).toBeLessThan(1e-5);
     // 远处不动
     for (const i of moved) expect(near(i, 8)).toBe(true);

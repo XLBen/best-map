@@ -3,6 +3,7 @@ import type { RGB, HumanFlatMode } from './color-ramps';
 import { type World, provinceDisplayColor, provinceColor } from '../../core/world';
 import { classColors, resourceColors, humanColors, countryMapColors, blocMapColors, worldDimensions, valueLayer, blocBorderGroups, blocCells, worldCultures, worldCultureGroups, worldPopValues } from '../../core/human';
 import { codeFlags, ringCodes, ISLAND_CODE_MASK, landPixelCells, provinceLand } from '../../core/island-types';
+import { reefStrength } from '../../core/reefs';
 import { type SeamLayers, type ProvinceSeam, seamsAfterCut, seamLayers } from '../../core/seams';
 import type { ProvinceKind } from '../../core/provinces';
 import type { ViewMode } from '../state';
@@ -99,7 +100,8 @@ export function countryBorderGroups(world: World, blocs = false): Float32Array {
 //   g 沙洲（颜色选“沙洲”的岛，如低平岛：低处是沙与沼泽）
 //   b 白沙（颜色选“白沙”的岛，如珊瑚岛、小礁：白沙、岸边白浪；潟湖的海格也是，海底青绿）
 //   a 格里的潟湖：环礁形状、只有一格大（挨着的陆格不到两个）的岛，格心画一圈潟湖
-// 没有放岛的地方（包括涂了很硬、很软的岩石的地方）全是 0，画面不变
+// 没有放岛的地方（包括涂了很硬、很软的岩石的地方）全是 0，画面不变。
+// 第八十六轮：暖、浅、清的海自己长出的珊瑚礁（core/reefs.ts）也写在海格的 b（强度 × 255），与放的珊瑚岛同一套画法
 export function lithLayer(world: World): Uint8Array {
   const { mesh, causes, derived: d, small } = world;
   const n = mesh.n;
@@ -107,6 +109,8 @@ export function lithLayer(world: World): Uint8Array {
   const coral = codeFlags(small, (t) => t.color === 'coral');
   const marsh = codeFlags(small, (t) => t.color === 'marsh');
   const ring = ringCodes(small);
+  const reef = reefStrength(world);
+  for (let i = 0; i < n; i++) if (reef[i] > 0) out[i * 4 + 2] = Math.round(255 * reef[i]);
   for (let i = 0; i < n; i++) {
     const code = causes.islandType[i] & ISLAND_CODE_MASK;
     if (!code) continue;

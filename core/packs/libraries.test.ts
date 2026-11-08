@@ -26,6 +26,7 @@ const LIB = builtinPacks();
 const top = (id: string): PackNode => LIB.find((p) => p.id === id)!;
 const HISTORY = ['antiquity', 'medieval', 'industrial', 'modern'];
 const EU4 = CULTURE_REGIONS.flatMap((r) => r.groups);
+// 第八十六轮：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林、推导多了冰盖），用这一轮的代码重录全部（见 docs/dev/history/第86轮.md）
 const record = !!process.env.LIB_RECORD;
 const out: Record<string, unknown> = record ? {} : saved;
 

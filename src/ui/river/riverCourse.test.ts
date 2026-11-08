@@ -30,6 +30,11 @@ import {
   unwaterTool,
 } from './index';
 import type { Pointer } from '../tools';
+import { useRound85Terrain } from '../../../core/testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 画河的手势（第十一轮）：从河上起笔（离河的线 14 个屏幕像素以内，不随缩放变）是改这条河，从别处起笔是画新的河；
 // 悬停与按下同一个判定；改一条河还是同一条河（自然的河固定下来、名字照旧）；不再先问一句，松手就改；

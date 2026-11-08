@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { digestWorld } from '../../tools/hash';
 import type { Command } from '../../core/commands';
 import { lakeArea } from '../../core/elevation';
+import { reliefFields } from '../../core/terrain';
 import { brushCells } from '../../core/select';
 import { type IslandSpec, chainIslands, islandStamp, lakeIslandStamp, landStroke, previewTerrain, reliefStroke } from '../../core/terrain';
 import { continents, engineFor } from '../../core/testing/fixtures';
@@ -78,8 +79,13 @@ describe('堆山 / 压低的高度估计与实际同一量级', () => {
       const cellKm = w0.mesh.spacing * w0.kmPerUnit;
       setOptions({ brushKm: rCells * cellKm });
       const ratios: number[] = [];
-      for (let i = 0; i < w0.mesh.n && ratios.length < 5; i += 331) {
+      // 第八十六轮：山带集中到中间、大陆倾斜伸得更远（内陆多是基准面托着的），每 331 格取一个只取得到 4 处、
+      // 多半落在基准面托着的台地上（估计不知道基准面，压低 1 格的中位数 0.20）：改成每 173 格，
+      // 不取基准面托着的格（基准面到了地面的八成以上：压不下去，见 docs/dev/limits.md）
+      const rel = reliefFields(w0)!;
+      for (let i = 0; i < w0.mesh.n && ratios.length < 5; i += 173) {
         if (!w0.causes.land[i] || w0.derived.elevation[i] < 300 || w0.causes.uplift[i] < 0.03) continue;
+        if (rel.T[i] >= 0.8 * w0.derived.elevation[i]) continue;
         const eng = base.clone();
         const w = eng.world;
         // 与工具一样只涂陆地

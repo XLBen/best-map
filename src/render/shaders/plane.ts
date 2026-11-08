@@ -227,7 +227,10 @@ ${styleMain(STYLE_N2)}  bool land = s > 0.0;
     // 浅水：暖海偏青绿（alpha = 海水暖度），冷海偏灰绿
     float depth = -hh;
     vec3 shallow = mix(vec3(0.30, 0.50, 0.56), vec3(0.24, 0.62, 0.66), seaC.a);
-    col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * (uSeaData == 1 ? 0.0 : 0.7));
+    // 海冰（第八十六轮，core/sea-ice.ts）：格的颜色里盖了浅色的冰（最暗的通道很亮，海的色带最亮也只有 0.25）时浅水不盖过它；
+    // 没有冰的海 iceK 正好是 0，与以前逐位相同
+    float iceK = smoothstep(0.3, 0.75, min(seaC.r, min(seaC.g, seaC.b)));
+    col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * (uSeaData == 1 ? 0.0 : 0.7) * (1.0 - iceK));
     ${LITH_SEA_GLSL}
     ${STYLE_SEA_GLSL}
     // 海底的坡：按水深的坡度（每格一份，在三角形内插值），比陆上缓得多（合成里只轻轻晕渲）

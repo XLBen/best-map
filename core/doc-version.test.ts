@@ -19,7 +19,7 @@ describe('文档版本', () => {
       for (const c of cmds) eng.exec(c);
       const doc = eng.toDoc();
       expect(doc.version).toBe(DOC_VERSION);
-      expect(DOC_VERSION).toBe(20);
+      expect(DOC_VERSION).toBe(21);
       const again = Engine.fromDoc(JSON.parse(JSON.stringify(doc)) as WorldDoc, meshFor(settings));
       expect(digestWorld(again.world)).toEqual(digestWorld(eng.world));
     }
@@ -38,14 +38,14 @@ describe('文档版本', () => {
         { op: 'batch', label: '山挡风：旧存档也打开', commands: [{ op: 'set_planet', patch: { terrainWind: 1 } }] },
       ],
     } as unknown as WorldDoc;
-    for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]) {
+    for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]) {
       const doc = { ...v4, version } as unknown as WorldDoc;
       expect(() => Engine.fromDoc(doc, mesh)).toThrow(OLD_DOC_ERROR);
       expect(isCurrentDoc(doc)).toBe(false);
     }
     expect(OLD_DOC_ERROR).toBe('旧版本的世界文件打不开');
     expect(() => Engine.fromDoc({ ...v4, format: 'x' } as unknown as WorldDoc, mesh)).toThrow('不是 map2 世界文件');
-    expect(isCurrentDoc({ ...v4, version: 20 })).toBe(true);
+    expect(isCurrentDoc({ ...v4, version: 21 })).toBe(true);
     expect(isCurrentDoc(null)).toBe(false);
   });
 

@@ -7,6 +7,11 @@ import { encodePath, snapOnto, traceRivers } from './rivers';
 import { branchedOff, guideFlow, isRiverCell, planCourse, riverStem } from './select';
 import { continents } from './testing/fixtures';
 import type { World } from './world';
+import { useRound85Terrain } from './testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 第十三轮：一条河分一股出去（分流、三角洲），一条河加一个源头（同一个名字）
 

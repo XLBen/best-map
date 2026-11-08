@@ -145,7 +145,9 @@ describe('几种岛的岩性', () => {
     for (let i = 0; i < w.mesh.n && land.length < 300; i++) if (w.causes.land[i]) land.push(i);
     eng.exec({ op: 'paint', field: 'erodDelta', cells: land.slice(0, 150), value: -0.6, mode: 'set' });
     eng.exec({ op: 'paint', field: 'erodDelta', cells: land.slice(150), value: 3.5, mode: 'set' });
-    expect(lithLayer(eng.world).every((v) => v === 0)).toBe(true);
+    // 第八十六轮：海里自己长的珊瑚礁写在海格的白沙上（core/reefs.ts）：只看陆格
+    const lith = lithLayer(eng.world);
+    for (let i = 0; i < w.mesh.n; i++) if (w.causes.land[i]) expect(lith.subarray(4 * i, 4 * i + 4).every((v) => v === 0)).toBe(true);
   });
 
   it('最小的岛一格，各种岛一样（碎岛更小：0.15 格）', () => {

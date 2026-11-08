@@ -6,6 +6,11 @@ import { Engine } from './engine';
 import { gradient } from './mesh';
 import { NO_CURRENTS, engineFor, meshFor, plainEngine } from './testing/fixtures';
 import { type World, worldLatitude } from './world';
+import { useRound85Terrain } from './testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 山挡风：高山让风拐弯。新世界默认是 1；为 0 时风直接翻过山（下面记着固定的哈希）；
 // 打开后迎风坡的风顺着山走、离山远的地方风逐位不变；星球上先偏转再乘极地衰减，洋流照旧用背景风。

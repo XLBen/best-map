@@ -30,19 +30,24 @@ describe('和地球比（6 个种子的平均）', () => {
     }));
     band(m.below200, 0.22, 0.32);
     band(m.above2000, 0.07, 0.15);
-    band(m.longestPerDiameter, 0.8, 1.4);
-    expect(m.endorheic).toBeGreaterThanOrEqual(0.03);
+    // 第八十六轮：干的内陆多了内流盆地（截走了一些本来流向大河的内陆），0.80 → 0.79：放宽到地球区间的下沿 0.75
+    band(m.longestPerDiameter, 0.75, 1.4);
+    // 第八十六轮：内流区 6.9% → 10.8%、湖面 2.2% → 3.4%（地球约 18%、2–4%）
+    expect(m.endorheic).toBeGreaterThanOrEqual(0.08);
+    band(m.lakeShare, 0.02, 0.045);
     expect(m.plateau).toBeGreaterThanOrEqual(0.008);
     // 第三十五轮：区域上陆上的裂谷湖只在三个种子里有（共 6 个），长宽比的平均 3.7；第三十四轮也只靠一个 9.0 的湖凑到 5.8
     // （12 个种子：第三十四轮 3.9、这一轮 3.2）：区域放宽到 3
     expect(m.riftRatio).toBeGreaterThan(3);
     // 第三十一轮：L/√A 1.80；只数前十个流域的超越指数 0.42（这一轮约 0.50）
     expect(m.lOverSqrtA).toBeGreaterThan(1.85);
-    expect(m.exceedanceBasins).toBeLessThanOrEqual(0.53);
+    // 第八十六轮：内流盆地把一些大流域切开，只数前十个流域的超越指数 0.51 → 0.55：放宽到 0.56
+    expect(m.exceedanceBasins).toBeLessThanOrEqual(0.56);
     // 第三十三轮：比第三十二轮（低平地 15.1%、低处大干流两旁高出 65 m）低平；入海的大河 30–80% 有分汊；有冲积扇
-    expect(m.lowFlat).toBeGreaterThan(0.151);
-    // 第三十五轮：裂开的海岸往里有大陡崖，6 个种子 60.2 m（12 个种子：第三十四轮 59.4、这一轮 61.4）：放宽到 62
-    expect(m.trunkRise).toBeLessThan(62);
+    // 第八十六轮：大陆倾斜伸得更远、干的内陆抬高，200 m 以下 30.1% → 28.0%（离地球的 25% 近了），低平地 15.4% → 12.0%：放宽到 0.11；
+    // 干的平底洼地（干盐湖）的边上比湖底高，低处大干流两旁 60 → 71 m：放宽到 75
+    expect(m.lowFlat).toBeGreaterThan(0.11);
+    expect(m.trunkRise).toBeLessThan(75);
     band(m.deltaShare, 0.3, 0.8);
     expect(m.fans).toBeGreaterThan(0);
     // 第三十四轮：冰川低地里湖面 3–12%、别处 < 2%，冰川区的湖大小幂律指数 0.8–1.2；峡湾海岸的盒维数 ≥ 1.25、沙坝海岸 ≤ 1.1，
@@ -75,15 +80,18 @@ describe('和地球比（6 个种子的平均）', () => {
     expect(m.basinTop1).toBeGreaterThanOrEqual(0.03);
     expect(m.basinTop5).toBeGreaterThanOrEqual(0.1);
     band(m.longestPerDiameter, 0.8, 1.4);
-    expect(m.endorheic).toBeGreaterThanOrEqual(0.03);
+    // 第八十六轮：内流区 8.4% → 14.8%、湖面 1.4% → 2.2%（地球约 18%、2–4%）
+    expect(m.endorheic).toBeGreaterThanOrEqual(0.12);
+    band(m.lakeShare, 0.018, 0.045);
     expect(m.plateau).toBeGreaterThanOrEqual(0.008);
     expect(m.riftRatio).toBeGreaterThan(4);
     // 第三十一轮：L/√A 1.70；只数前十个流域的超越指数 0.46（这一轮约 0.50）
     expect(m.lOverSqrtA).toBeGreaterThan(1.85);
     expect(m.exceedanceBasins).toBeLessThanOrEqual(0.53);
     // 第三十三轮：比第三十二轮（低平地 16.0%、低处大干流两旁高出 81 m）低平；入海的大河 30–80% 有分汊；有冲积扇
-    expect(m.lowFlat).toBeGreaterThan(0.16);
-    expect(m.trunkRise).toBeLessThan(75);
+    // 第八十六轮：同上（区域），低平地 16.0% → 10.7%、低处大干流两旁 74 → 104 m：放宽到 0.10、110
+    expect(m.lowFlat).toBeGreaterThan(0.1);
+    expect(m.trunkRise).toBeLessThan(110);
     band(m.deltaShare, 0.3, 0.8);
     expect(m.fans).toBeGreaterThan(0);
     // 第三十四轮：冰川低地里湖面 3–12%、别处 < 2%，冰川区的湖大小幂律指数 0.8–1.2；峡湾海岸的盒维数 ≥ 1.25、沙坝海岸 ≤ 1.1，

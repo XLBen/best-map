@@ -9,6 +9,11 @@ import { courseLine, courseStep, decodePath, encodePath, pathSamples, smoothCour
 import { type CoursePlan, continueCourse, endCourseAt, extendCourse, guideEnd, guideFlow, guidePoints, guideWarnings, isRiverCell, planCourse, riverStem, spliceCourse, stemPath } from './select';
 import { continents, engineFor, snapshot } from './testing/fixtures';
 import { type Guide, guideSchema, type World } from './world';
+import { useRound85Terrain } from './testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 第八轮第二批：自定义走向的河。河完全照着画的线走，只挖河床（周围的地形、气候、山名都不变），
 // 可以在终点消失、截走别的河、改一段、固定自然的河

@@ -57,7 +57,19 @@ export function meshFor(raw: Partial<Settings>): Mesh {
 
 // 新世界默认加的内容（基础、自然、中文地名）：一条 batch
 let seedCmds: Command[] | null = null;
-export const seedCommands = (): Command[] => (seedCmds ??= newWorldContentCommands());
+// 第八十六轮：退回第八十五轮的地形时（testing/round85.ts）新世界也不加那时没有的红树林
+export const fixtureFlags = { noMangrove: false };
+export const seedCommands = (): Command[] => {
+  seedCmds ??= newWorldContentCommands();
+  return fixtureFlags.noMangrove ? withoutMangrove(seedCmds) : seedCmds;
+};
+function withoutMangrove(cmds: readonly Command[]): Command[] {
+  const one = (c: Command): Command[] => {
+    if (c.op === 'batch') return [{ ...c, commands: c.commands.flatMap(one) }];
+    return c.op === 'add_species' && c.species.id === 'mangrove' ? [] : [c];
+  };
+  return cmds.flatMap(one);
+}
 
 // 没有现实水系的世界（第五十七轮，core/water-real.test.ts 拿它和带着的对照；要自己定河湖类型的测试用它）
 export function withoutWater(cmds: readonly Command[]): Command[] {
@@ -84,7 +96,8 @@ export function withoutHeights(cmds: readonly Command[]): Command[] {
       return [{ ...c, item: { ...c.item, rules: item.rules.map((r) => (r.biomes ? { ...r, biomes: r.biomes.filter((b) => b !== 'alpine_tundra') } : r)) } }];
     }
     if (c.op !== 'add_species') return [c];
-    if (c.species.id.startsWith('alpine_')) return [];
+    // 第八十六轮的红树林那时也没有
+    if (c.species.id.startsWith('alpine_') || c.species.id === 'mangrove') return [];
     const { height: _, ...species } = c.species;
     return [{ ...c, species }];
   };

@@ -90,9 +90,10 @@ function countryDigest(w: World): Record<string, string> {
 // 第七十五轮重录 countries：档案多了格局里的角色（role：神圣帝国的成员、集权帝国……）；领土 country 没变，去掉 role 时与第七十四轮的值相同
 // 第八十四轮重录（人口在国家之前、首都挪到人口的重心、国界顺着山河，见 docs/dev/history/第84轮.md）
 // 第八十五轮只重录 countries：档案去掉了 ruler（统治者是 small.archive 里的一份名单）；领土 country 没变，去掉 ruler 时与第八十四轮的值相同（见 docs/dev/history/第85轮.md）
+// 第八十六轮重录：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林），宜居度、人文往后都变了（见 docs/dev/history/第86轮.md）
 const RECORDED = {
-  region: { country: '228da22d29dff23c', countries: 'f4e929c14d88ee7a' },
-  planet: { country: 'f68b1bb9dc7e0f12', countries: '8cc2da071147f8d3' },
+  region: { country: '2e3709f240e390ef', countries: 'ed83d7fa29c15153' },
+  planet: { country: '70fb9b436f4f710d', countries: '39debc3b015ab868' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;
@@ -426,12 +427,14 @@ describe('改国家', () => {
     const cb = countryCells(w, b.id).slice(0, 10);
     const sea = [...Array(w.mesh.n).keys()].filter((i) => !w.causes.land[i]).slice(0, 3);
     const before = countryDigest(w);
-    expect(eng.exec({ op: 'paint_country', cells: [...cb, ...sea], country: a.id })).toBe(`领土“${a.name}” · 10 格`);
+    // 第八十六轮：地形变了，这个世界的第二个国家只有 7 格
+    expect(cb.length).toBeGreaterThanOrEqual(5);
+    expect(eng.exec({ op: 'paint_country', cells: [...cb, ...sea], country: a.id })).toBe(`领土“${a.name}” · ${cb.length} 格`);
     for (const i of cb) expect(w.causes.country![i]).toBe(a.id);
     for (const i of sea) expect(w.causes.country![i]).toBe(-1);
     const code = countryList(w.small).findIndex((m) => m.id === a.id) + 1;
     for (const i of cb) expect(w.derived.country![i]).toBe(code);
-    expect(eng.exec({ op: 'paint_country', cells: cb, country: null })).toBe('无主地 · 10 格');
+    expect(eng.exec({ op: 'paint_country', cells: cb, country: null })).toBe(`无主地 · ${cb.length} 格`);
     for (const i of cb) expect(w.derived.country![i]).toBe(0);
     eng.undo();
     eng.undo();

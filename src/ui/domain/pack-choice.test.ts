@@ -123,8 +123,8 @@ describe('向导走得通（六个库）', () => {
       expect(small.species.every((sp) => !sp.id.startsWith('fantasy'))).toBe(true);
       const fantasy = id === 'fantasy';
       const fromNature = small.species.filter((sp) => small.origin!.biome[sp.id]?.join('/') === `${id}/nature`).length;
-      expect(fromNature).toBe(15);
-      expect(small.species.length).toBe(fantasy ? 20 : 15);
+      expect(fromNature).toBe(16);
+      expect(small.species.length).toBe(fantasy ? 21 : 16);
       expect((small.riverTypes ?? []).filter((t) => small.origin!.riverType[t.id]?.join('/') === `${id}/water`).length).toBe(7);
       expect((small.lakeTypes ?? []).filter((t) => small.origin!.lakeType[t.id]?.join('/') === `${id}/water`).length).toBe(7);
       expect((small.riverTypes ?? []).length).toBe(fantasy ? 17 : 7);

@@ -412,6 +412,15 @@ function seaLevelFor(world: World, cache: BaseCache, landFraction: number, rough
   return Math.max(seaLevel, -120);
 }
 
+// 山带的抬升集中到中间（第八十六轮）：造山带的抬升 m 换成 m²(1 + BELT_M0) / (m + BELT_M0)：m = 1 不变，
+// 山带两侧的缓坡（m 约 0.1–0.4）低一半左右，高地集中在山带的中间，不再是一大片高的山前。只换抬升，地壳高度（陆海）不变
+export const BELT = { M0: 0.4 };
+// 测试退回第八十五轮时 BELT.M0 = 0：原样返回 m
+export function beltCore(m: number): number {
+  if (BELT.M0 === 0) return m;
+  return m <= 0 ? 0 : (m * m * (1 + BELT.M0)) / (m + BELT.M0);
+}
+
 // 按参数组合基础的 landness 与抬升（写进 outL / outU，返回海平面）。生成世界与“调整”的预览共用
 function composeBase(world: World, cache: BaseCache, p: ComposeParams, outL: Float32Array, outU: Float32Array, outT?: Float32Array): number {
   const comp = cache.components!;
@@ -424,7 +433,7 @@ function composeBase(world: World, cache: BaseCache, p: ComposeParams, outL: Flo
   const mountains = p.mountains;
   for (let i = 0; i < world.mesh.n; i++) {
     outL[i] = comp.b0[i] - seaLevel + mountains * comp.mountB[i] + coneB[i];
-    outU[i] = clamp(mountains * (0.95 * comp.mountU[i] + comp.hillU[i]) + coneU[i], 0, 1.6);
+    outU[i] = clamp(mountains * (0.95 * beltCore(comp.mountU[i]) + comp.hillU[i]) + coneU[i], 0, 1.6);
   }
   // 基准面：“山多高”只缩放高原
   if (outT) for (let i = 0; i < world.mesh.n; i++) outT[i] = comp.T[i] + mountains * comp.Tp[i];

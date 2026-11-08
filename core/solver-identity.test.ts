@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { useRound85Terrain, withoutIce } from './testing/round85';
 import { digest, digestWorld } from '../tools/hash';
 import type { SolveResult } from './constraints';
 import { Engine } from './engine';
@@ -20,6 +21,9 @@ import { plainEngine } from './testing/fixtures';
 // 核对过：每一步的 digestWorld 除了 small 以外与第二十九轮的代码逐值相同，别的各项（修正场、份额、计划……）没有变
 
 // 第五十五轮：内置生态有了高度范围、多了两种（求解的结果跟着变）。这里比的是求解和以前的代码逐值相同，所以用那以前的生态（plainEngine），RECORDED 一个没动
+// 第八十六轮：生成的地形有意变了。这里比的是求解，地形退回第八十五轮（几个测试用的开关，见 core/glacial-legacy.ts），
+// 红树林不加（plainEngine 去掉了），RECORDED 一个没动
+useRound85Terrain();
 function run(kind: 'region' | 'planet'): Record<string, Record<string, string>> {
   const eng =
     kind === 'planet'
@@ -44,7 +48,7 @@ function run(kind: 'region' | 'planet'): Record<string, Record<string, string>> 
     const d = eng.world.derived;
     const { plans } = (eng as unknown as { solve: SolveResult }).solve;
     out[label] = {
-      world: digest(digestWorld(eng.world)),
+      world: digest(withoutIce(digestWorld(eng.world))),
       corrT: digest(d.corrT),
       corrP: digest(d.corrP),
       corrF: digest(Object.entries(d.corrF).map(([k, v]) => [k, digest(v)])),
@@ -144,7 +148,7 @@ function run(kind: 'region' | 'planet'): Record<string, Record<string, string>> 
   snap('undo');
   // 重放存档：逐条命令重算
   const re = Engine.fromDoc(eng.toDoc(), w.mesh);
-  out.replay = { world: digest(digestWorld(re.world)) };
+  out.replay = { world: digest(withoutIce(digestWorld(re.world))) };
   return out;
 }
 

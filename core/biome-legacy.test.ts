@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { useRound85Terrain, withoutIce } from './testing/round85';
 import { extendedHashes, referenceHashes } from '../tools/hash';
 import saved from './biome-legacy-digests.json';
 import type { Command } from './commands';
@@ -27,6 +28,9 @@ import { type InvadeTable, invadeBoost, suitability, vegShares } from './vegetat
 // 第八十四轮：人文有意改了（人口在国家之前、首都、国界顺着山河、资源、港口与海路、宗教的发源地），重录 r29 的 medieval、modern、fantasy 与 libraries.medieval 里人文的几项
 // （人口、群体、human、国家、集团、城市、道路、地标、省名、地名）；宜居度、地形类别、资源、content、origin、golden、golden-full 都没变
 // 第八十五轮：国家的档案去掉了 ruler（统治者在 small.archive），只重录 r29 的 medieval、modern、fantasy 与 libraries.medieval 的 countries；别的一项没变
+// 第八十六轮：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解）。这里查的是生态，地形退回第八十五轮
+// （core/testing/round85.ts），红树林那时没有（withoutHeights 一起去掉），推导里多的冰盖（derived.ice）比的时候去掉：文件不重录
+useRound85Terrain();
 describe('没写高度范围的生态和第五十四轮逐值相同', () => {
   const plain = () => withoutHeights(newWorldContentCommands());
 
@@ -35,11 +39,11 @@ describe('没写高度范围的生态和第五十四轮逐值相同', () => {
   });
 
   it('整个世界，加长的操作（golden-full）：一块地区', () => {
-    expect(extendedHashes('region', plain())).toEqual(saved.goldenFull.region);
+    expect(withoutIce(extendedHashes('region', plain()))).toEqual(saved.goldenFull.region);
   });
 
   it('整个世界，加长的操作（golden-full）：整个星球', () => {
-    expect(extendedHashes('planet', plain())).toEqual(saved.goldenFull.planet);
+    expect(withoutIce(extendedHashes('planet', plain()))).toEqual(saved.goldenFull.planet);
   });
 
   // era-packs.test.ts 里同样的世界

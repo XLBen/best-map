@@ -25,6 +25,11 @@ import { applyPackCommands } from './packs';
 import { type CoursePlan, isRiverCell, planCourse, riverStem } from './select';
 import { continents, FANTASY_PACK } from './testing/fixtures';
 import type { Guide, World } from './world';
+import { useRound85Terrain } from './testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 第十一轮：在原来的河上直接改。每种改法之后还是同一条河（同一个 id、名字、大小、类型），河道数不变，
 // 改动以外的折线逐点不变；自然的河改一次后固定成一条画的河（名字照旧，支流照旧汇入）；

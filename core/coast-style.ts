@@ -1,5 +1,5 @@
 import type { BaseComponents } from './generate';
-import { creationLat, glacialField, glacialKey } from './glacial';
+import { creationLat, glacialField, glacialKey, sameIce } from './glacial';
 import type { Mesh } from './mesh';
 import { type FjordLayer, type FjordNet, FJ, buildFjordNet, fjordLayer } from './fjords';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed } from './rng';
@@ -7,8 +7,9 @@ import { baseComponentsOf } from './terrain';
 import type { World } from './world';
 
 // ---------- 海岸类型（第三十四轮） ----------
-// 每格的几种海岸的权重（0–1），格子层级、只按生成器的分量与新建时的纬度定（不看陆海、陆地程度、改过的抬升）：
-// 画陆地、放岛时幽灵海岸照旧准确（权重不变），改气候、堆山都不改它——海岸的样子是新建时定下的。
+// 每格的几种海岸的权重（0–1），格子层级、只按生成器的分量、新建时的纬度与冰盖的强度定（不看陆海、陆地程度、改过的抬升）：
+// 画陆地、放岛时幽灵海岸照旧准确（权重不变），堆山不改它。第八十六轮：冰盖的强度按现在的纬度、冷暖笔刷、太阳
+// （derived.ice，见 core/glacial.ts），挪纬度、涂冷暖会让峡湾、小湖群出现或消失（只重建碰到的谷网的块）。
 //   · 峡湾：冰盖到过（core/glacial.ts 的强度）、近处有高山（生成器造山带与丘陵的抬升，自己与一圈邻格取最大）。
 //     画法（第三十六轮，core/fjords.ts）：这一带撒点连成谷网，按陆海淹掉连着海的一段，画成一条条带子（着色器、core/display.ts、导出同一个算式）；
 //     海里离岸不远的地方冒出一片片岛礁；
@@ -104,11 +105,17 @@ function segNoise(world: World): SegNoise {
 interface Entry {
   key: string;
   comp: BaseComponents;
+  // 冰盖的强度（第八十六轮：按现在的冷暖，derived.ice）：ice 是认的对象，iceAt 是那时的内容
+  ice: Float64Array;
+  iceAt: Float64Array;
   style: CoastStyle;
 }
 const cache = new WeakMap<Mesh, Entry[]>();
 // 测试用：关掉海岸类型（第三十四轮以前的画法）
 export const coastStyleOn = { on: true };
+
+// 冰盖的强度（第八十六轮）：推导里的那一份（新建的世界还没算时全是 0）
+const iceOf = (world: World): Float64Array => world.derived.ice;
 
 export function coastStyle(world: World): CoastStyle | null {
   if (!coastStyleOn.on) return null;
@@ -116,18 +123,19 @@ export function coastStyle(world: World): CoastStyle | null {
   if (!comp) return null;
   const { mesh } = world;
   const key = glacialKey(world);
+  const ice = iceOf(world);
   const list = cache.get(mesh) ?? [];
-  const hit = list.find((e) => e.comp === comp && e.key === key);
+  const hit = list.find((e) => e.comp === comp && e.key === key && e.ice === ice);
   if (hit) return hit.style;
-  // 撤销、重做回到前几步时分量常是新的对象、内容相同：三样输入逐值相同就照用那一份（第三十六轮（续）：不重建谷网、不重算峡湾纹理）
-  const same = list.find((e) => e.key === key && sameInputs(e.comp, comp));
+  // 撤销、重做回到前几步时分量常是新的对象、内容相同：三样输入与冰盖逐值相同就照用那一份（第三十六轮（续）：不重建谷网、不重算峡湾纹理）
+  const same = list.find((e) => e.key === key && sameInputs(e.comp, comp) && sameIce(e.iceAt, ice));
   if (same) {
-    cache.set(mesh, [{ key, comp, style: same.style }, ...list.filter((e) => e !== same)].slice(0, 3));
+    cache.set(mesh, [{ key, comp, ice, iceAt: same.iceAt, style: same.style }, ...list.filter((e) => e !== same)].slice(0, 3));
     return same.style;
   }
   const prev = list.find((e) => e.key === key);
-  const style = prev ? updateStyle(world, comp, prev.comp, prev.style) : computeStyle(world, comp, null);
-  cache.set(mesh, [{ key, comp, style }, ...list.filter((e) => e !== hit)].slice(0, 3));
+  const style = prev ? updateStyle(world, comp, prev.comp, prev.style, prev.iceAt) : computeStyle(world, comp, null);
+  cache.set(mesh, [{ key, comp, ice, iceAt: ice.slice(), style }, ...list.filter((e) => e !== hit)].slice(0, 3));
   return style;
 }
 
@@ -148,7 +156,8 @@ export function coastStyleCached(world: World): boolean {
   const comp = baseComponentsOf(world);
   if (!comp) return true;
   const key = glacialKey(world);
-  const hit = (cache.get(world.mesh) ?? []).find((e) => e.comp === comp && e.key === key);
+  const ice = iceOf(world);
+  const hit = (cache.get(world.mesh) ?? []).find((e) => e.comp === comp && e.key === key && e.ice === ice);
   return !!hit && (!hit.style.net || !!wetCache.get(hit.style.net.tiles)?.length);
 }
 
@@ -174,15 +183,16 @@ function packStyle(st: CoastStyle, n: number): void {
   }
 }
 
-// 分量换了：三样输入（造山带、丘陵的抬升，地壳高度）逐格比，变了的格与两圈邻格重算（抬升取一圈邻格的最大、方向按一圈邻格的坡度）；
-// 没变的格照抄上一份（同样的输入、同一个算式）
-function updateStyle(world: World, comp: BaseComponents, was: BaseComponents, old: CoastStyle): CoastStyle {
+// 分量或冰盖换了：三样输入（造山带、丘陵的抬升，地壳高度）与冰盖的强度逐格比，变了的格与两圈邻格重算（抬升取一圈邻格的最大、方向按一圈邻格的坡度）；
+// 没变的格照抄上一份（同样的输入、同一个算式）。第八十六轮：冷暖笔刷、挪纬度只改冰盖，只重建碰到的谷网的块
+function updateStyle(world: World, comp: BaseComponents, was: BaseComponents, old: CoastStyle, wasIce: Float64Array): CoastStyle {
   const { mesh } = world;
   const n = mesh.n;
+  const ice = iceOf(world);
   const mark = new Uint8Array(n);
   const front: number[] = [];
   for (let i = 0; i < n; i++) {
-    if (comp.mountU[i] !== was.mountU[i] || comp.hillU[i] !== was.hillU[i] || comp.b0[i] !== was.b0[i]) {
+    if (comp.mountU[i] !== was.mountU[i] || comp.hillU[i] !== was.hillU[i] || comp.b0[i] !== was.b0[i] || ice[i] !== wasIce[i]) {
       mark[i] = 1;
       front.push(i);
     }

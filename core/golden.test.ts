@@ -8,6 +8,7 @@ import golden from './golden-hashes.json';
 // 第五十五轮：生态跟高度走，有意改变结果：dominant、features 重录；这组操作里有“自然融入”，修正场跟着生态变，corrT、tS、pS、discharge 也重录
 // （高程、陆海、网格不变；去掉内置生态的高度范围时全部回到以前的值，见 biome-legacy.test.ts）
 // 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
+// 第八十六轮：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林、推导多了冰盖 derived.ice），除了网格、陆海、landness 全部重录（见 docs/dev/history/第86轮.md）
 describe('一块地区的世界逐值不变', () => {
   it('参考操作后的各层哈希与记录一致', () => {
     expect(referenceHashes()).toEqual(golden);

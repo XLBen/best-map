@@ -9,6 +9,11 @@ import { COAST_AMP, brushRangeKm, coastNoiseField, coastSeed, lakeRangeKm, mapSc
 import { coastValueAt, coastValues, vnoise } from './subcell';
 import { continents, meshFor } from './testing/fixtures';
 import { type World, createWorld } from './world';
+import { useRound85Terrain } from './testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 第八轮抽出来的公用函数（海岸值、河道平滑、生态混色、画笔范围）：与抽出前的算式逐位相同。
 // 这里留一份抽出前的原样代码对照

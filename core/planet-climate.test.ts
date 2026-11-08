@@ -4,6 +4,11 @@ import { coastalStroke, digestWorld } from '../tools/hash';
 import type { SphereMesh } from './mesh';
 import { PLANET_SWEEPS, buildFlowSphere, sphereAux } from './planet-climate';
 import { plainEngine, seededEngine } from './testing/fixtures';
+import { useRound85Terrain } from './testing/round85';
+
+// 第八十六轮：生成的地形有意变了。这里查的是编辑（画河、切省、起名……）的逻辑，要的地方、记下的值是在第八十五轮的地形上的：
+// 地形退回第八十五轮（core/testing/round85.ts）
+useRound85Terrain();
 
 // 整个星球的气候：没有接缝（不会在某个经度出现一条干带）、转动不变、输运图规整、迭代收敛
 

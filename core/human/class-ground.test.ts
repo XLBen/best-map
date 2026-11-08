@@ -86,6 +86,7 @@ describe('力度 0：逐位和第五十七轮相同', () => {
   // 第七十五轮再重录这五个值：档案多了格局里的角色（role）；核对过不写 role 时与第七十四轮的值逐个相同
   // 第八十四轮又重录 region 的世界摘要（0–4、u1–u4；撤销记录照旧不变）：人文有意改了（见 docs/dev/history/第84轮.md）
   // 第八十五轮又重录这九个值（撤销记录照旧不变）：小数据多了国家的档案（small.archive）、国家去掉了 ruler（见 docs/dev/history/第85轮.md）
+  // 第八十六轮：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林、推导多了冰盖 derived.ice），重录 class-only-digests.json 的 region、globe（每一步与撤销记录都变了）
   it('一块带人文的地区：不写力度', () => expect(classOnlyDigests(humanRegion())).toEqual(recorded.region));
   it('整个星球：不写力度', () => expect(classOnlyDigests(smallGlobe())).toEqual(recorded.globe));
   it('写 strength: 0 和不写相同', () => expect(classOnlyDigests(smallGlobe(), { strength: 0 })).toEqual(recorded.globe));
@@ -227,8 +228,8 @@ describe('陆海不变', () => {
       eng.exec({ op: 'set_cell_class', cells, t, class: c, strength: 1 });
       expect(keep()).toBe(before);
       expect(cells.filter((i) => !causes.land[i]).every((i) => !causes.terrainClass![i] && causes.upliftDelta[i] === lift0[i])).toBe(true);
-      // 陆地还是高于海面
-      for (const i of cells) if (causes.land[i]) expect(eng.world.derived.elevation[i]).toBeGreaterThan(0);
+      // 陆地还是高于海面（湖底可以低于海面：第八十六轮这一笔里有了干的内陆的湖，不算）
+      for (const i of cells) if (causes.land[i] && !eng.world.derived.lake[i]) expect(eng.world.derived.elevation[i]).toBeGreaterThan(0);
     }
   });
 
@@ -329,7 +330,8 @@ describe('恢复自动', () => {
     const eng = world20();
     const low = inland(eng, 10);
     const a = disc(eng, low[Math.floor(low.length * 0.2)], 6);
-    const hill = disc(eng, low[Math.floor(low.length * 0.8)], 6);
+    // 第八十六轮：地形变了，0.8 处的一笔和 0.2 处的挨着了：取第一个不挨着的
+    const hill = [0.8, 0.9, 0.6, 0.98, 0.5].map((f) => disc(eng, low[Math.floor(low.length * f)], 6)).find((h) => !h.cells.some((i) => a.cells.includes(i)))!;
     eng.exec({ op: 'paint_relief', ...hill, strength: 0.7 });
     const piled = eng.world.causes.upliftDelta.slice();
     const elev0 = eng.world.derived.elevation.slice();

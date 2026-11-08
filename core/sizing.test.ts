@@ -71,6 +71,7 @@ describe('岛的大小', () => {
     const w = eng.world;
     // 湖的格写死，以后改水文也不会挪到别处
     eng.exec({ op: 'add_lake', lake: { cell: 5490, radius: 60, depth: 120, perennial: true } });
+    // 第八十六轮重录 elevation、discharge：生成的地形有意变了（海陆、抬升的增量没变）
     expect({
       landDelta: hashArray(w.causes.landDelta),
       upliftDelta: hashArray(w.causes.upliftDelta),
@@ -78,7 +79,7 @@ describe('岛的大小', () => {
       land: hashArray(w.causes.land),
       elevation: hashArray(w.derived.elevation),
       discharge: hashArray(w.derived.discharge),
-    }).toEqual({ landDelta: 'd6f872c2', upliftDelta: '50efbc9e', erodDelta: '3136d33e', land: 'de411545', elevation: 'd1266a', discharge: 'fe175631' });
+    }).toEqual({ landDelta: 'd6f872c2', upliftDelta: '50efbc9e', erodDelta: '3136d33e', land: 'de411545', elevation: 'b475d83', discharge: '46f10c4d' });
   });
 
   it('数值大小是海岸线的半径：放出来的岛平均就这么大', () => {
