@@ -108,6 +108,18 @@ export interface TileNet {
   dirOk: Uint8Array;
   // 每段碰得到的格（用到时才算，按块留着）
   cands: (Int32Array | null)[];
+  // 第八十八轮：只取决于一带的格与地壳高度的那几样（三个预算以外的全部只取决于它们）。一带的格、地壳高度都没变、只换了峡湾权重时
+  // （挪纬度、涂冷暖改了冰盖）照用几何，只按新的权重重算三个预算（core/fjords.ts 的 reweighTile）
+  geo: TileGeo;
+}
+
+// 一块的几何里算预算要用的（按点）：长度的倍数 m、汇水面积（km²）与汇水因子、支湾的随机倍数（不是支湾的点 NaN）；cells 是这一块的一带的格（升序）
+export interface TileGeo {
+  cells: Int32Array;
+  m: Float64Array;
+  area: Float64Array;
+  af: Float64Array;
+  side: Float64Array;
 }
 
 // 谷网（只取决于网格、种子、生成器的分量与新建时的纬度）：各块拼起来

@@ -3,6 +3,7 @@ import { MinHeap } from './heap';
 import { placedLakeAnchor, sinkMask } from './elevation';
 import { type Mesh, gradGeo, gradientAt } from './mesh';
 import { type Routing, route } from './routing';
+import { routeByParts } from './routing-parts';
 import { pocketLakes } from './terrain';
 import { type Derived, FREE_HEIGHT, type World } from './world';
 
@@ -28,15 +29,58 @@ function slopeField(world: World, elevation: Float32Array): Float64Array {
   const n = mesh.n;
   const hPos = new Float64Array(n);
   for (let i = 0; i < n; i++) hPos[i] = land[i] ? elevation[i] : 0;
+  const out = slopeMemo.on && lastSlope && lastSlope.mesh === mesh && lastSlope.km === kmPerUnit ? slopeAgain(world, hPos, lastSlope) : slopeAll(world, hPos);
+  lastSlope = { mesh, km: kmPerUnit, hPos, land: land.slice(), out };
+  slopeMemo.keep(mesh, [elevation.slice(), land.slice()], [kmPerUnit], out);
+  return out;
+}
+
+// 第八十八轮（提速）：上一次算的坡度（与它的输入）。一格的坡度只读自己与邻格的高度（陆格的，海格当 0）、自己是不是陆地：
+// 这几样都没变的格照抄上一次的（同一个算式），变了的格与它们的邻格重算。与整张重算逐值相同（hydro-speed 测试）
+let lastSlope: { mesh: Mesh; km: number; hPos: Float64Array; land: Uint8Array; out: Float64Array } | null = null;
+function slopeAll(world: World, hPos: Float64Array): Float64Array {
+  const { mesh, causes, kmPerUnit } = world;
+  const land = causes.land;
   const geo = gradGeo(mesh);
   const g = new Float64Array(2);
-  const out = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
+  const out = new Float64Array(mesh.n);
+  for (let i = 0; i < mesh.n; i++) {
     if (!land[i]) continue;
     gradientAt(mesh, geo, hPos, i, g);
     out[i] = Math.hypot(g[0], g[1]) / kmPerUnit;
   }
-  slopeMemo.keep(mesh, [elevation.slice(), land.slice()], [kmPerUnit], out);
+  return out;
+}
+function slopeAgain(world: World, hPos: Float64Array, last: { hPos: Float64Array; land: Uint8Array; out: Float64Array }): Float64Array {
+  const { mesh, causes, kmPerUnit } = world;
+  const land = causes.land;
+  const { off, adj } = mesh;
+  const n = mesh.n;
+  const redo = new Uint8Array(n);
+  let changed = 0;
+  for (let i = 0; i < n; i++) {
+    const a = hPos[i];
+    const b = last.hPos[i];
+    if (a === b && (a !== 0 || 1 / a === 1 / b) && land[i] === last.land[i]) continue;
+    changed++;
+    redo[i] = 1;
+    for (let e = off[i]; e < off[i + 1]; e++) redo[adj[e]] = 1;
+  }
+  if (!changed) return last.out;
+  // 变了的多（重新求解了大陆块）时整张算更快
+  if (changed * 6 > n) return slopeAll(world, hPos);
+  const out = last.out.slice();
+  const geo = gradGeo(mesh);
+  const g = new Float64Array(2);
+  for (let i = 0; i < n; i++) {
+    if (!redo[i]) continue;
+    if (!land[i]) {
+      out[i] = 0;
+      continue;
+    }
+    gradientAt(mesh, geo, hPos, i, g);
+    out[i] = Math.hypot(g[0], g[1]) / kmPerUnit;
+  }
   return out;
 }
 
@@ -57,17 +101,7 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   const { mesh, causes, small, kmPerUnit } = world;
   const n = mesh.n;
   const land = causes.land;
-  const forced = new Int32Array(n).fill(-1);
-  // 分出去的一股（branch）：第一格在干流上，它的流向不改（水按比例分出去，见下面）
-  for (const g of small.guides) for (let k = g.branch ? 1 : 0; k < g.cells.length - 1; k++) if (land[g.cells[k]]) forced[g.cells[k]] = g.cells[k + 1];
-  // 在终点消失的河：那一格当作出口（水流到那里就没了）。没有这种河时与原来逐值相同
-  const sinks = sinkMask(world);
-  const terminal = sinks ?? new Uint8Array(n);
-  let r = routeMemo.find(mesh, [elevation, land, forced, terminal], []);
-  if (!r) {
-    r = route(mesh, elevation, land, forced, sinks ?? undefined);
-    routeMemo.keep(mesh, [elevation.slice(), land.slice(), forced, terminal], [], r);
-  }
+  const r = routingOf(world, elevation);
 
   const areaKm = cellAreaKm(mesh, kmPerUnit);
 
@@ -178,6 +212,32 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   basinsOf(r, land, d.basin);
   // 坡度（m/km）与地形湿度指数 ln(a / tanβ)
   writeSlope(n, land, slopeField(world, elevation), A, areaKm, d.slope, d.wetness);
+}
+
+// 汇流路由（按内容记着：只改气候、河流门槛时原样复用；第八十八轮：没记着时按陆块记的照用没变的陆块）
+function routingOf(world: World, elevation: Float32Array): Routing {
+  const { mesh, causes, small } = world;
+  const n = mesh.n;
+  const land = causes.land;
+  const forced = new Int32Array(n).fill(-1);
+  // 分出去的一股（branch）：第一格在干流上，它的流向不改（水按比例分出去，见 computeHydrology）
+  for (const g of small.guides) for (let k = g.branch ? 1 : 0; k < g.cells.length - 1; k++) if (land[g.cells[k]]) forced[g.cells[k]] = g.cells[k + 1];
+  // 在终点消失的河：那一格当作出口（水流到那里就没了）。没有这种河时与原来逐值相同
+  const sinks = sinkMask(world);
+  const terminal = sinks ?? new Uint8Array(n);
+  let r = routeMemo.find(mesh, [elevation, land, forced, terminal], []);
+  if (!r) {
+    // 记忆关着时整张求
+    r = routeMemo.on ? routeByParts(mesh, elevation, land, forced, sinks ?? undefined) : route(mesh, elevation, land, forced, sinks ?? undefined);
+    routeMemo.keep(mesh, [elevation.slice(), land.slice(), forced, terminal], [], r);
+  }
+  return r;
+}
+
+// 空闲预热（第八十八轮，见 engine.ts 的 warmSteps）：按水文读到的高程把路由（按陆块）与坡度记下来，打开后的第一笔只重算改到的陆块、格
+export function warmHydrology(world: World, elevation: Float32Array): void {
+  routingOf(world, elevation);
+  slopeField(world, elevation);
 }
 
 // 第三十二轮（提速）：computeHydrology 里一段段逐格的循环拆成小函数（小函数里的循环很快就被编译优化；
