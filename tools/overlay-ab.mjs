@@ -1,6 +1,7 @@
 // 叠加层与排版的前后对照（第四十轮）：在无头 Chrome 里让旧的提交与现在的叠加层画同样的画面，计时、读回像素比。
-//   node tools/overlay-ab.mjs [--against <提交>] [--quick] [--keep] [--chrome <Chrome 的路径>]
-//     --against：对照的提交（默认 b4aeaae，第三十八轮；第三十九轮没改叠加层）；--quick：只用一块地区、少几次；--keep：留下临时目录
+//   node tools/overlay-ab.mjs [--against <提交>] [--quick] [--plain] [--no-labels] [--keep] [--chrome <Chrome 的路径>]
+//     --against：对照的提交（默认 b4aeaae，第三十八轮；第三十九轮没改叠加层）；--quick：只用一块地区、少几次；--keep：留下临时目录；
+//     --no-labels（第八十九轮）：两边都不排字（地名、国名、城市的名字），只比地名以外的
 //   做法同 tools/compose-ab.mjs：git archive 把那个提交的 src、core 解到临时目录，esbuild 把 tools/overlay-ab-page.ts 连同两份
 //   overlay.ts（与国家的档案、列表）打成一个脚本，写一个 file:// 页面，Chrome 无界面打开（--dump-dom），结果写进 <pre>。
 //   画布按 2 倍像素（Mac 的屏幕），软件画（willReadFrequently），每次画完读回一个像素，量到的是主线程上画叠加层的全部时间。
@@ -22,6 +23,8 @@ const chrome = flag('--chrome', '/Applications/Google Chrome.app/Contents/MacOS/
 const quick = argv.includes('--quick');
 // 第五十七轮：--plain 画没有河湖类型的世界（新世界默认带类型）
 const plain = argv.includes('--plain');
+// 第八十九轮：--no-labels 不排字（地名、国名、城市的名字），只比地名以外的（河、边界、图标、道路……）
+const noLabels = argv.includes('--no-labels');
 const keep = argv.includes('--keep');
 
 let nm = root;
@@ -50,7 +53,7 @@ import * as NewS from ${cur('src/state')};
 import * as OldT from './base/src/ui/tools/countries';
 import * as NewT from ${cur('src/ui/tools/countries')};
 import { run } from ${cur('tools/overlay-ab-page')};
-window.addEventListener('load', () => run({ O: OldO, A: OldA, L: OldL, S: OldS, T: OldT } as never, { O: NewO, A: NewA, L: NewL, S: NewS, T: NewT } as never, { quick: ${quick}, plain: ${plain} }));
+window.addEventListener('load', () => run({ O: OldO, A: OldA, L: OldL, S: OldS, T: OldT } as never, { O: NewO, A: NewA, L: NewL, S: NewS, T: NewT } as never, { quick: ${quick}, plain: ${plain}, noLabels: ${noLabels} }));
 `,
   );
   const esbuild = await import('esbuild');

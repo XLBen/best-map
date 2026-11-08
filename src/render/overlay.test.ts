@@ -35,7 +35,7 @@ const state = (features: GeoFeature[], hoverLabel: string | null = null) => ({ f
 const shown = (features: GeoFeature[], hoverLabel: string | null = null) => placeLabels(ctx, cam, state(features, hoverLabel), [0], 1000).placed.map((l) => l.key);
 
 describe('用户自己的地名总是标出来', () => {
-  it('圈的小地区压在大森林上：地区标出来，森林让开；太小的自然地物照旧不标，改过名的小地物标出来', () => {
+  it('圈的小地区压在大森林上：地区标出来，森林挪开（第八十九轮：以前不标）；太小的自然地物照旧不标，改过名的小地物标出来', () => {
     const features = [
       feature('大森林', 'forest', 1e6, 0.5, { importance: 9 }),
       // 只有约 10 像素大（自然地物要 45 像素才标）
@@ -46,8 +46,14 @@ describe('用户自己的地名总是标出来', () => {
     const keys = shown(features);
     expect(keys).toContain('小村');
     expect(keys).toContain('老林');
-    expect(keys).not.toContain('大森林');
     expect(keys).not.toContain('小湖');
+    // 第八十九轮：大森林放不下中心时试别的候选位置（以前不标），挪开以后不压着小村
+    const r = placeLabels(ctx, cam, state(features), [0], 1000);
+    const box = (k: string) => r.boxes.find((b) => b.key === k)!;
+    const big = box('大森林');
+    const small = box('小村');
+    expect(big).toBeDefined();
+    expect(big.x0 < small.x1 && big.x1 > small.x0 && big.y0 < small.y1 && big.y1 > small.y0).toBe(false);
   });
 
   it('悬停的地名也标出来；换了悬停的地名就重新排（布局缓存的键里有它）', () => {

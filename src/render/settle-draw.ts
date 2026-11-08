@@ -56,6 +56,8 @@ export interface SettleMark {
   textColor: string;
   iconPx: number;
   namePx: number;
+  // 名字排的先后（第八十九轮）：0 首都、陪都、自定义点，1 大城市，2 城市，3 村镇、地标；省略按 2
+  tier?: number;
   // 首都、陪都：和别的图标挤在一起时照样画
   always?: boolean;
   // 淡一些、小一些（第四十二轮：城市按等级的 alpha、iconScale，首都按国家的等级）：图标的浓淡、大小倍数，名字的浓淡（省略为 1、1、同图标）。

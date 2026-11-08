@@ -46,11 +46,15 @@ export const canGenerateCities = (w: Pick<World, 'small' | 'causes'>) => hasCoun
 // ---------- 放大到多少画哪几级（一格在屏幕上的像素数） ----------
 
 // 首都、陪都总画（名字一格 2.5 像素以上）；大城市（level ≥ 3）一格 2 像素以上；城市（level 2）一格 5 像素以上；村镇一格 10 像素以上。
-// 不是首都的城市在地图上只画图标、不写名字（第二十五轮）：鼠标停在图标上时提示里写，“城市”工具选中的照旧写
+// 名字（第八十九轮：以前不是首都的城市只画图标、不写名字）按等级随缩放写：拉远只写首都，大城市一格 6 像素、城市 12 像素、村镇 20 像素以上才写；
+// “城市”工具选中的图标画出来就写
 export const CAPITAL_NAME_PX = 2.5;
 export const BIG_CITY_PX = 2;
 export const MEDIUM_CITY_PX = 5;
 export const SMALL_CITY_PX = 10;
+export const BIG_CITY_NAME_PX = 6;
+export const MEDIUM_CITY_NAME_PX = 12;
+export const SMALL_CITY_NAME_PX = 20;
 export const NO_NAME_PX = Infinity;
 // 地标：一格 4 像素以上画图标，9 像素以上写名字
 export const LANDMARK_ICON_PX = 4;
@@ -65,11 +69,14 @@ export function cityIconPx(level: number, capital: boolean): number {
   if (capital) return 0;
   return level >= 3 ? BIG_CITY_PX : level === 2 ? MEDIUM_CITY_PX : SMALL_CITY_PX;
 }
-// 名字：只有首都、陪都写（named：“城市”工具选中的也写，图标画出来就写）
+// 名字：按等级随缩放写（named：“城市”工具选中的，图标画出来就写）
 export function cityNamePx(level: number, capital: boolean, named = false): number {
   if (capital) return CAPITAL_NAME_PX;
-  return named ? cityIconPx(level, false) : NO_NAME_PX;
+  if (named) return cityIconPx(level, false);
+  return level >= 3 ? BIG_CITY_NAME_PX : level === 2 ? MEDIUM_CITY_NAME_PX : SMALL_CITY_NAME_PX;
 }
+// 名字排的先后（第八十九轮，叠加层的 SettleMark.tier）：0 首都、陪都与自定义点、选中的，1 大城市，2 城市，3 村镇与地标
+export const cityTier = (level: number, capital: boolean) => (capital ? 0 : level >= 3 ? 1 : level === 2 ? 2 : 3);
 export const cityShown = (c: Pick<CityInfo, 'rank' | 'capital' | 'secondCapital'>, cellPx: number) => cellPx >= cityIconPx(c.rank.level, c.capital || c.secondCapital);
 
 // 城市的图标：按等级的 icon（星、双圈、大圆、点），不认识的画大圆
@@ -126,7 +133,7 @@ export function cityLook(c: CityInfo, small: Pick<World['small'], 'content' | 'c
   return { ...(alpha !== 1 ? { alpha } : {}), ...(scale !== 1 ? { scale } : {}), ...(labelAlpha !== alpha ? { labelAlpha } : {}), label, ...(bold === false ? { bold } : {}) };
 }
 
-// named：写名字（省略时首都、陪都写，别的不写；true 是“城市”工具选中的，照最醒目的画）。small：世界（首都按国家的等级画；省略时都照最醒目的）
+// named：写名字（省略时按等级随缩放写，见 cityNamePx；false 不写；true 是“城市”工具选中的，照最醒目的画）。small：世界（首都按国家的等级画；省略时都照最醒目的）
 export function cityMark(c: CityInfo, nm: NameMode, named?: boolean, small?: Pick<World['small'], 'content' | 'countries'>): SettleMark {
   const capital = c.capital || c.secondCapital;
   const key = markKey(c.point ? 'point' : 'city', c.id);
@@ -145,6 +152,7 @@ export function cityMark(c: CityInfo, nm: NameMode, named?: boolean, small?: Pic
     textColor: CITY_TEXT,
     iconPx: cityIconPx(c.rank.level, capital),
     namePx: named === false ? NO_NAME_PX : named ? cityIconPx(c.rank.level, capital) : cityNamePx(c.rank.level, capital),
+    tier: named === true ? 0 : cityTier(c.rank.level, capital),
     ...(capital ? { always: true } : {}),
     ...(faint && look.alpha !== undefined ? { alpha: look.alpha } : {}),
     ...(faint && look.scale !== undefined ? { scale: look.scale } : {}),
@@ -166,6 +174,7 @@ export function landmarkMark(l: LandmarkInfo, nm: NameMode): SettleMark {
     textColor: l.category === 'natural' ? NATURAL_TEXT : MANMADE_TEXT,
     iconPx: LANDMARK_ICON_PX,
     namePx: LANDMARK_NAME_PX,
+    tier: 3,
   };
 }
 
@@ -183,6 +192,7 @@ export function pointMark(p: PointInfo): SettleMark {
     textColor: POINT_TEXT,
     iconPx: 0,
     namePx: 0,
+    tier: 0,
     always: true,
   };
 }
@@ -268,7 +278,7 @@ export function settleHoverText(w: World, ref: SettleRef): string {
 // 当作城市的点画成城市（挂着的城市画成陪都，没挂时这个点自己当一座城市），不另画点
 const pointDrawn = (p: PointInfo) => !p.actsAsCity;
 
-// 画哪些：cities 全部城市（与当作城市的点）/ 只画首都、陪都 / 不画；cityNames 写名字的（首都、陪都 / 都不写），
+// 画哪些：cities 全部城市（与当作城市的点）/ 只画首都、陪都 / 不画；cityNames 写不写名字（'capitals'：首都总写、别的按等级随缩放写 / 都不写），
 // selected 另外写名字的那一座（“城市”工具选中的，标记的键）；landmarks 全部 / 只画自然的 / 不画；points 自定义点
 export interface SettleShow {
   cities: 'all' | 'capitals' | 'none';
@@ -294,7 +304,7 @@ export function settleMarks(w: World, nm: NameMode, show: SettleShow): SettleMar
   const rest = cities.filter((c) => !(capitalLike(c) || c.rank.level >= 3));
   const mark = (c: CityInfo) => {
     const key = markKey(c.point ? 'point' : 'city', c.id);
-    return cityMark(c, nm, key === show.selected ? true : capitalLike(c) && show.cityNames === 'capitals' ? undefined : false, w.small);
+    return cityMark(c, nm, key === show.selected ? true : show.cityNames === 'capitals' ? undefined : false, w.small);
   };
   for (const c of major) out.push(mark(c));
   if (show.points) for (const p of lists.points) if (pointDrawn(p)) out.push(pointMark(p));

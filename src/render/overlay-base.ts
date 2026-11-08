@@ -4,6 +4,7 @@ import type { MapStyle } from '../../core/map-style';
 import type { FeatureType, GeoFeature } from '../../core/features';
 import type { NameMode } from '../../core/name-display';
 import type { CountryFit, CountryLabelDraw } from './overlay-country-labels';
+import type { FeatureLines } from './label-lines';
 import type { RoadDraw, SettleMark } from './settle-draw';
 import type { Camera } from './renderer';
 import type { World } from '../../core/world';
@@ -74,6 +75,9 @@ export interface OverlayState {
   // 地名标注；labelTypes 为 null 时显示全部类型
   features: GeoFeature[] | null;
   labelTypes: Set<FeatureType> | null;
+  // 海名、湖名沿着水写的那条线（第八十九轮，label-lines.ts 的 featureLinesOf：按世界的地物缓存的同一个对象）；省略时 drawOverlay 按世界补上，
+  // null 不沿着水写（横着写）
+  featureLines?: FeatureLines | null;
   // 地名显示中文、原文还是两者（第二十轮；省略为中文）
   nameMode?: NameMode;
   // 全部山峰（第二十一轮，图层里的“山峰”；见 peakLabels）：画成小三角，放大后标名字，排在别的地名之后；null 不画

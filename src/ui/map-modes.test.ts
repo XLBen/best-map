@@ -15,7 +15,7 @@ import { kindOfView, mapKind, mapModes, modeButtonOf, modeDef, modeFeatures, mod
 import { REGION_KEY, countryDraws, regionDraws } from './map/political';
 import { settleOverlay, shownMarks } from './map/settle';
 import { showView } from './panels/LayersPanel';
-import { CAPITAL_NAME_PX, MINOR_ROAD_EDIT_PX, MINOR_ROAD_PX, markKey, roadSet, settleHoverText, settleMarks, settleShow } from './domain/settlements';
+import { BIG_CITY_NAME_PX, CAPITAL_NAME_PX, cityNamePx, MEDIUM_CITY_NAME_PX, MINOR_ROAD_EDIT_PX, SMALL_CITY_NAME_PX, MINOR_ROAD_PX, markKey, roadSet, settleHoverText, settleMarks, settleShow } from './domain/settlements';
 import { onKeyDown } from './shell/keys';
 import { BUILTIN_MAP_STYLES } from '../../core/packs/map-styles';
 import { type Pointer, pointerText, pointerTool } from './tools';
@@ -204,7 +204,8 @@ describe('片区名', () => {
 });
 
 describe('城市的名字', () => {
-  it('不是首都的城市不写名字（大城市也一样）；首都、陪都写；文化等模式里首都也不写；“城市”工具选中的写', () => {
+  // 第八十九轮：不是首都的城市也写名字，按等级随缩放（大城市一格 6 像素、城市 12、村镇 20 像素以上；以前不写）
+  it('首都、陪都总写；别的城市按等级随缩放写；文化等模式里首都也不写；“城市”工具选中的写', () => {
     const w = towns().world;
     const ov = { countries: true, cities: true, landmarks: true };
     const country = settleMarks(w, 'zh', settleShow({ mode: modeDef('country'), editing: false, ...ov }));
@@ -214,9 +215,10 @@ describe('城市的名字', () => {
     expect(cityMarks.length).toBe(cities.length);
     for (const m of cityMarks) {
       const c = capital(m.key);
-      expect(m.namePx).toBe(c.capital || c.secondCapital ? CAPITAL_NAME_PX : Infinity);
+      expect(m.namePx).toBe(cityNamePx(c.rank.level, c.capital || c.secondCapital));
+      expect(m.namePx).toBe(c.capital || c.secondCapital ? CAPITAL_NAME_PX : c.rank.level >= 3 ? BIG_CITY_NAME_PX : c.rank.level === 2 ? MEDIUM_CITY_NAME_PX : SMALL_CITY_NAME_PX);
     }
-    expect(cityMarks.some((m) => m.namePx === Infinity)).toBe(true);
+    expect(cityMarks.some((m) => m.namePx > CAPITAL_NAME_PX)).toBe(true);
     // 文化模式：只有首都的图标，没有名字，没有地标
     const culture = settleMarks(w, 'zh', settleShow({ mode: modeDef('culture'), editing: false, ...ov }));
     expect(culture.filter((m) => m.kind === 'city').every((m) => capital(m.key).capital || capital(m.key).secondCapital || capital(m.key).point)).toBe(true);

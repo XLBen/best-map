@@ -22,6 +22,7 @@ export const FIELD_KIND: { [K in keyof Required<OverlayState>]: 'static' | 'shap
   provinceLabels: 'static',
   features: 'static',
   labelTypes: 'static',
+  featureLines: 'static',
   nameMode: 'static',
   peaks: 'static',
   countries: 'static',

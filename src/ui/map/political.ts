@@ -1,4 +1,4 @@
-import { blocCells, blocList, countryLabels, countryList, dimensionValues, regionLabels, valueLayer, worldCultureGroups, worldCultures, worldDimensions } from '../../../core/human';
+import { blocCells, blocList, capitalLook, countryLabels, countryList, dimensionValues, regionLabels, valueLayer, worldCultureGroups, worldCultures, worldDimensions } from '../../../core/human';
 import type { BlocKind } from '../../../core/world';
 import { type NameMode, nameLines } from '../../../core/name-display';
 import type { World } from '../../../core/world';
@@ -177,7 +177,8 @@ function blocText(w: World, geo: Geo[], nm: NameMode): CountryLabelDraw[] {
 }
 
 // 国名：每国一个（主体上的中线、大小），按领土、各国的档案、集团、中文 / 原文缓存（同样的输入给同一个数组：地名的版面不必重排）。
-// 第二十六轮：联邦整片写联邦的名字，和国名一起按大小先后排——联邦的名字最大、先排，缩小时成员邦的名字挤不下，放大了才出现
+// 第二十六轮：联邦整片写联邦的名字，和国名一起按大小先后排——联邦的名字最大、先排，缩小时成员邦的名字挤不下，放大了才出现。
+// 第八十九轮：国名的最大字号按国家的等级分几档（与首都名字的字号倍数相同，core/human/tiers.ts 的 capitalLook：最高的一级 1，城邦级 0.75）
 export function countryDraws(w: World, nm: NameMode, lazy?: () => void): CountryLabelDraw[] {
   return countryDrawsLazy(w, nm, lazy) ?? [];
 }
@@ -185,11 +186,12 @@ function countryDrawsLazy(w: World, nm: NameMode, lazy?: () => void): CountryLab
   const geo = geometry(countryGeo(w), lazy);
   const fed = geometry(blocGeo(w, ['federation']), lazy);
   if (!geo || !fed) return null;
-  return withText('country', [geo, fed, w.small.countries, w.small.blocs, nm], () => {
+  return withText('country', [geo, fed, w.small.countries, w.small.blocs, w.small.content, nm], () => {
     const out = geo.flatMap((g): CountryLabelDraw[] => {
       const m = w.small.countries?.[g.id];
       if (!m) return [];
-      return [{ key: `country:${g.id}`, lines: countryLabelLines(m, nm), path: g.path, area: g.area }];
+      const scale = capitalLook(w.small, m.tier).label;
+      return [{ key: `country:${g.id}`, lines: countryLabelLines(m, nm), path: g.path, area: g.area, ...(scale !== 1 ? { scale } : {}) }];
     });
     out.push(...blocText(w, fed, nm));
     return out;

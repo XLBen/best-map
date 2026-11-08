@@ -3,6 +3,7 @@ import type { World } from '../../core/world';
 import { type BackLayer, copiesFor, type Frame, frameOf, type LabelBox, makeLayer, MOTION_LAYER_MARGIN, MOTION_LAYER_SCALE, MOTION_LAYER_ZOOM, overlayDebug, type OverlayPaths, type OverlayState, perf, PROVINCE_LABEL_COLOR, refZoom, type Shape } from './overlay-base';
 import { drawGraticule, drawLatitude, drawScaleBar } from './overlay-grid';
 import { drawLabels, hasLabels } from './overlay-labels';
+import { featureLinesOf } from './label-lines';
 import { projectedParts } from './overlay-proj';
 import { drawRivers } from './overlay-river-layer';
 import { riverScale, riverStroke, samePathsKey } from './overlay-rivers';
@@ -27,6 +28,7 @@ export { riverLayer, riverLayerTile, riverLayerScene, releaseRiverTile } from '.
 export { overlayFieldKinds, staticKey, sameShapes } from './overlay-static';
 export { drawScaleBar } from './overlay-grid';
 export { hasLabels, SETTLE_KEY, placeLabels, drawLabels, PEAK_KEY, peakLabels } from './overlay-labels';
+export { featureLinesOf } from './label-lines';
 export { type CountryLabelDraw, COUNTRY_KEY, REGION_KEY, COUNTRY_MIN_PX, COUNTRY_MAX_PX, COUNTRY_FIT, COUNTRY_FIT_R81, type CountryFit, smoothPath, layoutAlong, countryLineText } from './overlay-country-labels';
 // 一条要画的河（带子与每个河线点的类型）、一条河线画成要画的河：在 core/river-pack.ts（Worker 里描好的河也用它）
 export type { RiverDraw } from '../../core/river-pack';
@@ -158,6 +160,8 @@ function pasteBack(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPa
 // 第四十轮：分成三段（overlayParts：底下、工具的图形、上面）；屏幕上静态的键（staticKey：世界、路径、镜头、画布、除了图形以外的选项……）
 // 与图形都没变时什么都不画（画布上就是上一帧），别的时候照原样直接画（见 drawScreen）。移动中、导出照原样直接画
 export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState): LabelBox[] {
+  // 第八十九轮：海名、湖名沿着水写的线没给时按世界补上（按世界的地物缓存，每帧是同一个对象）
+  if (st.features && st.featureLines === undefined) st = { ...st, featureLines: featureLinesOf(world) };
   const canvas = ctx.canvas;
   const f = frameOf(ctx, st);
   const { cw, ch, dpr } = f;

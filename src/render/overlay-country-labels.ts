@@ -12,6 +12,8 @@ export interface CountryLabelDraw {
   lines: string[];
   path: [number, number][];
   area: number;
+  // 字号的倍数（第八十九轮：国家按等级分几档，见 political.ts 的 countryDraws；省略为 1）：最大的字号乘它
+  scale?: number;
 }
 
 export const COUNTRY_KEY = 'country:';
@@ -193,7 +195,7 @@ export function placeCountries(
       // 领土在屏幕上有多粗：面积 ÷ 中线的长度
       const thick = (c.area / lenU) * (L / lenU);
       const sum1 = w1.reduce((a, b) => a + b, 0);
-      const fit = Math.min(maxPx, thick * fitBy.thick, (L * fitBy.span) / Math.max(sum1, 0.5));
+      const fit = Math.min(maxPx * (c.scale ?? 1), thick * fitBy.thick, (L * fitBy.span) / Math.max(sum1, 0.5));
       if (fit < COUNTRY_MIN_PX) continue;
       const fontPx = Math.floor(fit);
       const px2 = second ? Math.max(COUNTRY_MIN_PX - 1, Math.round(fontPx * 0.45)) : 0;

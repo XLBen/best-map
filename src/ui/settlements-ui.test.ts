@@ -302,8 +302,9 @@ describe('缩放分级与图标', () => {
     expect(cityIconPx(3, false)).toBe(BIG_CITY_PX);
     expect(cityIconPx(2, false)).toBe(MEDIUM_CITY_PX);
     expect(cityIconPx(1, false)).toBe(SMALL_CITY_PX);
-    // 第二十五轮：不是首都的城市不写名字（选中的写，图标画出来就写）
-    for (const l of [1, 2, 3]) expect(cityNamePx(l, false)).toBe(Infinity);
+    // 第八十九轮：不是首都的城市按等级随缩放写名字（以前不写），都比图标晚出来；选中的图标画出来就写
+    expect([3, 2, 1].map((l) => cityNamePx(l, false))).toEqual([6, 12, 20]);
+    for (const l of [1, 2, 3]) expect(cityNamePx(l, false)).toBeGreaterThan(cityIconPx(l, false));
     for (const l of [1, 2, 3]) expect(cityNamePx(l, false, true)).toBe(cityIconPx(l, false));
     const ranks = BUILTIN_RANKS;
     const small = rankFor(ranks, 0, 0);

@@ -48,7 +48,7 @@ function canvas(read = false): CanvasRenderingContext2D {
 }
 
 // 全部同步地跑完（页面的 load 里）：--dump-dom 等 load 跑完再取页面；不用虚拟时间（那时 performance.now 不准）
-export function run(oldS: Side, newS: Side, opt: { quick: boolean; plain?: boolean }) {
+export function run(oldS: Side, newS: Side, opt: { quick: boolean; plain?: boolean; noLabels?: boolean }) {
   try {
     main(oldS, newS, opt);
     log('DONE');
@@ -57,7 +57,7 @@ export function run(oldS: Side, newS: Side, opt: { quick: boolean; plain?: boole
   }
 }
 
-function main(oldS: Side, newS: Side, opt: { quick: boolean; plain?: boolean }) {
+function main(oldS: Side, newS: Side, opt: { quick: boolean; plain?: boolean; noLabels?: boolean }) {
   const N = opt.quick ? 7 : 15;
   log(`devicePixelRatio ${devicePixelRatio}，画布 ${CW} × ${CH} CSS 像素，每项 ${N} 次的中位数（毫秒）`);
   // 第五十七轮：--plain 画没有河湖类型的世界（新世界默认带类型）
@@ -91,6 +91,8 @@ function main(oldS: Side, newS: Side, opt: { quick: boolean; plain?: boolean }) 
         peaks: null,
         countries: md.regions ? regionDraws(w, md.regions, 'zh') : null,
         ...settleOverlay(w, { mode: md, editing: false }),
+        // 第八十九轮：--no-labels 不排字（地名、国名、城市的名字），只比地名以外的
+        ...(opt.noLabels ? { features: null, countries: null, settleNames: false } : { featureLines: newS.O.featureLinesOf?.(w) }),
         kmPerUnit: w.kmPerUnit,
         hoverLabel: null,
         scaleBar: true,
@@ -226,7 +228,7 @@ function main(oldS: Side, newS: Side, opt: { quick: boolean; plain?: boolean }) 
         log(`${label}\n  主线程：${main}\n  连光栅化（软件画）：${soft}\n  排地名 ${f1(median(lay.o))} → ${f1(median(lay.n))}；直接画与旧的不同 ${same} 字节；一串帧（含只有图形变了、什么都不画的帧）与旧的不同 ${frameDiff[1]} 字节（按软件画）/ ${frameDiff[0]} 字节（按显卡画）${notes.length ? `（${notes.join('；')}）` : ''}`);
       }
     }
-    differ += atlasFrames(oldS, newS, w, paths);
+    differ += atlasFrames(oldS, newS, w, paths, !!opt.noLabels);
     if (Object.keys(w.small.countries ?? {}).length) selectBench(oldS, newS, w, N);
   }
   if (differ) log(`直接画与旧的不同 ${differ} 字节`);
@@ -234,7 +236,7 @@ function main(oldS: Side, newS: Side, opt: { quick: boolean; plain?: boolean }) 
 
 // 第八十七轮：地图册的叠加层（河、道路、国名的颜色按画风；手绘的几项地图册不写，符号、暗角、字体都不走）：
 // 地貌、国家两种模式，看全图与一格约 8 像素，旧的与新的直接画（每次都整张画）、读回来逐字节比；返回不同的字节数
-function atlasFrames(oldS: Side, newS: Side, w: World, paths: ReturnType<OverlayMod['buildPaths']>): number {
+function atlasFrames(oldS: Side, newS: Side, w: World, paths: ReturnType<OverlayMod['buildPaths']>, noLabels: boolean): number {
   const style = BUILTIN_MAP_STYLES.find((x) => x.id === 'atlas')!;
   const sp = w.mesh.spacing;
   const sphere = w.mesh.kind === 'sphere';
@@ -256,6 +258,7 @@ function atlasFrames(oldS: Side, newS: Side, w: World, paths: ReturnType<Overlay
       peaks: null,
       countries: md.regions ? regionDraws(w, md.regions, 'zh') : null,
       ...settleOverlay(w, { mode: md, editing: false }),
+      ...(noLabels ? { features: null, countries: null, settleNames: false } : {}),
       kmPerUnit: w.kmPerUnit,
       hoverLabel: null,
       scaleBar: true,

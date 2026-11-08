@@ -1,5 +1,7 @@
+import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Command } from '../../core/commands';
+import { digest } from '../../core/digest';
 import { blocList } from '../../core/human';
 import { snapshot } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
@@ -10,8 +12,9 @@ import { clearRegionGeometry, countryDraws, regionDraws } from '../ui/map/politi
 import { countryDrawsRef, regionDrawsRef } from '../testing/frozen/political-r39';
 import { settleOverlay } from '../ui/map/settle';
 import { modeFeatures } from '../ui/map/modes';
-import { COUNTRY_FIT, COUNTRY_FIT_R81, type OverlayState, type Shape, buildPaths, drawOverlay, overlayDebug, peakLabels, placeLabels, refZoom, sameShapes } from './overlay';
-import { placeLabelsRef } from '../testing/frozen/place-labels-r39';
+import { COUNTRY_FIT, COUNTRY_FIT_R81, type CountryLabelDraw, type OverlayState, type Shape, buildPaths, drawOverlay, overlayDebug, peakLabels, placeLabels, refZoom, sameShapes } from './overlay';
+import { clearLabelLayout } from './overlay-labels';
+import { featureLinesOf } from './label-lines';
 import type { Camera } from './renderer';
 import { BoxIndex } from './settle-draw';
 import { TILE_CAP, drawWind, flushWindQueue, windTilesCached } from './wind';
@@ -80,6 +83,7 @@ function stateFor(w: World, kind: MapKind, more: Partial<OverlayState> = {}): Ov
     nameMode: 'zh',
     peaks: peakLabels(w),
     countries: md.regions ? regionDraws(w, md.regions, 'zh') : null,
+    featureLines: featureLinesOf(w),
     ...plainMarks(settleOverlay(w, { mode: md, editing: false })),
     kmPerUnit: w.kmPerUnit,
     hoverLabel: null,
@@ -123,42 +127,96 @@ const plain = (r: { placed: { key: string; chars: string[]; widths: number[]; sp
   marks: r.marks,
 });
 
-// 第八十二轮：国名的字号另有上限（COUNTRY_FIT）；冻结的参照是那以前的排法，对照时传那时的大小（COUNTRY_FIT_R81），查的还是排法本身
-describe('排地名：按格子查的避让与逐个比相同（冻结的第三十九轮参照）', () => {
+// 第八十九轮：地名换了新的排版（海名、河名沿着水写，放不下时试几个候选位置，字号分档，城市名随缩放出现），
+// 以前对照冻结的第三十九轮参照（src/testing/frozen/place-labels-r39.ts，文件本身没动）的几项退役，改成对照新排版录下的摘要
+// （label-digests.json，RECORD_LABELS=1 重录）与“同一世界再排一次逐值相同”
+const LABEL_FILE = new URL('./label-digests.json', import.meta.url);
+const recorded: Record<string, string> = (() => {
+  try {
+    return JSON.parse(readFileSync(LABEL_FILE, 'utf8'));
+  } catch {
+    return {};
+  }
+})();
+const fresh: Record<string, string> = {};
+// 一种情形排一次：清掉缓存的版面（不沿用上一次排好的）
+function layoutOnce(w: World, cam: Camera, s: OverlayState) {
+  clearLabelLayout();
+  const sphere = w.mesh.kind === 'sphere' && !cam.proj;
+  return placeLabels(measuring(), cam, s, sphere ? [-1, 0, 1] : [0], refZoom(w, cam.zoom));
+}
+describe('排地名（第八十九轮的新排版）：摘要与录下的相同，再排一次逐值相同', () => {
   for (const [name, make] of WORLDS) {
     it(name, () => {
       const w = make();
       let compared = 0;
       for (const kind of ['geo', 'country'] as MapKind[]) {
         for (const nameMode of ['zh', 'both'] as const) {
-          const st = stateFor(w, kind, { nameMode, countryFit: COUNTRY_FIT_R81, countries: modeDef(kind).regions ? regionDraws(w, modeDef(kind).regions!, nameMode) : null });
-          for (const cam of cameras(w)) {
+          const st = stateFor(w, kind, { nameMode, countries: modeDef(kind).regions ? regionDraws(w, modeDef(kind).regions!, nameMode) : null });
+          cameras(w).forEach((cam, ci) => {
             for (const motion of [false, true]) {
               const s = { ...st, motion };
-              const sphere = w.mesh.kind === 'sphere' && !cam.proj;
-              const ks = sphere ? [-1, 0, 1] : [0];
-              const rz = refZoom(w, cam.zoom);
-              const now = plain(placeLabels(measuring(), cam, s, ks, rz));
-              const ref = plain(placeLabelsRef(measuring(), cam, s, ks, rz));
-              expect(now).toEqual(ref);
-              compared += now.placed.length;
+              const a = plain(layoutOnce(w, cam, s));
+              const b = plain(layoutOnce(w, cam, s));
+              expect(b).toEqual(a);
+              compared += a.placed.length;
+              fresh[`${w.mesh.kind}|${kind}|${nameMode}|${ci}|${motion ? 'm' : ''}`] = digest(a);
             }
-          }
-          // 悬停一个排上的地名、一个没排上的地名：与参照相同
+          });
+          // 悬停一个地名：它最先放、一定标
           const cam = cameras(w)[1];
-          const ks = w.mesh.kind === 'sphere' ? [-1, 0, 1] : [0];
-          const keys = [st.features?.[0]?.key, st.features?.[st.features.length - 1]?.key, 'country:1'].filter((k): k is string => !!k);
-          for (const hoverLabel of keys) {
-            const s = { ...st, hoverLabel };
-            expect(plain(placeLabels(measuring(), cam, s, ks, refZoom(w, cam.zoom)))).toEqual(plain(placeLabelsRef(measuring(), cam, s, ks, refZoom(w, cam.zoom))));
+          const key = st.features?.[st.features.length - 1]?.key;
+          if (key) {
+            const r = layoutOnce(w, cam, { ...st, hoverLabel: key });
+            fresh[`${w.mesh.kind}|${kind}|${nameMode}|hover`] = digest(plain(r));
           }
         }
       }
-      // 不是空对照：国家模式里城市、国名都排上了不少
       expect(compared).toBeGreaterThan(500);
-      expect(Object.keys(w.small.cities ?? {}).length).toBeGreaterThan(100);
+      const mine = Object.fromEntries(Object.entries(fresh).filter(([k]) => k.startsWith(`${w.mesh.kind}|`)));
+      if (process.env.RECORD_LABELS) {
+        const all = { ...recorded, ...fresh };
+        writeFileSync(LABEL_FILE, `${JSON.stringify(Object.fromEntries(Object.entries(all).sort(([x], [y]) => (x < y ? -1 : 1))), null, 2)}\n`);
+      } else expect(mine).toEqual(Object.fromEntries(Object.entries(recorded).filter(([k]) => k.startsWith(`${w.mesh.kind}|`))));
     });
   }
+
+  it('不压别的字；海名、河名沿着水写，字不倒着；城市的名字按等级随缩放出现', () => {
+    const w = WORLDS[0][1]();
+    const st = stateFor(w, 'country', { features: modeFeatures(w.derived.features, 'all') });
+    let curved = 0;
+    let rivers = 0;
+    for (const cam of cameras(w)) {
+      const r = layoutOnce(w, cam, st);
+      // 不同地名的框不重叠（同一个地名沿线写的每个字一个框）
+      const bs = r.placed.length ? (r as unknown as { boxes: { key: string; x0: number; y0: number; x1: number; y1: number }[] }).boxes : [];
+      for (let i = 0; i < bs.length; i++)
+        for (let j = i + 1; j < bs.length; j++) {
+          const p = bs[i];
+          const q = bs[j];
+          if (p.key !== q.key) expect(p.x0 < q.x1 && p.x1 > q.x0 && p.y0 < q.y1 && p.y1 > q.y0, `${p.key} / ${q.key}`).toBe(false);
+        }
+      for (const l of r.placed) {
+        if (!l.glyphs || l.key.startsWith('country:') || l.key.startsWith('region:')) continue;
+        for (const g of l.glyphs) expect(Math.abs(g.a)).toBeLessThanOrEqual(1.46);
+        if (l.key.startsWith('river:')) rivers++;
+        else curved++;
+      }
+    }
+    expect(curved).toBeGreaterThan(0);
+    expect(rivers).toBeGreaterThan(0);
+    // 城市：看全图时只写首都的名字，一格 24 像素时大城市、城市也写
+    const towns = (cam: Camera) => {
+      const r = layoutOnce(w, cam, st);
+      const keys = new Set(r.placed.filter((l) => l.chars.length && l.key.startsWith('settle:city:')).map((l) => l.key));
+      return st.settlements!.filter((m) => keys.has(m.key));
+    };
+    const far = towns(cameras(w)[0]);
+    expect(far.length).toBeGreaterThan(0);
+    expect(far.every((m) => m.tier === 0)).toBe(true);
+    const near = towns(cameras(w)[2]);
+    expect(near.some((m) => (m.tier ?? 0) >= 1)).toBe(true);
+  });
 
   it('BoxIndex：随机的框（含很宽的、不是有限数的）与逐个比相同', () => {
     let seed = 7;
@@ -214,14 +272,16 @@ describe('国名的大小（第八十二轮）', () => {
   }
 });
 
+// 第八十九轮：国名多了按国家等级的字号倍数（scale），冻结的第三十九轮参照没有：对照时去掉这一项
+const noScale = (l: CountryLabelDraw[] | null) => l?.map(({ scale: _s, ...rest }) => rest) ?? null;
 describe('片区名：几何与字分开缓存，结果与原来相同', () => {
   for (const [name, make] of WORLDS) {
     it(name, () => {
       const w = make();
       const sources = ['country', 'bloc', 'culture', 'cultureGroup'] as const;
       for (const nm of ['zh', 'orig', 'both'] as const) {
-        for (const src of sources) expect(regionDraws(w, src, nm)).toEqual(regionDrawsRef(w, src, nm));
-        expect(countryDraws(w, nm)).toEqual(countryDrawsRef(w, nm));
+        for (const src of sources) expect(noScale(regionDraws(w, src, nm))).toEqual(regionDrawsRef(w, src, nm));
+        expect(noScale(countryDraws(w, nm))).toEqual(countryDrawsRef(w, nm));
       }
       // 改名：字跟着换，几何（中线）是同一个数组（不重算）
       const before = countryDraws(w, 'zh');
@@ -231,7 +291,7 @@ describe('片区名：几何与字分开缓存，结果与原来相同', () => {
       const w2 = eng.world;
       countryDraws(eng.world, 'zh');
       const after = countryDraws(w2, 'zh');
-      expect(after).toEqual(countryDrawsRef(w2, 'zh'));
+      expect(noScale(after)).toEqual(countryDrawsRef(w2, 'zh'));
       expect(after.find((d) => d.key === `country:${id}`)!.lines[0]).toBe('新名字');
       // 新世界的几何：领土数组没变，与改名前同一份中线
       const prev = countryDraws(w, 'zh');

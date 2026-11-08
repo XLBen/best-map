@@ -1,5 +1,5 @@
-import { type Anchor, frameOf, glyphs, glyphWidth, LABEL_STYLE, type LabelBox, MOTION_LAYER_MARGIN, MOTION_LAYER_ZOOM, type OverlayState, perf, type PlacedLabel } from './overlay-base';
-import { BoxIndex, drawMark, iconScale, markRadius, nameSpots, type SettleMark } from './settle-draw';
+import { type Anchor, frameOf, LABEL_STYLE, type LabelBox, MOTION_LAYER_MARGIN, MOTION_LAYER_ZOOM, type OverlayState, perf, type PlacedLabel } from './overlay-base';
+import { BoxIndex, drawMark, iconScale, markRadius, type SettleMark } from './settle-draw';
 import type { Camera } from './renderer';
 import { FEATURE_INFO, type GeoFeature } from '../../core/features';
 import { COUNTRY_KEY, type CountryLabelDraw, countryFitKey, placeCountries, REGION_KEY } from './overlay-country-labels';
@@ -9,6 +9,8 @@ import { cellName, peakMarks } from '../../core/human';
 import type { World } from '../../core/world';
 import { arraysToken } from '../../core/world-token';
 import { askGlyphs } from './label-font';
+import { CURVED_WATER, type FeatureLines, smoothRiver } from './label-lines';
+import { AREA_CANDS, FEATURE_TIER, measureText, nameSpots8, placeRiverCurve, type Placer, placeStraight, placeWaterCurve, POINT_CANDS, RANK_MINE, RANK_PEAK, settleRank, tierFontPx } from './label-place';
 
 // 地名、山峰、城市与地标的排版与画法（第四十一轮从 overlay.ts 原样搬来）
 
@@ -23,10 +25,16 @@ export const SETTLE_FONT = 'system-ui, "PingFang SC", sans-serif';
 // 地名、城市名的字体：画风写了字体时用它（第八十七轮，手绘的楷体），否则照旧
 export const labelFamily = (style: { labelFont?: string } | undefined) => style?.labelFont ?? SETTLE_FONT;
 
-// 排城市、地标、点（国名之后，按给的先后：首都、大城市在前）：一格在屏幕上够大才画；图标与已画的图标挤在一起时不画（首都、陪都照画），
-// 名字在图标的右、左、上、下找一处不和别的字、图标重叠的地方，找不到时不写。放好的框别的地名避让
+// 排城市、地标、点的图标（国名之后，按给的先后：首都、大城市在前）：一格在屏幕上够大才画；图标与已画的图标挤在一起时不画（首都、陪都照画）。
+// 第八十九轮：名字不在这里放——要写的名字（一格够大、写名字时）记下来，和地名一起按先后放（placeSettleName）：所有的图标先放好，名字都避开图标
+export interface SettleName {
+  m: SettleMark;
+  sx: number;
+  sy: number;
+  r: number;
+  anchor?: Anchor;
+}
 export function placeSettlements(
-  ctx: CanvasRenderingContext2D,
   st: OverlayState,
   ks: number[],
   toScreen: (x: number, y: number) => [number, number] | null,
@@ -35,12 +43,12 @@ export function placeSettlements(
   placed: PlacedLabel[],
   boxes: LabelBox[],
   index: BoxIndex,
-) {
+): SettleName[] {
   const marks = st.settlements ?? [];
   const size = st.cellSize ?? 0;
   const icons = new BoxIndex();
   const names = st.settleNames !== false;
-  const family = labelFamily(st.style);
+  const out: SettleName[] = [];
   for (const m of marks) {
     const cellPx = size * zoomAt(m.x, m.y);
     if (cellPx < m.iconPx) continue;
@@ -62,22 +70,26 @@ export function placeSettlements(
       const anchor: Anchor | undefined = view.anchors ? [m.x + 2 * k, m.y, sx, sy] : undefined;
       placed.push({ key: m.key, chars: [], widths: [], spacing: 0, total: 0, font: '', color: '', x: sx, y: sy, angle: 0, mark: m, markScale: scale, ...(m.scale !== undefined ? { fullScale: full } : {}), ...(anchor ? { anchor } : {}) });
       if (!names || !m.name || cellPx < m.namePx) continue;
-      const font = `${m.bold ? 600 : 500} ${m.fontPx}px ${family}`;
-      const chars = [...m.name];
-      if (chars.some((c) => !glyphs.has(`${font}|${c}`))) ctx.font = font;
-      const widths = chars.map((c) => glyphWidth(ctx, font, c));
-      const total = widths.reduce((a, b) => a + b, 0);
-      const h = m.fontPx;
-      for (const [cx, cy] of nameSpots(sx, sy, r, total, h)) {
-        const nb = { key: m.key, x0: cx - total / 2 - 2, y0: cy - h / 2 - 1, x1: cx + total / 2 + 2, y1: cy + h / 2 + 1 };
-        if (view.exporting && (nb.x0 < 0 || nb.x1 > view.cw || nb.y0 < 0 || nb.y1 > view.ch)) continue;
-        if (index.hits(nb)) continue;
-        index.add(nb);
-        boxes.push(nb);
-        placed.push({ key: m.key, chars, widths, spacing: 0, total, font, color: m.textColor, x: cx, y: cy, angle: 0, ...(m.alpha !== undefined || m.labelAlpha !== undefined ? { of: m } : {}), ...(anchor ? { anchor } : {}) });
-        break;
-      }
+      out.push({ m, sx, sy, r, ...(anchor ? { anchor } : {}) });
     }
+  }
+  return out;
+}
+
+// 一个城市、地标、点的名字：在图标的右、左、上、下与四个斜角里找第一处不和别的字、图标重叠的地方，找不到时不写。放好的框别的地名避让
+export function placeSettleName(p: Placer, n: SettleName, family: string) {
+  const m = n.m;
+  const font = `${m.bold ? 600 : 500} ${m.fontPx}px ${family}`;
+  const t = measureText(p.ctx, m.name, font, m.fontPx, 0, m.textColor);
+  const h = m.fontPx;
+  for (const [cx, cy] of nameSpots8(n.sx, n.sy, n.r, t.total, h)) {
+    const nb = { key: m.key, x0: cx - t.total / 2 - 2, y0: cy - h / 2 - 1, x1: cx + t.total / 2 + 2, y1: cy + h / 2 + 1 };
+    if (p.exporting && (nb.x0 < 0 || nb.x1 > p.cw || nb.y0 < 0 || nb.y1 > p.ch)) continue;
+    if (p.index.hits(nb)) continue;
+    p.index.add(nb);
+    p.boxes.push(nb);
+    p.placed.push({ key: m.key, chars: t.chars, widths: t.widths, spacing: 0, total: t.total, font, color: m.textColor, x: cx, y: cy, angle: 0, ...(m.alpha !== undefined || m.labelAlpha !== undefined ? { of: m } : {}), ...(n.anchor ? { anchor: n.anchor } : {}) });
+    return;
   }
 }
 
@@ -94,6 +106,7 @@ export let layout: {
   peaks: GeoFeature[] | null;
   countries: CountryLabelDraw[] | null;
   settlements: SettleMark[] | null;
+  lines: FeatureLines | null;
   placed: PlacedLabel[];
   boxes: LabelBox[];
   marks: [number, number][];
@@ -102,6 +115,10 @@ export let layout: {
   // 移动中排的：第几次手势（停稳的那一帧加一）；停稳时排的为 -1
   gesture: number;
 } | null = null;
+// 测试用：扔掉排好的版面（下一次重排）
+export function clearLabelLayout() {
+  layout = null;
+}
 // 停稳画过一次地名加一：转球时同一次手势里沿用移动中排好的版面（见 drawLabels）
 export let gesture = 0;
 
@@ -151,7 +168,8 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   const base = labelBase(cw, chh, st, cam);
   const key = `${cam.x}|${cam.y}|${cam.zoom}|${ks.join(',')}|${base}|${st.motion ? 'm' : ''}`;
   const peaks = st.peaks ?? null;
-  if (!exporting && layout && layout.key === key && layout.features === st.features && layout.peaks === peaks && layout.countries === (st.countries ?? null) && layout.settlements === (st.settlements ?? null)) return layout;
+  const lines = st.featureLines ?? null;
+  if (!exporting && layout && layout.key === key && layout.features === st.features && layout.peaks === peaks && layout.countries === (st.countries ?? null) && layout.settlements === (st.settlements ?? null) && layout.lines === lines) return layout;
   const t0 = perf ? performance.now() : 0;
   // 画风写了网页字体（第八十七轮，手绘的楷体）：请浏览器载入要写的字（载入好了静态那一层重画）
   if (st.style?.labelFont && !exporting) askGlyphs(st.style.labelFont, labelTexts(st));
@@ -169,8 +187,14 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   const index = new BoxIndex();
   // 国名最先排（第二十三轮）
   if (st.countries?.length) placeCountries(ctx, st, ks, toScreen, { cw, ch: chh, mx, my, exporting }, placed, boxes, index);
-  // 城市、地标、自定义点（第二十四轮）：国名之后
-  if (st.settlements?.length) placeSettlements(ctx, st, ks, toScreen, (x, y) => (proj ? cam.zoom * trueScale(proj, x, y) : cam.zoom), { cw, ch: chh, mx, my, exporting, anchors: !!proj }, placed, boxes, index);
+  // 城市、地标、自定义点的图标（第二十四轮）：国名之后；名字记下来，和地名一起按先后放
+  const settleNames = st.settlements?.length ? placeSettlements(st, ks, toScreen, (x, y) => (proj ? cam.zoom * trueScale(proj, x, y) : cam.zoom), { cw, ch: chh, mx, my, exporting, anchors: !!proj }, placed, boxes, index) : [];
+  const P: Placer = { ctx, toScreen, cw, ch: chh, mx, my, exporting, proj: !!proj, index, boxes, placed };
+  // 第八十九轮：名字按先后（label-place.ts 的 RANK：用户自己的、首都、大洋与大陆、海与大城市、别的地名、城市、村镇与地标、山峰）放，
+  // 一样时城市在前（按给的先后），地名按重要度
+  const jobs: { rank: number; seq: number; run: () => void }[] = [];
+  const family = labelFamily(st.style);
+  settleNames.forEach((n, q) => jobs.push({ rank: settleRank(n.m.tier), seq: q, run: () => placeSettleName(P, n, family) }));
   // 用户自己的地名（圈的地区、放的地名、改过的名字）和悬停、选中的那个：总是标出来，最先放（避让时别的让它）
   const mine = (f: GeoFeature) => !!f.region || f.custom || f.key === st.hoverLabel;
   const features = [...(st.features ?? [])].sort((a, b) => Number(mine(b)) - Number(mine(a)) || b.importance - a.importance);
@@ -182,21 +206,21 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
     features.push(...pseudo);
   }
   const named = new Set<GeoFeature>();
-  const family = labelFamily(st.style);
-  for (const f of features) {
+  features.forEach((f, q) => {
     const isPeak = pseudo.has(f);
-    if (!f.name || (!isPeak && st.labelTypes && !st.labelTypes.has(f.type))) continue;
+    if (!f.name || (!isPeak && st.labelTypes && !st.labelTypes.has(f.type))) return;
     // 删掉的地名不标（选中、悬停着的那个照样标出来，看得到在改哪一个；导出的图里不标）
-    if (f.hidden && (exporting || f.key !== st.hoverLabel)) continue;
+    if (f.hidden && (exporting || f.key !== st.hoverLabel)) return;
     // 在屏幕上有多大；山峰、用户放的点状地名没有大小（山峰放大到一定程度才标，地点总是标）
     const point = f.type === 'peak' || f.type === 'spot';
     // 投影时按地名那里的比例（球形的边上小）
     const zl = proj ? cam.zoom * trueScale(proj, f.x, f.y) : cam.zoom;
     const sizePx = f.type === 'river' ? f.span * zl : point ? 0 : (Math.sqrt(f.areaKm2) / st.kmPerUnit) * zl;
-    const minPx = f.type === 'continent' || f.type === 'ocean' ? 25 : f.type === 'river' ? 90 : point ? 0 : 45;
-    if (!mine(f) && (f.type === 'peak' ? rz < (isPeak ? PEAK_NAME_ZOOM : 1600) : sizePx < minPx)) continue;
+    // 第八十九轮：字号按种类分档（label-place.ts 的 FEATURE_TIER）
+    const tier = FEATURE_TIER[f.type];
+    if (!mine(f) && (f.type === 'peak' ? rz < (isPeak ? PEAK_NAME_ZOOM : 1600) : sizePx < tier.minPx)) return;
     // 整个星球：每份副本上都可能看得见（相隔一整圈，彼此不会挤在一起）
-    const spots: [number, number][] = [];
+    const spots: [number, number, number][] = [];
     for (const k of ks) {
       const at = toScreen(f.x + 2 * k, f.y);
       if (!at) continue;
@@ -204,69 +228,13 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
       if (x < -mx || y < -my || x > cw + mx || y > chh + my) continue;
       // 导出整张地图：只要中心落在图里的那一份（整个星球的图是一整圈，分界线两边的副本不标两遍）
       if (exporting && (x < 0 || x >= cw)) continue;
-      spots.push([x, y]);
+      spots.push([x, y, k]);
     }
-    if (!spots.length) continue;
-    const group = FEATURE_INFO[f.type].group;
-    const style = LABEL_STYLE[group];
-    const base = f.type === 'continent' || f.type === 'ocean' ? 15 : f.type === 'river' || f.type === 'peak' ? 10.5 : 11;
-    const grow = minPx > 0 ? Math.max(0, Math.log2(Math.max(1, sizePx / minPx))) * 2.6 : 0;
-    const fontPx = Math.round(Math.min(f.type === 'continent' || f.type === 'ocean' ? 30 : 20, base + grow));
-    const font = `${style.italic ? 'italic ' : ''}${f.type === 'continent' || f.type === 'ocean' ? 600 : 500} ${fontPx}px ${family}`;
-    const label = nameText(f.name, f.orig, st.nameMode);
-    const text = f.type === 'peak' ? `▲ ${label}` : f.type === 'spot' ? `• ${label}` : label;
-    const chars = [...text];
-    // 第四十轮：只在要量字（字宽缓存里没有）时设字体（设一次要解析一遍字体名；画的时候每个地名自己设）
-    if (chars.some((c) => !glyphs.has(`${font}|${c}`))) ctx.font = font;
-    const wide = f.type === 'range' || f.type === 'continent' || f.type === 'ocean' || f.type === 'region';
-    const spacing = (f.type === 'region' ? 0.3 : style.spacing) * fontPx * (wide ? 2 : 1);
-    const widths = chars.map((c) => glyphWidth(ctx, font, c));
-    const total = widths.reduce((a, b) => a + b, 0) + spacing * (chars.length - 1);
-    // 地点：圆点落在放的位置上，字在右边
-    const shift = f.type === 'spot' ? total / 2 - widths[0] / 2 : 0;
-    // 狭长的地物沿主轴写，其余横写（用户圈的区块只在明显狭长时才斜着写，见 regionFeatures）
-    let angle = 0;
-    if (f.type === 'river' && f.line && f.line.length > 2) {
-      const mid = Math.floor(f.line.length / 2);
-      const a = f.line[Math.max(0, mid - 2)];
-      const b = f.line[Math.min(f.line.length - 1, mid + 2)];
-      const dxl = b[0] - a[0];
-      angle = Math.atan2(b[1] - a[1], dxl - 2 * Math.round(dxl / 2));
-      if (angle > Math.PI / 2) angle -= Math.PI;
-      if (angle < -Math.PI / 2) angle += Math.PI;
-    } else if (f.region ? f.angle !== 0 && f.span * zl > total * 1.4 : (f.type === 'range' || f.type === 'peninsula' || f.type === 'strait') && f.span * zl > total * 1.4) {
-      angle = f.angle;
-    }
-    // 投影：地图上的方向换成屏幕上的方向（顺着地物的走向）
-    if (proj && angle !== 0) {
-      const e = 1e-4;
-      const a0 = toScreen(f.x, f.y);
-      const a1 = toScreen(f.x + e * Math.cos(angle), f.y + e * Math.sin(angle));
-      if (a0 && a1) {
-        angle = Math.atan2(a1[1] - a0[1], a1[0] - a0[0]);
-        if (angle > Math.PI / 2) angle -= Math.PI;
-        if (angle < -Math.PI / 2) angle += Math.PI;
-      }
-    }
-    const hw = (Math.abs(Math.cos(angle)) * total + Math.abs(Math.sin(angle)) * fontPx) / 2 + 3;
-    const hh = (Math.abs(Math.sin(angle)) * total + Math.abs(Math.cos(angle)) * fontPx) / 2 + 2;
-    for (const [x0, y0] of spots) {
-      let sx = x0 + shift;
-      let sy = y0;
-      // 导出整张地图：整个字在图里（伸出边的往里挪；比图还大的不标）
-      if (exporting) {
-        if (2 * hw > cw || 2 * hh > chh) continue;
-        sx = Math.max(hw, Math.min(cw - hw, sx));
-        sy = Math.max(hh, Math.min(chh - hh, sy));
-      }
-      const box = { key: f.key, x0: sx - hw, y0: sy - hh, x1: sx + hw, y1: sy + hh };
-      if (index.hits(box)) continue;
-      boxes.push(box);
-      index.add(box);
-      placed.push({ key: f.key, chars, widths, spacing, total, font, color: f.custom && !isPeak ? '#7a1f5c' : style.color, x: sx, y: sy, angle, ...(proj ? { anchor: [f.x, f.y, x0, y0] as Anchor } : {}) });
-      if (isPeak) named.add(f);
-    }
-  }
+    if (!spots.length) return;
+    jobs.push({ rank: mine(f) ? RANK_MINE : isPeak ? RANK_PEAK : tier.rank, seq: 1e6 + q, run: () => placeFeature(P, st, f, isPeak, tier, sizePx, zl, spots, lines, family) && isPeak && named.add(f) });
+  });
+  jobs.sort((a, b) => a.rank - b.rank || a.seq - b.seq);
+  for (const j of jobs) j.run();
   // 没标名字的山峰：画一个小三角（与已标的地名、别的三角隔开 PEAK_GAP 像素以上才画，高的先画）
   const marks: [number, number][] = [];
   // 投影时每个三角的地图坐标（转球的一次手势里按它重新投影，见 drawLabels）
@@ -308,6 +276,7 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
     peaks,
     countries: st.countries ?? null,
     settlements: st.settlements ?? null,
+    lines,
     placed,
     boxes: hits,
     marks,
@@ -318,6 +287,56 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   if (!exporting) layout = out;
   if (perf) perf.cpu('layout', performance.now() - t0);
   return out;
+}
+
+// 一个地名（第八十九轮）：海、洋、湾、海峡、湖沿着水的中线弯着写，河沿河道的一段写，放不下、压着别的字时横着（或沿主轴斜着）写，
+// 在几个候选位置里取第一个不压别的字、图标的。放下了（至少一份副本）返回 true
+function placeFeature(P: Placer, st: OverlayState, f: GeoFeature, isPeak: boolean, tier: (typeof FEATURE_TIER)[keyof typeof FEATURE_TIER], sizePx: number, zl: number, spots: [number, number, number][], lines: FeatureLines | null, family: string): boolean {
+  const group = FEATURE_INFO[f.type].group;
+  const style = LABEL_STYLE[group];
+  const fontPx = tierFontPx(tier, sizePx);
+  const font = `${style.italic ? 'italic ' : ''}${tier.weight} ${fontPx}px ${family}`;
+  const label = nameText(f.name, f.orig, st.nameMode);
+  const text = f.type === 'peak' ? `▲ ${label}` : f.type === 'spot' ? `• ${label}` : label;
+  const wide = f.type === 'range' || f.type === 'continent' || f.type === 'ocean' || f.type === 'region';
+  const spacing = (f.type === 'region' ? 0.3 : style.spacing) * fontPx * (wide ? 2 : 1);
+  const t = measureText(P.ctx, text, font, fontPx, spacing, f.custom && !isPeak ? '#7a1f5c' : style.color);
+  // 地点：圆点落在放的位置上，字在右边
+  const shift = f.type === 'spot' ? t.total / 2 - t.widths[0] / 2 : 0;
+  // 狭长的地物沿主轴写，其余横写（用户圈的区块只在明显狭长时才斜着写，见 regionFeatures）
+  let angle = 0;
+  if (f.type === 'river' && f.line && f.line.length > 2) {
+    const mid = Math.floor(f.line.length / 2);
+    const a = f.line[Math.max(0, mid - 2)];
+    const b = f.line[Math.min(f.line.length - 1, mid + 2)];
+    const dxl = b[0] - a[0];
+    angle = Math.atan2(b[1] - a[1], dxl - 2 * Math.round(dxl / 2));
+    if (angle > Math.PI / 2) angle -= Math.PI;
+    if (angle < -Math.PI / 2) angle += Math.PI;
+  } else if (f.region ? f.angle !== 0 && f.span * zl > t.total * 1.4 : (f.type === 'range' || f.type === 'peninsula' || f.type === 'strait') && f.span * zl > t.total * 1.4) {
+    angle = f.angle;
+  }
+  // 投影：地图上的方向换成屏幕上的方向（顺着地物的走向）
+  if (P.proj && angle !== 0) {
+    const e = 1e-4;
+    const a0 = P.toScreen(f.x, f.y);
+    const a1 = P.toScreen(f.x + e * Math.cos(angle), f.y + e * Math.sin(angle));
+    if (a0 && a1) {
+      angle = Math.atan2(a1[1] - a0[1], a1[0] - a0[0]);
+      if (angle > Math.PI / 2) angle -= Math.PI;
+      if (angle < -Math.PI / 2) angle += Math.PI;
+    }
+  }
+  const curve = CURVED_WATER.has(f.type) ? lines?.get(f.key) : undefined;
+  const river = f.type === 'river' ? smoothRiver(f) : null;
+  const cands = f.type === 'peak' || f.type === 'spot' ? POINT_CANDS : AREA_CANDS;
+  let any = false;
+  for (const [x0, y0, k] of spots) {
+    if (curve && placeWaterCurve(P, f.key, t, curve, k, tier.gap)) any = true;
+    else if (river && placeRiverCurve(P, f.key, t, river, k)) any = true;
+    else if (placeStraight(P, f.key, t, x0 + shift, y0, angle, cands, [f.x + 2 * k, f.y, x0, y0])) any = true;
+  }
+  return any;
 }
 
 // 投影的手势里沿用的版面按现在的镜头重新投影（见 drawLabels）：地名、图标挪到锚点现在的位置，国名的字逐个投影，
@@ -387,6 +406,7 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
     L.peaks === (st.peaks ?? null) &&
     L.countries === (st.countries ?? null) &&
     L.settlements === (st.settlements ?? null) &&
+    L.lines === (st.featureLines ?? null) &&
     (st.motionEpoch !== undefined
       ? // 同一次场景（开始动的第一帧场景就重画了：地名也在这一帧按带边距的范围重排）
         L.epoch === st.motionEpoch &&
@@ -414,6 +434,7 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
     L.peaks === (st.peaks ?? null) &&
     L.countries === (st.countries ?? null) &&
     L.settlements === (st.settlements ?? null) &&
+    L.lines === (st.featureLines ?? null) &&
     zr < MOTION_LAYER_ZOOM &&
     zr > 1 / MOTION_LAYER_ZOOM
   ) {
