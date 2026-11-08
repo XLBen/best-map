@@ -258,8 +258,10 @@ export function growOwners(g: CountryRun) {
   };
   run();
   limit = FREE_MUL;
+  // 第八十四轮：国家很少时（时代的国家大小比这块陆地大）一国最多能占的放宽到 1 ÷ 国家数，几国加起来盖得满
+  const maxFree = Math.max(MAX_FREE, 1 / Math.max(1, g.total));
   for (let o = 0; o < k; o++) {
-    budget[o] = Math.min(budget[o], (MAX_FREE * area) / FREE_MUL);
+    budget[o] = Math.min(budget[o], (maxFree * area) / FREE_MUL);
     full[o] = claimed[o] >= limit * budget[o] ? 1 : 0;
     spd[o] = Math.pow(speed[o], 0.25);
     Rp[o] = Math.max(R[o], Math.sqrt(T / Math.PI));

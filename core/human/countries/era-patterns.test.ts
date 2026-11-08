@@ -159,7 +159,8 @@ describe('中世纪', () => {
   it('国家少的世界（统一）：放不下的格局不放，照样生成', () => {
     const { eng } = peopled('medieval');
     const e = eng.clone();
-    humanExec(e, { op: 'regenerate_countries' }, { countryKm2: fragKm2('medieval', 0) });
+    // 第八十四轮：国家少的小世界至少 min(9, 能住人的面积 ÷ (¼ 国家大小)) 国（count.ts），国家大小要再大 8 倍才只剩几国
+    humanExec(e, { op: 'regenerate_countries' }, { countryKm2: fragKm2('medieval', -0.5) });
     const n = countryList(e.world.small).length;
     expect(n).toBeGreaterThan(0);
     expect(n).toBeLessThan(6);

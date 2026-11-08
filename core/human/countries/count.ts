@@ -9,8 +9,15 @@ import type { CountryRun } from './state';
 
 // 一个国家平均占多少 km² 能住人的陆地：时代的 countryKm2（第七十七轮去掉了“分裂 ↔ 统一”，以前它在正中时就是这个数）
 export const averageCountryKm2 = (era: Pick<Era, 'countryKm2'>): number => era.countryKm2 ?? COUNTRY_KM2;
-// 几个新的国家：能住人的干陆地面积 ÷ 平均的国家面积（有地方时至少 1 个，最多 MAX_COUNTRIES）
-export const plannedCountries = (area: number, T: number): number => Math.min(MAX_COUNTRIES, Math.max(area > 0 ? 1 : 0, Math.round(area / T)));
+// 几个新的国家：能住人的干陆地面积 ÷ 平均的国家面积（有地方时至少 1 个，最多 MAX_COUNTRIES）。
+// 第八十四轮：一国最多占能住人的地方的 MAX_SHARE（seeds.ts，0.12），国家少的小世界里几国加起来盖不住大半块陆地
+// （向导里“一片海域”的中世纪世界只有 2 国、六七成能住人的地方无主）：至少 COVER_COUNTRIES 个（= ⌈1 ÷ MAX_SHARE⌉，够盖满），
+// 但每国平均不小于平均的国家的 MIN_COUNTRY_SHARE（地方小、或者时代的国家大小调得很大时少几个；那时一国能占的上限跟着放宽，
+// 见 seeds.ts 的 maxShare、grow.ts 的 maxFree）。大世界（按面积本来就够多）不变
+export const COVER_COUNTRIES = 9;
+export const MIN_COUNTRY_SHARE = 0.25;
+export const plannedCountries = (area: number, T: number): number =>
+  Math.min(MAX_COUNTRIES, Math.max(area > 0 ? 1 : 0, Math.round(area / T), Math.min(COVER_COUNTRIES, Math.floor(area / (MIN_COUNTRY_SHARE * T)))));
 
 // 按 mass 分 total 个（最大余数法：加起来正好是 total；mass 是 0 的不分）
 export function apportion(total: number, mass: Float64Array): Int32Array {

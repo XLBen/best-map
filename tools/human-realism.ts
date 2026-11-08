@@ -6,15 +6,16 @@
 //   领土不连成一片的国家的比例（只数同一块陆地上被隔开的：隔海的、殖民地、公司领地是有意的，不算）；
 //   宗教：每个文化组里占到一成以上格的宗教有几种（平均），每格的主要宗教与邻格里最多的那种相同的比例（成片的程度），
 //   每种宗教连成几片（至少 5 格，平均）；
-//   连着海路的港口、海路的条数（第八十四轮以后才有）。
-//   npx tsx tools/human-realism.ts [--seeds 3,7,11] [--eras antiquity,medieval,...] [--only region|globe] [--cells 30000] [--json 文件]
+//   连着海路的港口、海路的条数（第八十四轮以后才有）；能住人的地方（宜居度不低于时代的 minHabitability）有主的比例。
+//   npx tsx tools/human-realism.ts [--seeds 3,7,11] [--eras antiquity,medieval,...] [--only region|globe|sea] [--cells 30000] [--json 文件]
+//   sea（第八十四轮）：向导里“一块大陆 · 一片海域”那样的小世界（约 5000 km 宽，中纬度，4 万格）：时代的国家大小按大世界定，这里国家少
 // 这个文件要能在旧的提交上跑：只用那时已有的接口
 import { writeFileSync } from 'node:fs';
 import { Engine } from '../core/engine';
 import type { Command } from '../core/commands';
 import { builtinPacks } from '../core/packs/builtin-tree';
 import { newWorldContentCommands, packImportCommands } from '../core/packs/import';
-import { planetSettings } from '../core/presets';
+import { planetSettings, settingsAt } from '../core/presets';
 import { kindOf } from '../core/content/registry';
 import { cellKm2, distKm } from '../core/human/space';
 import type { World } from '../core/world';
@@ -32,10 +33,10 @@ const jsonOut = opt('--json');
 
 const groupsOf = (era: string) => ((builtinPacks().find((p) => p.id === era)?.packs ?? []).find((p) => p.id === 'cultures')?.packs ?? []).slice(0, 4).map((n) => n.id);
 
-function build(globe: boolean, seed: number, era: string): Engine {
-  const settings = globe ? { ...planetSettings('earth'), seed } : { seed, cells };
+function build(globe: boolean, seed: number, era: string, sea = false): Engine {
+  const settings = globe ? { ...planetSettings('earth'), seed } : sea ? { ...settingsAt('region', 46, 40000), seed } : { seed, cells };
   const eng = new Engine(settings);
-  eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: { seed, type: 'continents' }, reset: true }] } as Command);
+  eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: { seed, type: sea ? 'continent' : 'continents' }, reset: true }] } as Command);
   for (const c of packImportCommands(builtinPacks(), { packs: [[era]] }, eng.world)) eng.exec(c);
   eng.exec((kindOf('provinceRules') ? { op: 'generate_provinces', seed } : { op: 'generate_provinces', rules: { seed } }) as unknown as Command);
   eng.exec({ op: 'generate_human', packs: [[era]], groups: groupsOf(era), countries: {}, settlements: {} } as unknown as Command);
@@ -51,6 +52,7 @@ const median = (v: number[]) => {
 
 interface Row {
   countries: number;
+  owned: number;
   capKm: number;
   capFrac: number;
   cities: number;
@@ -112,6 +114,16 @@ function measure(w: World): Row {
     } else km = Math.hypot(r.x / r.w - mesh.x[i], r.y / r.w - mesh.y[i]) * w.kmPerUnit;
     capKm.push(km);
     capFrac.push(km / Math.sqrt(r.a / Math.PI));
+  }
+  // ---- 能住人的地方有主的比例（宜居度不低于时代的 minHabitability） ----
+  const eraItem = Object.values((small.content?.era ?? {}) as Record<string, { unclaimed?: { minHabitability?: number } }>)[0];
+  const minH = eraItem?.unclaimed?.minHabitability ?? 0.05;
+  let habN = 0;
+  let ownN = 0;
+  for (let i = 0; i < n; i++) {
+    if (!dry(i) || d.habitability[i] < minH) continue;
+    habN++;
+    if (country && country[i] >= 0) ownN++;
   }
   // ---- 城市 ----
   const cityList = Object.values(small.cities ?? {});
@@ -290,6 +302,7 @@ function measure(w: World): Row {
   const roads = Object.values(small.roads ?? {});
   return {
     countries: Object.keys(small.countries ?? {}).length,
+    owned: habN ? ownN / habN : NaN,
     capKm: median(capKm),
     capFrac: median(capFrac),
     cities: cityList.length,
@@ -309,7 +322,7 @@ function measure(w: World): Row {
   };
 }
 
-const KEYS: (keyof Row)[] = ['countries', 'capKm', 'capFrac', 'cities', 'desertCities', 'borderRiver', 'baseRiver', 'borderHigh', 'baseHigh', 'borderRidge', 'baseRidge', 'split', 'religions', 'coherence', 'patches', 'ports', 'seaLanes'];
+const KEYS: (keyof Row)[] = ['countries', 'owned', 'capKm', 'capFrac', 'cities', 'desertCities', 'borderRiver', 'baseRiver', 'borderHigh', 'baseHigh', 'borderRidge', 'baseRidge', 'split', 'religions', 'coherence', 'patches', 'ports', 'seaLanes'];
 const mean = (rows: Row[], k: keyof Row) => {
   const v = rows.map((r) => r[k]).filter((x) => Number.isFinite(x));
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : NaN;
@@ -317,14 +330,14 @@ const mean = (rows: Row[], k: keyof Row) => {
 const fmt = (k: keyof Row, v: number) => (!Number.isFinite(v) ? '—' : ['countries', 'cities', 'ports', 'seaLanes', 'capKm'].includes(k) ? v.toFixed(0) : k === 'religions' || k === 'capFrac' || k === 'patches' ? v.toFixed(2) : `${(v * 100).toFixed(1)}%`);
 
 const out: Record<string, Record<string, number>> = {};
-for (const kind of ['region', 'globe'].filter((k) => !only || k === only)) {
-  console.log(`\n## ${kind === 'region' ? `一块地区（${cells} 格）` : '整个星球'}，种子 ${seeds.join('、')} 的平均\n`);
+for (const kind of ['region', 'globe', 'sea'].filter((k) => (only ? k === only : k !== 'sea'))) {
+  console.log(`\n## ${kind === 'region' ? `一块地区（${cells} 格）` : kind === 'sea' ? '一片海域的一块大陆（4 万格）' : '整个星球'}，种子 ${seeds.join('、')} 的平均\n`);
   console.log(`| 时代 | ${KEYS.join(' | ')} |`);
   console.log(`|---|${KEYS.map(() => '---:').join('|')}|`);
   const all: Row[] = [];
   for (const era of eras) {
     const rows: Row[] = [];
-    for (const seed of seeds) rows.push(measure(build(kind === 'globe', seed, era).world));
+    for (const seed of seeds) rows.push(measure(build(kind === 'globe', seed, era, kind === 'sea').world));
     all.push(...rows);
     out[`${kind}:${era}`] = Object.fromEntries(KEYS.map((k) => [k, mean(rows, k)]));
     console.log(`| ${era} | ${KEYS.map((k) => fmt(k, mean(rows, k))).join(' | ')} |`);

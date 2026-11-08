@@ -185,6 +185,7 @@ export function placeSeeds(g: CountryRun) {
     }
   }
   const meanM = mCount ? mSum / mCount : 1;
+  const maxShare = Math.max(MAX_SHARE, 1 / Math.max(1, g.total));
   const compArea = new Map<number, number>();
   for (let u = 0; u < U; u++) compArea.set(unitComp[u], (compArea.get(unitComp[u]) ?? 0) + areaList[u]);
   for (let u = 0; u < U; u++) {
@@ -193,7 +194,8 @@ export function placeSeeds(g: CountryRun) {
     const culture = ctx.cultures[c];
     const slots = slotsOf[u];
     // 一国的预算不超过所有能住人的地方的 MAX_SHARE（国家少的世界里帝国不吞掉大半），也不超过这一块陆地上能住人的地方
-    for (const s of slots) s.budget = Math.min(s.budget * (T / meanM), MAX_SHARE * area, compArea.get(unitComp[u])!);
+    // 第八十四轮：国家很少时放宽到 1 ÷ 国家数（几国加起来盖得满；以前小世界里 2 国各占 12%，大半无主）
+    for (const s of slots) s.budget = Math.min(s.budget * (T / meanM), maxShare * area, compArea.get(unitComp[u])!);
     // 大的先挑地方
     slots.sort((a, b) => b.budget - a.budget || (a.gov.id < b.gov.id ? -1 : 1));
     const cands = cellsU[u];
