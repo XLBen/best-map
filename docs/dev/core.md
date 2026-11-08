@@ -17,11 +17,11 @@
 - `island-types.ts` 岛的种类与编号（`causes.islandType`、`LAGOON_BIT`）、省份按格分陆海（`provinceLand`、`landProvinceCells`、`landPixelCells`）
 - `elevation.ts` 高程的入口与按陆块的记忆（`fromMemo`）；第八十三轮拆开（照旧全部导出）：`elevation-solve.ts` 抬升-侵蚀稳态的求解、迎风坡、洼地，`seafloor.ts` / `seafloor-coast.ts` 海底（`seafloor`）与它用的岸边属性，`elevation-lakes.ts` 湖底（`lakeBedShape`）、画的湖、只挖河床（`carveBeds`）
 - `plains.ts` 冲积平原、冲积扇、三角洲平原（第三十三轮）
-- `glacial.ts` 冰川刻蚀与冰川湖群（第三十四轮）；第八十六轮：冰盖按现在的纬度、冷暖笔刷、太阳（`iceStrength` → `derived.ice`，每格超过冰盖南界多少度），在流水线里按米挖（`scourTerrain`，求解之后、气候按没挖的地形）；`glacial-legacy.ts` 第八十五轮在求解里挖的写法（测试退回旧地形用）
+- `glacial.ts` 冰川刻蚀与冰川湖群（第三十四轮）；第八十六轮：冰盖按现在的纬度、冷暖笔刷、太阳（`iceStrength` → `derived.ice`，每格超过冰盖南界多少度），在流水线里按米挖（`scourTerrain`，求解之后、气候按没挖的地形）；第八十八轮：只涂了冷暖时冰盖只重算涂过的格（`iceStrengthAt`），南界与小洼的噪声分开、用到才算；`glacial-legacy.ts` 第八十五轮在求解里挖的写法（测试退回旧地形用）
 - `elevation-precip.ts` 求解用的降水代理（第八十六轮）：纬度带 × 顺着盛行风走过的陆路 × 雨影（按东西坐标顺风扫），流量按它加权（`wetWeights`），干的内陆多出平底的洼地；`precipOn` 测试用的开关
 - `sea-ice.ts` 海冰（第八十六轮）：按两个半年与全年的海面气温，冬天的范围与多年冰（`seaIceAt`，只是画法）
 - `reefs.ts` 珊瑚礁（第八十六轮）：暖、浅、离大河口远的海格的强度（`reefStrength`，写进岩性层的白沙，只是画法）
-- `routing.ts` 汇流路由（Priority-Flood + 最陡下降）；`heap.ts` 类型化数组的堆
+- `routing.ts` 汇流路由（Priority-Flood + 最陡下降；第八十八轮：逐格的几段是模块里的小函数，每次只重置活动格）；`routing-parts.ts` 水文的路由按陆块记（`routeByParts`：没变的陆块照用，第八十八轮）；`heap.ts` 类型化数组的堆
 - `stats.ts` 地形统计量与和地球比（`tools/terrain-stats.ts`、`tools/realism-report.ts` 用）
 
 ## 气候与水
@@ -33,13 +33,13 @@
 - `planet-climate.ts` 整个星球的气候（`sphereStatic` / `sphereLand` 分层缓存）；第八十三轮拆出 `planet-land-fraction.ts`（陆地比例的模糊）、`planet-climate-steps.ts`（气温、水汽扫掠、海风、季风等小步）；`sphere-flow.ts` 球面上的输送
 - `ocean.ts` 简化洋流与海面温度（整个星球）
 - `ocean-plane.ts` 一块地区的洋流（第四十六轮）：粗栅格（像素约 3 格、长边 ≤ 128）上的风生环流、上涌、海温输送、带上陆地；按像素上取到的海陆、温度、风缓存；`ocean-raster.ts` 它用的只看像素的小算子（挡流陆地、海岸距离、平滑、倒角距离）
-- `hydrology.ts` 填洼汇流、湖、径流（`cut`：断流的格）、湖底修深（`shapeLakeBeds`）、坡度缓存（`slopeMemo`）
+- `hydrology.ts` 填洼汇流、湖、径流（`cut`：断流的格）、湖底修深（`shapeLakeBeds`）、坡度缓存（`slopeMemo`；第八十八轮：只重算高度变了的格与邻格）
 - `rivers.ts` 描河（`traceRivers`），照旧导出下面几个（第八十三轮拆出）：`rivers-line.ts` 折线的类型、平滑与曲流、编码、画的河的导线、几何小工具；`rivers-shore.ts` 对画面上岸线的查询；`rivers-mouth.ts` 河口（`normalMouth`、`tidyMouths`）；`rivers-branch.ts` 三角洲分汊（`withBranches`）；`rivers-ribbon.ts` 河画出来的带子（`riverRibbon`）
 - `delta.ts` 三角洲的河口与亚格子海岸凸出（`deltaBulge`）
 - `coast-memo.ts` 描河时按画面海岸场的查询跨几次描河记下来
-- `coast-style.ts` 海岸类型（峡湾、沙坝、溺谷、小湖群的权重）与着色器海岸值纹理 b、a 的打包；`LOOK`、`SKERRY_REACH`
-- `fjords.ts` 峡湾（第三十六轮）：谷网 `buildFjordNet`（按块）；第八十三轮拆出（照旧导出）：`fjord-base.ts` `FJ` 常数、谷网的类型、候选的谷段、画法的场，`fjord-layer.ts` `fjordLayer`（着色器的峡湾纹理）
-- `river-pack.ts` 地图上的河在计算 Worker 里描好打包（`worldRivers`），主线程 `seedRivers` 拆开直接用；`riverDraw`；第八十轮：`riversId` 这一份的编号（没变时快照不带河，主线程 `reseedRivers` 用手上拆好的）
+- `coast-style.ts` 海岸类型（峡湾、沙坝、溺谷、小湖群的权重）与着色器海岸值纹理 b、a 的打包；`LOOK`、`SKERRY_REACH`；第八十八轮：冰盖变了时按强度比哪些格要重算
+- `fjords.ts` 峡湾（第三十六轮）：谷网 `buildFjordNet`（按块）；第八十三轮拆出（照旧导出）：`fjord-base.ts` `FJ` 常数、谷网的类型、候选的谷段、画法的场，`fjord-layer.ts` `fjordLayer`（着色器的峡湾纹理）；第八十八轮：`fjord-cells.ts` 每格撒的点与两格的点连不连按网格记着（`cellPoints`、`linkBits`），一块的一带没变时照用几何、只重算预算（`reweighTile`）
+- `river-pack.ts` 地图上的河在计算 Worker 里描好打包（`worldRivers`），主线程 `seedRivers` 拆开直接用；`riverDraw`；第八十轮：`riversId` 这一份的编号（没变时快照不带河，主线程 `reseedRivers` 用手上拆好的）；第八十八轮：记最近几份（撤销、重做回到前几步时照用，键里多了冰盖、汇水面积）
 - `river-edit.ts` 改一条河（拖控制点、加删弯点、重画一笔）
 - `water-types.ts` 河流类型、湖泊类型共用的部分：声明式条件（`when`）、一遍要做什么（`waterPlan`）、允许表编译成查表（`waterRules`）；`river-types.ts` 河流类型（每格哪种河、河网 `riverNet`、断流的格 `stopCells`、河岸场）；`river-segments.ts` 短段并进相邻的段；`lake-types.ts` 湖泊类型；`water-table.ts` 允许表的读写（生态页、河湖页共用）。第五十七轮：湖的条件多大小（`LAKE_WHEN_KEYS`）；`river-pack.ts` 的带子按线缓存（`memoDraws`）；`rivers.ts` 断流的尾巴（`RiverLine.tail`）；`vegetation.ts` 的 `baseBiomes` 只算河格和湖岸（`waterCells`）；`biome-scripts.ts` 的记录按遍分开（`SLOT_*`），同一遍里比较快照的结果复用（`newScriptPass`）；`waterPlan` 的 `reuseFirstBase`：奇幻库第二遍的类型读第一遍的生态
 - `effects.ts` 生态、河湖对周围冷暖干湿的影响
