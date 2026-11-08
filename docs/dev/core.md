@@ -54,7 +54,7 @@
 ## 地名、画风、省份
 - `features.ts` 地理要素识别的入口（`detectFeatures`、画的河、用户圈的地名区块）；第八十三轮拆开（照旧导出）：`features-base.ts` 种类与格图工具，`features-terrain.ts` 从地形认的（群岛、海、湖、河、山……，跨几次的记忆），`features-nature.ts` 生态区与物种的地名，`features-names.ts` 起名、前后地物配对留名字
 - `names.ts` 模板式起名；`name-styles.ts` 地名风格（模板式、音译式，`styleFor`）；`name-display.ts` 中文 / 原文 / 两者
-- `map-style.ts` 画风的格式（`DEFAULT_LOOK` 就是写实）、`styleRgba`、`worldMapStyle`、签名 `mapStyleKey`
+- `map-style.ts` 画风的格式（`DEFAULT_LOOK` 就是写实）、`styleRgba`、`worldMapStyle`、签名 `mapStyleKey`；第八十七轮：手绘的几项（纸、水彩、水纹、符号、墨色、字体、导出的装饰）可以不写、没有默认值，读时按 `HAND_OFF` 补（`handLook`、`hasSymbols`）
 - `provinces.ts` 省份的划分、局部重划、修补（海、陆、湖三类）、湖与陆地的整理（`lakeProvinceFix`）；`province-kinds.ts` 种类、目标大小、起名、统计（第八十三轮拆出）；`province-rules.ts` 划分的规则（第七十八轮起是资源库里的内容“省份划分”：格式、默认的一份、世界的那一份 `worldProvinceRules`，种子在 `small.provinceSeed`）
 - `select.ts` 画笔、拖动扩张、画河的路线、圈一片、剪刀沿线切省；画的河照着线走（第八十三轮拆出，照旧导出）：`course-base.ts` 计划的类型，`course-plan.ts` 描线与汇合，`course-overlap.ts` 重叠分析，`course-edit.ts` 并入、延长、改道、提醒；`seams.ts` 剪刀的切线
 
@@ -73,7 +73,7 @@
 - `content/arrange.ts` 融入（第六十轮）：库的 `arrange`（下级 → 上级，只改显示）、讲得通的组合 `RELATIONS`（怎么读出下面有哪些、加和移出改哪一项）、预设 `PRESET_ARRANGE`、`childrenOf`、`parentsOf`、`looseItems`
 - `content/refs.ts` 引用的底层：脚本字面量的位置、两项是不是一模一样（`sameItem`、`sameContent`）；`content/usage.ts` 内容用在哪里；`content/unused.ts`（第五十轮起也看文化、文化组、地名风格、时代）哪里都没用到的；`content/cleanable.ts`（第六十二轮）生成后没用到的：面板上变淡的、“清理没用到的”清的都是它，生态、河、湖、画风不算；`content/origin.ts` 每项来自哪个包、改名前的 id；`content/missing.ts` 缺了什么
 - `packs.ts` 资源包的格式、检查、用到世界、从世界导出（各段由登记表推出）；`readPack` 读文件（资源包、单独的文字包；第七十二轮起不认裸的生态数组）
-- `packs/builtin-tree.ts` 六个内置的库（第五十一轮：每个时代一个完整的库，由同一份数据拼出来；四个历史库带全部 EU4 文化组，不默认带的比重 0；第七十七轮起默认带的组带着这个时代的比重（各组占多少，`groupPack`）；`LIBRARY_BASE_PACKS`、`worldPartsOf` 是世界的底子）；`packs/base.ts` 库里“基础”由代码写的几样（第七十八轮：基础里还有内置的省份划分，见 `province-rules.ts`）；`packs/nature.ts` 15 种生态（`builtinBiomesIn` 某一大类的 id）、`packs/biome-ids.ts` 它们的 id（别的内置数据点名生态时用）；`packs/planet-forms.ts` 星球形态；`packs/map-styles.ts` 写实、地图册；`packs/countries/` 国家等级（第四十二轮；第七十七轮去掉了格局）
+- `packs/builtin-tree.ts` 六个内置的库（第五十一轮：每个时代一个完整的库，由同一份数据拼出来；四个历史库带全部 EU4 文化组，不默认带的比重 0；第七十七轮起默认带的组带着这个时代的比重（各组占多少，`groupPack`）；`LIBRARY_BASE_PACKS`、`worldPartsOf` 是世界的底子）；`packs/base.ts` 库里“基础”由代码写的几样（第七十八轮：基础里还有内置的省份划分，见 `province-rules.ts`）；`packs/nature.ts` 15 种生态（`builtinBiomesIn` 某一大类的 id）、`packs/biome-ids.ts` 它们的 id（别的内置数据点名生态时用）；`packs/planet-forms.ts` 星球形态；`packs/map-styles.ts` 写实、地图册，第八十七轮的手绘（`DRAWN_MAP_STYLES`，在每个库单独的小包“手绘画风”`drawn` 里，新世界不带）；`packs/countries/` 国家等级（第四十二轮；第七十七轮去掉了格局）
 - `packs/import.ts` 生成要用的内容从资源包加进世界（时代包整个加时不带世界的底子，比重 0 的组点名才带），`importIntoPack` 把一个包的内容导入另一个包（撞名改名；第六十一轮：文化组放进“文化”下面自己的小包，取值放进同一维的小包，包不再整个拷贝）；`packs/names/` 内置地名风格（一个 JSON 一种，92 种；`eu4-a/b/c.ts` 是第四十三轮照 EU4 文化组补的 49 种，`fiction-a/b/c/d.ts` 是第四十四轮给奇幻、科幻的组补的 16 种）；`packs/eras/`、`packs/governments/`、`packs/settlements/` 见 [core-human.md](core-human.md)
 - `packs/source-diff.ts` 世界里的一项和来源的库比（第六十二轮）：`sourceDiff`（一样、不同、只差导入时去掉的引用、来源不在了）、`usedSourceItem`（用库里的版本）、`savedBackItem`（存回我的库）
 - `packs/import-gates.ts` 导入时一项能不能选（第六十四轮）：`importGates(来源, 目的地, 勾选, 去掉的)` 给 `free` / `have` / `fixable` / `gated`（写要什么；第六十六轮加 `resolvable`：要的在这个来源里勾得到，`choices` 是勾得到的那几个）/ `full`（写原因）；`walkClosure` 走勾的项、子项（库的 `arrange`）、去不掉的引用和写了 `follow` 的引用（第七十三轮），最小不动点，勾的文化带来的组记 `member`；派系主要靠的变量只看来源库提供的（第六十五轮）；来源的表按对象记着

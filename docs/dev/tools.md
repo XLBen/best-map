@@ -12,8 +12,9 @@
 - `bench-pointer.vitest.ts` 鼠标移动的计时，在 vitest 里跑（`npx vitest run -c tools/bench.vitest.config.ts`）
 - `bench-legend.vitest.ts` 画了一笔以后取地图图例的耗时，对照第七十八轮的写法（第七十九轮；`--silent=false` 看输出，`BENCH_GLOBE=1` 用类地星球）
 - `bench-steady.ts` 同一个世界上抬山、岩性、冷暖笔各做 21 次的中位数（第七十九轮：编译好以后的，分辨一步一次的数是不是真的变慢；`--script tools/bench-steady.ts` 和旧提交对照）
-- `compose-ab.mjs` + `compose-ab-page.ts` 无头 Chrome 里对照两个提交的合成着色器，逐字节比
-- `overlay-ab.mjs` + `overlay-ab-page.ts` 无头 Chrome 里对照两个提交的叠加层（一串帧逐字节比；第八十轮加了带首都的星的几帧）与选国家；`--against <提交>`
+- `compose-ab.mjs` + `compose-ab-page.ts` 无头 Chrome 里对照两个提交的合成着色器，逐字节比（第八十七轮加了地图册：每组另画一个旧的渲染器，旧↔新、旧↔旧都写出来——地图册分层的海在不一致的分支里算导数，SwiftShader 上旧的与旧的本来就不逐字节相同，不算进“不同”）
+- `overlay-ab.mjs` + `overlay-ab-page.ts` 无头 Chrome 里对照两个提交的叠加层（一串帧逐字节比；第八十轮加了带首都的星的几帧；第八十七轮加了地图册的直接画）与选国家；`--against <提交>`
+- `hand-shot.mjs` + `hand-shot-page.ts`（第八十七轮）无头 Chrome 里画手绘画风的两张截图（一格约 8 像素、看全图加导出的装饰），量叠加层整张重画的时间（写实、手绘与去掉暗角、字体、符号的几种）；`--out <目录>`
 - `bench-country-ui.mjs` + `bench-country-ui-page.ts` 国家界面的测速（第八十轮）：无头 Chrome（默认用这台机器的显卡，`--soft` 按软件画）里两边各挂地图、底部条、图例、“这里”、国家的档案，量改名到画完下一帧、领土笔刷移动、换档案的页、选国家的主线程时间；`--against <提交>`（默认 1cd3bea）、`--head <提交>`、`--quick`（只量地区）、`--globe`（只量星球）、`--keep`；网址带 `#rename` 等时新的一边包在 `console.profile` 里（开发时用 CDP 收）
 - `flow-layer.mjs` + `flow-layer-page.ts` 风向、洋流的帧时间（关着 / 只开风 / 只开洋流 / 都开）与线看不看得清（真的底图上量 ΔE，`--png` 存图），第四十八轮
 - `r40-world.ts` 叠加层测试、测速用的世界（种子 3，人文、国家、城市）
