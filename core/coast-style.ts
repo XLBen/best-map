@@ -108,9 +108,13 @@ interface Entry {
   // 冰盖的强度（第八十六轮：按现在的冷暖，derived.ice）：ice 是认的对象，iceAt 是那时的内容
   ice: Float64Array;
   iceAt: Float64Array;
+  // 那时的冰盖强度（glacialField 的 g：权重只读它，第八十八轮按它比哪些格要重算）
+  gAt: Float32Array;
   style: CoastStyle;
 }
 const cache = new WeakMap<Mesh, Entry[]>();
+// 记几份（第八十八轮 3 → 6：撤销到重画一片之前、挪纬度之前都还在，一份约每格 24 字节，谷网的块与别的份共用）
+const STYLE_KEEP = 6;
 // 测试用：关掉海岸类型（第三十四轮以前的画法）
 export const coastStyleOn = { on: true };
 
@@ -128,14 +132,14 @@ export function coastStyle(world: World): CoastStyle | null {
   const hit = list.find((e) => e.comp === comp && e.key === key && e.ice === ice);
   if (hit) return hit.style;
   // 撤销、重做回到前几步时分量常是新的对象、内容相同：三样输入与冰盖逐值相同就照用那一份（第三十六轮（续）：不重建谷网、不重算峡湾纹理）
-  const same = list.find((e) => e.key === key && sameInputs(e.comp, comp) && sameIce(e.iceAt, ice));
+  const same = list.find((e) => e.key === key && sameIce(e.iceAt, ice) && (e.comp === comp || sameInputs(e.comp, comp)));
   if (same) {
-    cache.set(mesh, [{ key, comp, ice, iceAt: same.iceAt, style: same.style }, ...list.filter((e) => e !== same)].slice(0, 3));
+    cache.set(mesh, [{ key, comp, ice, iceAt: same.iceAt, gAt: same.gAt, style: same.style }, ...list.filter((e) => e !== same)].slice(0, STYLE_KEEP));
     return same.style;
   }
   const prev = list.find((e) => e.key === key);
-  const style = prev ? updateStyle(world, comp, prev.comp, prev.style, prev.iceAt) : computeStyle(world, comp, null);
-  cache.set(mesh, [{ key, comp, ice, iceAt: ice.slice(), style }, ...list.filter((e) => e !== hit)].slice(0, 3));
+  const style = prev ? updateStyle(world, comp, prev.comp, prev.style, prev.gAt) : computeStyle(world, comp, null);
+  cache.set(mesh, [{ key, comp, ice, iceAt: ice.slice(), gAt: glacialField(world).g, style }, ...list].slice(0, STYLE_KEEP));
   return style;
 }
 
@@ -174,64 +178,115 @@ function computeStyle(world: World, comp: BaseComponents, cells: Int32Array | nu
 // b、a（表号要等谷网建好）
 function packStyle(st: CoastStyle, n: number): void {
   const rank = st.net ? st.net.rank : null;
-  for (let i = 0; i < n; i++) {
-    const g = Math.round(st.speck[i] * 255);
-    const rk = rank ? rank[i] : -1;
-    st.packed[2 * i] = rk >= 0 ? 1 + 256 * rk + g : -g;
-    const bar = st.barrier[i];
-    st.packed[2 * i + 1] = bar > 0 ? bar : st.fjord[i] > 0 ? -st.fjord[i] : 0;
-  }
+  for (let i = 0; i < n; i++) packCell(st, rank, i);
+}
+
+// 只打包这些格（表号没变时）
+function packCells(st: CoastStyle, cells: Int32Array): void {
+  const rank = st.net ? st.net.rank : null;
+  for (let k = 0; k < cells.length; k++) packCell(st, rank, cells[k]);
+}
+
+function packCell(st: CoastStyle, rank: Int32Array | null, i: number): void {
+  const g = Math.round(st.speck[i] * 255);
+  const rk = rank ? rank[i] : -1;
+  st.packed[2 * i] = rk >= 0 ? 1 + 256 * rk + g : -g;
+  const bar = st.barrier[i];
+  st.packed[2 * i + 1] = bar > 0 ? bar : st.fjord[i] > 0 ? -st.fjord[i] : 0;
 }
 
 // 分量或冰盖换了：三样输入（造山带、丘陵的抬升，地壳高度）与冰盖的强度逐格比，变了的格与两圈邻格重算（抬升取一圈邻格的最大、方向按一圈邻格的坡度）；
-// 没变的格照抄上一份（同样的输入、同一个算式）。第八十六轮：冷暖笔刷、挪纬度只改冰盖，只重建碰到的谷网的块
-function updateStyle(world: World, comp: BaseComponents, was: BaseComponents, old: CoastStyle, wasIce: Float64Array): CoastStyle {
+// 没变的格照抄上一份（同样的输入、同一个算式）。第八十六轮：冷暖笔刷、挪纬度只改冰盖，只重建碰到的谷网的块。
+// 第八十八轮：冰盖按强度比（权重只读强度 g；冰盖深处的强度是 1，挪纬度时不变），谷网的块一带的格没变时照用几何、只重算预算
+function updateStyle(world: World, comp: BaseComponents, was: BaseComponents, old: CoastStyle, wasG: Float32Array): CoastStyle {
   const { mesh } = world;
   const n = mesh.n;
-  const ice = iceOf(world);
+  const g = glacialField(world).g;
+  // 第八十八轮（提速）：逐格的几段放进模块里的小函数；冰盖只读这一格的强度，不往外推圈（分量变了的才推两圈）
   const mark = new Uint8Array(n);
-  const front: number[] = [];
-  for (let i = 0; i < n; i++) {
-    if (comp.mountU[i] !== was.mountU[i] || comp.hillU[i] !== was.hillU[i] || comp.b0[i] !== was.b0[i] || ice[i] !== wasIce[i]) {
-      mark[i] = 1;
-      front.push(i);
-    }
-  }
+  const buf = new Int32Array(n);
+  const nComp = markComp(n, comp, was, mark, buf);
+  let m = ringsOf(mesh, buf, nComp, 2, mark);
+  m = markIce(n, g, wasG, mark, buf, m);
   const style: CoastStyle = { packed: old.packed.slice(), net: old.net, fjord: old.fjord.slice(), barrier: old.barrier.slice(), ria: old.ria.slice(), speck: old.speck.slice() };
-  if (!front.length) return style;
-  for (let ring = 0; ring < 2; ring++) {
-    const next: number[] = [];
-    for (const c of front) {
-      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
-        const j = mesh.adj[e];
-        if (!mark[j]) {
-          mark[j] = 1;
-          next.push(j);
-        }
-      }
-    }
-    front.push(...next);
-  }
-  const cells: number[] = [];
-  for (let i = 0; i < n; i++) if (mark[i]) cells.push(i);
-  styleCells(world, comp, style, Int32Array.from(cells));
+  if (!m) return style;
+  const cells = buf.slice(0, m);
+  styleCells(world, comp, style, cells);
   // 谷网：只重建输入变了的块（core/fjords.ts 的 buildFjordNet）：峡湾权重变了的格往外三圈、地壳高度变了的格往外一圈。
   // 地壳高度只在谷网一带的格与它们的邻格上用到（谷底高度、坡度）：一带以外改的不算（一带只在峡湾权重变了的格附近变，那些格已经算进去了）
   const fjCh: number[] = [];
   const b0Ch: number[] = [];
   const wz = old.net ? old.net.wz : null;
-  for (const i of cells) {
+  for (let k = 0; k < m; k++) {
+    const i = cells[k];
     if (style.fjord[i] !== old.fjord[i]) fjCh.push(i);
     if (wz && comp.b0[i] !== was.b0[i] && nearZone(mesh, wz, i)) b0Ch.push(i);
   }
   if (fjCh.length || b0Ch.length) {
     const dirty = new Uint8Array(n);
+    const b0Dirty = new Uint8Array(n);
     dilate(mesh, fjCh, 3, dirty);
-    dilate(mesh, b0Ch, 1, dirty);
-    style.net = buildFjordNet(mesh, world.settings.seed, world.kmPerUnit, style.fjord, comp.b0, old.net, dirty);
+    dilate(mesh, b0Ch, 1, b0Dirty);
+    orInto(dirty, b0Dirty);
+    style.net = buildFjordNet(mesh, world.settings.seed, world.kmPerUnit, style.fjord, comp.b0, old.net, dirty, b0Dirty);
   }
-  packStyle(style, n);
+  // 表号没变时只重新打包重算过的格（每格只读自己的几样与表号）
+  if (style.net && old.net && style.net.rank === old.net.rank) packCells(style, cells);
+  else if (!style.net && !old.net) packCells(style, cells);
+  else packStyle(style, n);
   return style;
+}
+
+// 三样输入（造山带、丘陵的抬升，地壳高度）变了的格：标进 mark、写进 out，返回个数
+function markComp(n: number, comp: BaseComponents, was: BaseComponents, mark: Uint8Array, out: Int32Array): number {
+  const { mountU, hillU, b0 } = comp;
+  const wm = was.mountU;
+  const wh = was.hillU;
+  const wb = was.b0;
+  let m = 0;
+  for (let i = 0; i < n; i++) {
+    if (mountU[i] !== wm[i] || hillU[i] !== wh[i] || b0[i] !== wb[i]) {
+      mark[i] = 1;
+      out[m++] = i;
+    }
+  }
+  return m;
+}
+
+// out 的前 m 格往外推 rings 圈（新标的格接在后面），返回个数
+function ringsOf(mesh: Mesh, out: Int32Array, m: number, rings: number, mark: Uint8Array): number {
+  const { off, adj } = mesh;
+  let from = 0;
+  for (let r = 0; r < rings; r++) {
+    const to = m;
+    for (let q = from; q < to; q++) {
+      const c = out[q];
+      for (let e = off[c]; e < off[c + 1]; e++) {
+        const j = adj[e];
+        if (!mark[j]) {
+          mark[j] = 1;
+          out[m++] = j;
+        }
+      }
+    }
+    from = to;
+  }
+  return m;
+}
+
+// 冰盖的强度变了、还没标的格接在后面，返回个数
+function markIce(n: number, g: Float32Array, wasG: Float32Array, mark: Uint8Array, out: Int32Array, m: number): number {
+  for (let i = 0; i < n; i++) {
+    if (g[i] !== wasG[i] && !mark[i]) {
+      mark[i] = 1;
+      out[m++] = i;
+    }
+  }
+  return m;
+}
+
+function orInto(a: Uint8Array, b: Uint8Array): void {
+  for (let i = 0; i < a.length; i++) if (b[i]) a[i] = 1;
 }
 
 // 格 i 或它的邻格在谷网一带里（推两圈的权重 > ZONE）

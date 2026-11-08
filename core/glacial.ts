@@ -70,12 +70,14 @@ export function glacialKey(world: World): string {
   return `${s.seed}|${world.kmPerUnit}|${s.globe ? 'globe' : `${s.latNorth},${s.latSouth}`}`;
 }
 
-// 每格的噪声（按网格、种子、比例尺缓存，用到哪格才算哪格）：冰盖南界的纬度 L、小洼的噪声 nh
+// 每格的噪声（按网格、种子、比例尺缓存，用到哪格才算哪格）：冰盖南界的纬度 L、小洼的噪声 nh。
+// 第八十八轮：两样分开算（doneL、doneH）：冰盖只读 L，挪纬度时新进冰盖南界以北的格不必再算三层的 nh
 interface IceNoise {
   key: string;
   L: Float64Array;
   nh: Float64Array;
-  done: Uint8Array;
+  doneL: Uint8Array;
+  doneH: Uint8Array;
 }
 const noiseCache = new WeakMap<Mesh, IceNoise>();
 function iceNoise(world: World): IceNoise {
@@ -83,35 +85,42 @@ function iceNoise(world: World): IceNoise {
   const key = `${world.settings.seed}|${world.kmPerUnit}`;
   let z = noiseCache.get(mesh);
   if (!z || z.key !== key) {
-    z = { key, L: new Float64Array(mesh.n), nh: new Float64Array(mesh.n), done: new Uint8Array(mesh.n) };
+    z = { key, L: new Float64Array(mesh.n), nh: new Float64Array(mesh.n), doneL: new Uint8Array(mesh.n), doneH: new Uint8Array(mesh.n) };
     noiseCache.set(mesh, z);
   }
   return z;
 }
-function noiseAt(world: World, z: IceNoise, i: number): void {
-  if (z.done[i]) return;
+function noiseL(world: World, z: IceNoise, i: number): number {
+  if (z.doneL[i]) return z.L[i];
   const { mesh } = world;
   const C = GLACIAL;
   const seed = world.settings.seed;
   let nl: number;
-  let nh: number;
   if (mesh.kind === 'sphere') {
     const R = world.kmPerUnit / Math.PI;
-    const x = mesh.p[3 * i] * R;
-    const y = mesh.p[3 * i + 1] * R;
-    const zz = mesh.p[3 * i + 2] * R;
-    nl = fbm3(noise3(seed, 3401), x, y, zz, 1 / C.LIMIT_KM, 2);
-    nh = fbm3(noise3(seed, 3402), x, y, zz, 1 / C.HOLLOW_KM, 3, 0.55);
+    nl = fbm3(noise3(seed, 3401), mesh.p[3 * i] * R, mesh.p[3 * i + 1] * R, mesh.p[3 * i + 2] * R, 1 / C.LIMIT_KM, 2);
   } else {
     const km = world.kmPerUnit;
-    const x = mesh.x[i] * km;
-    const y = mesh.y[i] * km;
-    nl = fbm(noise2(seed, 3401), x, y, 1 / C.LIMIT_KM, 2);
-    nh = fbm(noise2(seed, 3402), x, y, 1 / C.HOLLOW_KM, 3, 0.55);
+    nl = fbm(noise2(seed, 3401), mesh.x[i] * km, mesh.y[i] * km, 1 / C.LIMIT_KM, 2);
   }
   z.L[i] = C.LAT_MIN + (C.LAT_MAX - C.LAT_MIN) * Math.min(1, Math.max(0, 0.5 + 1.2 * nl));
-  z.nh[i] = nh;
-  z.done[i] = 1;
+  z.doneL[i] = 1;
+  return z.L[i];
+}
+function noiseH(world: World, z: IceNoise, i: number): number {
+  if (z.doneH[i]) return z.nh[i];
+  const { mesh } = world;
+  const C = GLACIAL;
+  const seed = world.settings.seed;
+  if (mesh.kind === 'sphere') {
+    const R = world.kmPerUnit / Math.PI;
+    z.nh[i] = fbm3(noise3(seed, 3402), mesh.p[3 * i] * R, mesh.p[3 * i + 1] * R, mesh.p[3 * i + 2] * R, 1 / C.HOLLOW_KM, 3, 0.55);
+  } else {
+    const km = world.kmPerUnit;
+    z.nh[i] = fbm(noise2(seed, 3402), mesh.x[i] * km, mesh.y[i] * km, 1 / C.HOLLOW_KM, 3, 0.55);
+  }
+  z.doneH[i] = 1;
+  return z.nh[i];
 }
 // 噪声函数（按种子留一份）
 const n2 = new Map<number, ReturnType<typeof gradientNoise>>();
@@ -153,10 +162,40 @@ export function iceStrength(world: World, legacy = false): Float64Array {
   const s = world.settings;
   const key = `${legacy}|${s.seed}|${world.kmPerUnit}|${s.latNorth},${s.latSouth}|${world.small.planet.latShift}|${world.small.planet.solar}`;
   const tOff = world.causes.tempOffset;
-  if (lastIce && lastIce.mesh === world.mesh && lastIce.key === key && sameF32(lastIce.tOff, tOff)) return lastIce.out;
+  if (lastIce && lastIce.mesh === world.mesh && lastIce.key === key) {
+    if (sameF32(lastIce.tOff, tOff)) return lastIce.out;
+    // 第八十八轮：只涂了冷暖（别的输入相同）：只重算涂过的格（每格只读自己的冷暖），一格都没变时还是上一次的数组
+    const out = iceStrengthAt(world, legacy, lastIce.tOff, tOff, lastIce.out);
+    lastIce = { mesh: world.mesh, key, tOff: tOff.slice(), out };
+    return out;
+  }
   const out = iceStrengthNew(world, legacy);
   lastIce = { mesh: world.mesh, key, tOff: tOff.slice(), out };
   return out;
+}
+
+// 冷暖笔刷变了的格重算（上一次的结果 was 不动：有变的时候换一份新的）
+function iceStrengthAt(world: World, legacy: boolean, wasOff: Float32Array, tOff: Float32Array, was: Float64Array): Float64Array {
+  const z = iceNoise(world);
+  const warm = solarWarm(world.small.planet.solar);
+  let out = was;
+  for (let i = 0; i < tOff.length; i++) {
+    if (tOff[i] === wasOff[i]) continue;
+    // 冰盖是 +0 或正数（没有 −0、NaN）：=== 就是逐位相同
+    const g = iceAt(world, z, legacy, warm, i);
+    if (g === out[i]) continue;
+    if (out === was) out = was.slice();
+    out[i] = g;
+  }
+  return out;
+}
+
+// 一格的冰盖（iceStrengthNew 的一格）
+function iceAt(world: World, z: IceNoise, legacy: boolean, warm: number, i: number): number {
+  const lat = legacy ? Math.abs(creationLat(world, i)) : iceLat(world, i, warm);
+  if (lat <= GLACIAL.LAT_MIN) return 0;
+  const L = noiseL(world, z, i);
+  return lat > L ? lat - L : 0;
 }
 function sameF32(a: Float32Array, b: Float32Array): boolean {
   if (a.length !== b.length) return false;
@@ -167,14 +206,8 @@ function iceStrengthNew(world: World, legacy: boolean): Float64Array {
   const n = world.mesh.n;
   const g = new Float64Array(n);
   const z = iceNoise(world);
-  const C = GLACIAL;
   const warm = solarWarm(world.small.planet.solar);
-  for (let i = 0; i < n; i++) {
-    const lat = legacy ? Math.abs(creationLat(world, i)) : iceLat(world, i, warm);
-    if (lat <= C.LAT_MIN) continue;
-    noiseAt(world, z, i);
-    if (lat > z.L[i]) g[i] = lat - z.L[i];
-  }
+  for (let i = 0; i < n; i++) g[i] = iceAt(world, z, legacy, warm, i);
   return g;
 }
 
@@ -212,9 +245,8 @@ export function glacialFieldOf(world: World, g: Float64Array): GlacialField {
     if (gi <= 0) continue;
     gs[i] = gi;
     any = true;
-    noiseAt(world, z, i);
     limit[i] = C.ELEV_MIN + (C.ELEV_MAX - C.ELEV_MIN) * sm01((over - 2) / C.ELEV_SPAN);
-    const nh = z.nh[i];
+    const nh = noiseH(world, z, i);
     if (nh > C.HOLLOW_T) {
       const t = Math.min(1, (nh - C.HOLLOW_T) / (C.HOLLOW_TOP - C.HOLLOW_T));
       depth[i] = gi * (C.DEPTH_MIN + (C.DEPTH_MAX - C.DEPTH_MIN) * t);
