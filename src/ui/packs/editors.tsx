@@ -4,7 +4,10 @@ import type { FieldDesc } from '../../../core/content/registry';
 import { Draft } from './editor-parts';
 import { type Obj, type TitleRow, defaultValue, isObj, moveItem, titleRows, titleValue, weightedRows, weightedValue } from './fields';
 import { RefGo, RefPicker, useRefOptions } from './RefPicker';
-import { DEFAULT_KEY, type RefOption, refLabel } from './refs';
+import { DEFAULT_KEY, type RefOption, refItem, refLabel } from './refs';
+import { ShareBar } from '../components/ShareBar';
+import { library } from '../../library';
+import { world } from '../../state';
 
 // 通用编辑器里几种成块的控件（第四十五轮从 ContentEditor.tsx 分出来，加了引用的下拉、拖动换先后）：
 // 称号、几种称号、带权重的一组、固定几位的数、一组固定几位的数、键 → 值、按引用的比例表、引用的一组
@@ -89,7 +92,7 @@ export function TitleEditor({ value, onChange, orig, keyRef }: { value: unknown;
             )}
             <Draft text={r.zh} placeholder="王国" onCommit={(t) => edit(k, { zh: t })} />
             {orig && <Draft text={r.orig} placeholder="Kingdom of {name}" onCommit={(t) => edit(k, { orig: t })} />}
-            <button class="small icon ghost" title="删除" onClick={() => put(rows.filter((_, j) => j !== k))}>
+            <button class="small icon ghost" title="删除" aria-label="删除" onClick={() => put(rows.filter((_, j) => j !== k))}>
               <X />
             </button>
           </div>
@@ -118,7 +121,7 @@ export function TitleListEditor({ value, onChange }: { value: unknown; onChange:
             <Grip {...drag.handle(k)} />
             <Draft text={r.zh} placeholder="帝国" onCommit={(t) => put(rows.map((x, j) => (j === k ? { ...x, zh: t } : x)))} />
             <Draft text={r.orig} placeholder="Empire of {name}" onCommit={(t) => put(rows.map((x, j) => (j === k ? { ...x, orig: t } : x)))} />
-            <button class="small icon ghost" title="删除" onClick={() => onChange(list.filter((_, j) => j !== k))}>
+            <button class="small icon ghost" title="删除" aria-label="删除" onClick={() => onChange(list.filter((_, j) => j !== k))}>
               <X />
             </button>
           </div>
@@ -178,13 +181,13 @@ export function WeightedEditor({ value, onChange }: { value: unknown; onChange: 
               min={0}
               step="any"
               placeholder="1"
-              title="权重"
+              title="多少"
               onChange={(e) => {
                 const t = (e.target as HTMLInputElement).value;
                 put(k, { w: t === '' ? undefined : Number(t) });
               }}
             />
-            <button class="small icon ghost" title="删除" onClick={() => onChange(weightedValue(rows.filter((_, j) => j !== k)))}>
+            <button class="small icon ghost" title="删除" aria-label="删除" onClick={() => onChange(weightedValue(rows.filter((_, j) => j !== k)))}>
               <X />
             </button>
           </div>
@@ -257,7 +260,7 @@ export function TuplesEditor({ f, value, onChange }: { f: FieldDesc; value: unkn
             {items.map((d, j) => (
               <NumberBox f={d} value={cur[j]} onChange={(v) => onChange(list.map((x, i) => (i === k ? items.map((dd, jj) => (jj === j ? (v ?? defaultValue(dd)) : (cur[jj] ?? defaultValue(dd)))) : x)))} />
             ))}
-            <button class="small icon ghost" title="删除" onClick={() => onChange(list.filter((_, j) => j !== k))}>
+            <button class="small icon ghost" title="删除" aria-label="删除" onClick={() => onChange(list.filter((_, j) => j !== k))}>
               <X />
             </button>
           </div>
@@ -283,7 +286,7 @@ export function TagRefs({ refKind, value, onChange }: { refKind: string; value: 
       {list.map((id) => (
         <span class="ed-tag" title={id}>
           <RefText go={go?.(refKind, id) ?? null} text={refLabel(opts, id)} />
-          <button class="small icon ghost" title="删除" onClick={() => onChange(list.filter((x) => x !== id))}>
+          <button class="small icon ghost" title="删除" aria-label="删除" onClick={() => onChange(list.filter((x) => x !== id))}>
             <X />
           </button>
         </span>
@@ -301,7 +304,7 @@ export function OneRef({ refKind, value, optional, onChange }: { refKind: string
     <span class="ref-one">
       <RefPicker options={opts} value={typeof value === 'string' ? value : ''} onPick={(id) => onChange(id)} onClear={optional ? () => onChange(undefined) : undefined} />
       {go && (
-        <a class="ref-go" role="button" title="打开这一项" onClick={go}>
+        <a class="ref-go" role="button" title="打开这一项" aria-label="打开这一项" onClick={go}>
           <ChevronRight />
         </a>
       )}
@@ -320,40 +323,23 @@ function RefText({ go, text }: { go: (() => void) | null; text: string }) {
   );
 }
 
-// 按引用的比例表（格局、时代的各等级占多少）：列出全部能选的（国家等级……），每行一个数，空着的不写
+// 按引用的比例表（第四十五轮；第八十一轮：时代的国家等级的比例）：一条分段的色条，拖分界改两段（ShareBar），松手存一次，存的是百分之几。
+// 整个不写时按各等级自己的“多少”（weight，省略为 1）画；拖到 0 的那一级不出现
 export function WeightTable({ f, value, onChange }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void }) {
   const obj: Obj = isObj(value) ? value : {};
   const opts = useRefOptions(f.keyRef ?? []);
+  const w = world.value;
+  const lib = library.value;
   const keys = [...opts.map((o) => o.id), ...Object.keys(obj).filter((k) => !opts.some((o) => o.id === k))];
-  const shown = keys.filter((k) => obj[k] !== undefined || opts.length <= 12);
-  const missing = opts.filter((o) => obj[o.id] === undefined && !shown.includes(o.id));
-  const sum = Object.values(obj).reduce<number>((a, v) => a + (typeof v === 'number' ? v : 0), 0);
-  const put = (k: string, v: number | undefined) => {
-    const next: Obj = {};
-    // 按选项的先后存（表里看到的先后）
-    for (const key of keys) {
-      const x = key === k ? v : obj[key];
-      if (x !== undefined) next[key] = x;
-    }
-    onChange(next);
-  };
-  return (
-    <div class="ed-rows ed-wtable">
-      {shown.map((k) => {
-        const v = obj[k];
-        const o = opts.find((x) => x.id === k);
-        return (
-          <div class="ed-row">
-            <span class="ed-wkey" title={k}>
-              {o?.color && <span class="swatch" style={{ background: o.color }} />}
-              {refLabel(opts, k)}
-            </span>
-            <NumberBox f={f.value ?? f} value={v} onChange={(x) => put(k, x)} />
-            <span class="hint ed-wpct">{typeof v === 'number' && sum > 0 ? `${Math.round((v / sum) * 100)}%` : ''}</span>
-          </div>
-        );
-      })}
-      {missing.length > 0 && <RefPicker add options={missing} onPick={(id) => put(id, typeof f.value?.default === 'number' ? f.value.default : 1)} />}
-    </div>
-  );
+  const written = Object.keys(obj).length > 0;
+  const ref = typeof f.keyRef === 'string' ? f.keyRef : '';
+  const values = keys.map((k) => {
+    const v = obj[k];
+    if (typeof v === 'number') return v;
+    if (written) return 0;
+    const own = ref ? refItem(ref, k, { world: w, lib })?.weight : undefined;
+    return typeof own === 'number' ? own : 1;
+  });
+  if (!keys.length) return <p class="hint">没有{f.label}</p>;
+  return <ShareBar parts={keys.map((k) => ({ key: k, label: refLabel(opts, k) }))} values={values} onCommit={(v) => onChange(Object.fromEntries(keys.map((k, j) => [k, v[j]])))} />;
 }

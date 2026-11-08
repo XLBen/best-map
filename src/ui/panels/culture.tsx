@@ -28,7 +28,9 @@ import {
   toggleGroup,
 } from '../domain/human';
 import { LibraryPick } from '../components/LibraryPick';
-import { ADD_DIMENSION_NOTE } from '../copy';
+import { ADD_DIMENSION_NOTE, GEN_RULES_NOTE } from '../copy';
+import { GEN_OPEN_TIP, GEN_TITLE, popDensityNote } from '../packs/copy';
+import { openGenSettings } from '../packs/open-era';
 import { addDimensionCommand, dimensionOptions } from '../../../core/packs/add-dimension';
 import { type GroupOption, beyondGroups, libRoots, libraryOptions, packGroups, packLabel, worldLibrary } from '../domain/packChoice';
 import { openLibrary } from '../packs/panel-store';
@@ -163,7 +165,7 @@ export function ValuePick() {
   const w = world.value;
   if (!w || !hasHuman(w) || options.value.popMode !== 'value') return null;
   const v = chosenValue(w);
-  return <TypePickerButton panel="valuepick" prefix={v ? v.dim.label : '维度'} swatch={v?.value.color} name={v ? v.value.name : '无'} title="换成哪一种" />;
+  return <TypePickerButton panel="valuepick" prefix={v ? v.dim.label : '变量'} swatch={v?.value.color} name={v ? v.value.name : '无'} title="换成哪一种" />;
 }
 
 // 一个维度的取值（维度不止一个时先选维度）
@@ -443,6 +445,19 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
         </p>
         {era?.description && <p class="hint">{era.description}</p>}
         {worldLibrary(w.small) && <p class="hint">库：{packLabel(library.value, [worldLibrary(w.small)!])}</p>}
+        <div class="row between">
+          <span class="hint">{GEN_RULES_NOTE}</span>
+          <button
+            class="link-btn small"
+            title={GEN_OPEN_TIP}
+            onClick={() => {
+              openPanel.value = null;
+              openGenSettings();
+            }}
+          >
+            {GEN_TITLE}
+          </button>
+        </div>
       </section>
       <DimensionAdd w={w} />
       <section>
@@ -475,6 +490,7 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
           }}
           onCancel={() => setDraft(null)}
         />
+        {era && <p class="hint">{popDensityNote(era.popDensity)}</p>}
       </section>
       <section class="row wrap">
         <button onClick={() => void run(regenerateCommand(w.small, library.value))} title="拖过的发源地、手改过的格不动">

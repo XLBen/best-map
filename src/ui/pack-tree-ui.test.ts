@@ -293,6 +293,6 @@ describe('拿掉的不丢', () => {
       { label: `${kindOf('government')!.label} 1`, hint: '王国' },
       { label: '留着：沙漠', hint: '移出后地图会变：3 格的生态' },
     ]);
-    expect(tidyText(plan)).toContain('清掉 1 项');
+    expect(tidyText(plan)).toContain('删除 1 项');
   });
 });

@@ -153,7 +153,7 @@ function Editor({ st }: { st: FormEditorState }) {
         setMsg(r.error);
         return;
       }
-      showToast(r.stored ? `“${f.name}”已存进资源库` : '浏览器无法保存，只在这次打开的页面里');
+      showToast(r.stored ? `“${f.name}”已存到我的库` : '浏览器无法保存，只在这次打开的页面里');
       closeFormEditor();
       st.onSaved(f, `${r.entry.key}:${f.id}`);
     } finally {
@@ -274,7 +274,7 @@ function Editor({ st }: { st: FormEditorState }) {
             取消
           </button>
           <button onClick={() => void save()} disabled={busy || broken} title="存进“我的资源”，新建和调整时可选">
-            存进资源库
+            存到我的库
           </button>
           <button class="primary" onClick={() => void create()} disabled={busy || broken}>
             用它新建

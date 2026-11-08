@@ -19,14 +19,15 @@ const CHOICES: PatternChoice[] = BUILTIN_COUNTRY_PATTERNS.map((p) => p);
 const fantasy = (): Obj => ({ id: 'fantasy', name: '奇幻', patterns: [{ pattern: 'race-realms', amount: 1 }, { pattern: 'alliances', amount: 1 }, { pattern: 'realm-vassals' }], nationalism: 0.2 });
 
 describe('一段里有什么', () => {
-  it('时代的“国家”一段：海、国家大小、等级，加上国家格局、文化的倒向；集团的称号另一段', () => {
+  it('时代的“国家”一段：海、国家大小、等级，加上国家格局、按文化分国；集团的称号另一段', () => {
     const segs = segmentsOf(kindOf('era')!);
     const state = segs.find((s) => s.id === 'state')!;
     expect(state.title).toBe('国家');
     expect(state.custom).toBe('eraPatterns');
     expect(state.fields.map((f) => f.key)).toEqual(['seaClaimKm', 'countryKm2', 'tiers', 'patterns', 'nationalism']);
     expect(segs.find((s) => s.id === 'relations')!.fields.map((f) => f.key)).toEqual(['relations']);
-    expect(kindOf('era')!.fields.find((f) => f.key === 'nationalism')!.label).toBe('文化的倒向');
+    // 第八十一轮：“文化的倒向”改叫“按文化分国”
+    expect(kindOf('era')!.fields.find((f) => f.key === 'nationalism')!.label).toBe('按文化分国');
   });
 
   it('一种格局一行：名字、现在的多少（时代没写时用格局自己的）、多少是什么意思；这里没有的标出来', () => {

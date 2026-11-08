@@ -1,17 +1,42 @@
 import { X } from 'lucide-preact';
-import { useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
+import { Slider } from '../components/Slider';
 import { library } from '../../library';
 import { world } from '../../state';
-import type { Obj } from './fields';
+import { type Obj, logScale } from './fields';
 import { RefPicker, useRefOptions } from './RefPicker';
 import { GOVERNMENT_DIM, refItem, refLabel } from './refs';
 import { type EraKey, addDim, addValue, erasWritten, removeDim, removeValue, setWeight, shares, tableAt, tendencyRows } from './tendency';
 
-// 倾向的表（第四十五轮）：行是维度（宗教、政体……），每行是几个取值与权重（旁边写占这一维的百分比）。
+// 倾向的表（第四十五轮）：行是维度（宗教、政体……），每行是几个取值与“多少”（第八十一轮是滑块）（旁边写占这一维的百分比）。
 // 表上面选“不分时代”或某个时代：选了时代改的是按时代的倾向（写了的那几维换掉不分时代的）。
 // 文化只写与文化组不同的维度：表下面写沿用文化组的几维
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+// 一个取值的“多少”（第八十一轮：以前是数字框）：0–1000 按对数的滑块，松手才换上
+const WEIGHT = logScale(0, 1000, 0.1);
+function WeightSlider({ label, value, onCommit }: { label: string; value: number; onCommit: (v: number) => void }) {
+  const [draft, setDraft] = useState<number | null>(null);
+  useEffect(() => setDraft(null), [value]);
+  const cur = draft ?? value;
+  return (
+    <span class="ed-number ed-weight">
+      <Slider
+        label={`${label}的多少`}
+        pos={WEIGHT.pos(cur)}
+        text={String(cur)}
+        onDraft={(p) => setDraft(WEIGHT.at(p))}
+        onCommit={(p) => {
+          const v = WEIGHT.at(p);
+          setDraft(v);
+          if (v !== value) onCommit(v);
+        }}
+        onCancel={() => setDraft(null)}
+      />
+    </span>
+  );
+}
 
 export function TendencyEditor({ obj, onChange, byEra, label, hint }: { obj: Obj; onChange: (v: Obj) => void; byEra: boolean; label: string; hint?: string }) {
   const [era, setEra] = useState<EraKey>(null);
@@ -71,18 +96,9 @@ export function TendencyEditor({ obj, onChange, byEra, label, hint }: { obj: Obj
                     <span class="tend-chip" title={e.id}>
                       {o?.color && <span class="swatch" style={{ background: o.color }} />}
                       <span class="tend-name">{o?.label ?? e.id}</span>
-                      <input
-                        type="number"
-                        class="ed-weight"
-                        value={e.w}
-                        min={0}
-                        max={1000}
-                        step={0.1}
-                        title="权重"
-                        onChange={(ev) => onChange(setWeight(obj, era, r.dim, e.id, Number((ev.target as HTMLInputElement).value)))}
-                      />
+                      <WeightSlider label={o?.label ?? e.id} value={e.w} onCommit={(v) => onChange(setWeight(obj, era, r.dim, e.id, v))} />
                       <span class="hint tend-pct">{pct(share[k])}</span>
-                      <button class="small icon ghost" title="删除" onClick={() => onChange(removeValue(obj, era, r.dim, e.id))}>
+                      <button class="small icon ghost" title="删除" aria-label="删除" onClick={() => onChange(removeValue(obj, era, r.dim, e.id))}>
                         <X />
                       </button>
                     </span>
@@ -90,7 +106,7 @@ export function TendencyEditor({ obj, onChange, byEra, label, hint }: { obj: Obj
                 })}
                 <RefPicker add options={opts} exclude={ids} onPick={(id) => onChange(addValue(obj, era, r.dim, id))} />
               </div>
-              <button class="small icon ghost" title="删除这一维" onClick={() => onChange(removeDim(obj, era, r.dim))}>
+              <button class="small icon ghost" title="删除这个变量" aria-label="删除这个变量" onClick={() => onChange(removeDim(obj, era, r.dim))}>
                 <X />
               </button>
             </div>
@@ -99,7 +115,7 @@ export function TendencyEditor({ obj, onChange, byEra, label, hint }: { obj: Obj
         {!rows.length && <p class="hint">{era === null ? '没有倾向' : '这个时代没有另写'}</p>}
       </div>
       <RefPicker add options={dims} exclude={have} onPick={(dim) => onChange(addDim(obj, era, dim))}>
-        添加维度
+        添加变量
       </RefPicker>
       {inherited.length > 0 && (
         <p class="hint tend-inherit">

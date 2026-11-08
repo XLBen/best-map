@@ -36,6 +36,8 @@ import { Toggle } from './components/Toggle';
 import { HumanChoices } from './panels/culture';
 import { type HumanChoice, chooseLibrary, defaultChoice, generateCommand, groupByPack } from './domain/human';
 import { LibraryPick } from './components/LibraryPick';
+import { openGenSettings } from './packs/open-era';
+import { GEN_AFTER_CREATE } from './packs/copy';
 import { choicePacks, libraryOptions, packLabel, worldContentCommands } from './domain/packChoice';
 
 // 新建向导：先选一块地区还是整个星球。
@@ -191,6 +193,8 @@ export function Wizard() {
   const [human, setHuman] = useState<HumanChoice>(() => defaultChoice(null, true, library.value));
   // 别的库里的星球形态：展开着
   const [moreForms, setMoreForms] = useState(false);
+  // 第八十一轮：建好后打开资源库的“生成设置”（国家大小、人口、省份大小；向导里不另放这几个滑块）
+  const [openGen, setOpenGen] = useState(false);
   const request = useRef(0);
   const savedAt = !world.value ? autosaved.value : null;
 
@@ -273,6 +277,7 @@ export function Wizard() {
     if (ok) {
       wizardOpen.value = false;
       resetTools();
+      if (openGen) openGenSettings();
     }
     return ok;
   };
@@ -287,7 +292,10 @@ export function Wizard() {
   const contentBox = (
     <div class="wizard-content">
       <LibraryPick value={human.library} onChange={(key) => setHuman(chooseLibrary(human, key, lib))} options={libraryOptions(lib, true)} labelOf={(key) => packLabel(lib, [key])} disabled={creating} />
-      <p class="hint">决定时代、文化和政体。建好后可以从别的库加内容。</p>
+      <p class="hint">决定时代、文化和政体。建好后可以从别的库添加内容。</p>
+      <Toggle on={openGen} onChange={setOpenGen} disabled={creating}>
+        {GEN_AFTER_CREATE}
+      </Toggle>
     </div>
   );
   const pick = (seed: number) => void create(genOf(seed), nameOf(), seed, kind === 'planet' ? planetCells(PLANET_SIZES[psize].radiusKm) : CELLS);

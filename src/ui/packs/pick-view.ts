@@ -1,3 +1,4 @@
+import { signal } from '@preact/signals';
 import { DIMENSION } from '../../../core/content/link-rules';
 import type { ContentRef } from '../../../core/content/links';
 import { canApply } from '../../../core/packs';
@@ -21,6 +22,11 @@ export interface PickView {
   look: LookCtx;
   state: PickState;
 }
+
+// 第八十一轮：从别的库挑是一种模式（资源库面板顶上“从别的库添加…”进，“完成”出，panel-store.ts 记着）。
+// 不在这个模式时库里不画勾、不出清单：组件用 shownPick，不直接用 pickView
+export const pickMode = signal(false);
+export const shownPick = (src: SourceRef, ctx: PageCtx): PickView | null => (pickMode.value ? pickView(src, ctx) : null);
 
 // 同一个库、同一份勾选、同一个世界和资源库只算一遍（列表上每一行都要问）
 const memo = new Map<string, { store: unknown; world: unknown; lib: unknown; view: PickView | null }>();

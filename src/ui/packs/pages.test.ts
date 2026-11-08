@@ -12,7 +12,7 @@ import { world } from '../../state';
 import { commitItem, commitWaterBlock, commitWaterCell, copyItemIn, deleteFromLibrary, newItemIn, speciesPatch, worldItemCommand } from './page-actions';
 import { HOME_LAYOUT } from './page-layout';
 import { numberText, sliderScale } from './fields';
-import { fieldBrief, initialOpen, segmentBrief, segmentsOf } from './page-segments';
+import { HIDDEN, fieldBrief, initialOpen, segmentBrief, segmentsOf } from './page-segments';
 import {
   HOME,
   type PageCtx,
@@ -110,7 +110,7 @@ describe('首页', () => {
   it('分五段，时代规则在最上面；每种列出来的内容都到得了', () => {
     const p = homePage(lib('medieval'), ctxOf());
     expect(p.sections.map((s) => s.title)).toEqual(['人文', '政治', '城市与地标', '地理', '外观']);
-    expect(p.era).toMatchObject({ title: '时代规则', route: { p: 'item', kind: 'era', id: 'medieval' } });
+    expect(p.era).toMatchObject({ title: '时代', route: { p: 'item', kind: 'era', id: 'medieval' } });
     expect(p.era!.summary).toContain('人口密度');
     expect(new Set(reachableKinds())).toEqual(new Set(listedKinds()));
   });
@@ -323,13 +323,13 @@ describe('列表', () => {
 });
 
 describe('一项的页面', () => {
-  it('每种内容：除了 id，每个字段都在且只在一段里（第五十八轮的典型高度在地形类别的第一段）', () => {
+  it('每种内容：除了 id 和不列的（第八十一轮的 HIDDEN），每个字段都在且只在一段里（第五十八轮的典型高度在地形类别的第一段）', () => {
     for (const k of allKinds()) {
       if (!k.pack.listed) continue;
       const segs = segmentsOf(k);
       const inSegs = segs.flatMap((s) => s.fields);
       for (const f of k.fields) {
-        if (f.key === 'id') {
+        if (f.key === 'id' || HIDDEN[k.id]?.includes(f.key)) {
           expect(inSegs.includes(f), `${k.id}.id`).toBe(false);
           continue;
         }
@@ -621,17 +621,17 @@ describe('改一项就存', () => {
 describe('⌘Z 撤销哪一边', () => {
   const copy = mineEntry(copiedPack(medieval, 'm2', 'm2'));
   const ctx = ctxOf(null, [copy]);
-  it('我的库、最后点的是面板：这个库；点的是地图：世界；本世界、面板关着：世界；内置的库不撤销世界', () => {
-    expect(undoTarget(lib('m2'), ctx, true)).toBe('library');
-    expect(undoTarget(lib('m2'), ctx, false)).toBe('world');
-    expect(undoTarget(WORLD_SOURCE, ctx, true)).toBe('world');
-    expect(undoTarget(null, ctx, true)).toBe('world');
-    expect(undoTarget(lib('medieval'), ctx, true)).toBe('none');
+  // 第八十一轮：只看面板看的是哪一份（顶栏的撤销也一样），不再看最后点的是不是面板里
+  it('看我的库：这个库；本世界、面板关着：世界；内置的库不撤销世界', () => {
+    expect(undoTarget(lib('m2'), ctx)).toBe('library');
+    expect(undoTarget(WORLD_SOURCE, ctx)).toBe('world');
+    expect(undoTarget(null, ctx)).toBe('world');
+    expect(undoTarget(lib('medieval'), ctx)).toBe('none');
   });
 });
 
 describe('表单里的数', () => {
-  it('写了上下限和步子、格子不太多的用滑块，松手落在步子上；范围太大的还是框', () => {
+  it('写了上下限和步子、格子不太多的用等间距的滑块，松手落在步子上；范围很大的按对数（第八十一轮）', () => {
     const s = sliderScale({ min: 0, max: 9000, step: 50 })!;
     expect(s.at(0)).toBe(0);
     expect(s.at(1)).toBe(9000);
@@ -639,7 +639,7 @@ describe('表单里的数', () => {
     expect(s.at(0.5001)).toBe(4500);
     expect(s.pos(2400)).toBeCloseTo(2400 / 9000);
     expect(sliderScale({ min: 0, max: 1, step: 0.05 })!.at(0.33)).toBe(0.35);
-    expect(sliderScale({ min: 0.001, max: 10000, step: 0.1 })).toBeNull();
+    expect(sliderScale({ min: 0.001, max: 10000, step: 0.1 })!.stops).toBeDefined();
     expect(sliderScale({ min: 0, max: 1 })).toBeNull();
     expect(numberText(0.35, 0.05)).toBe('0.35');
     expect(numberText(4500, 50)).toBe('4500');

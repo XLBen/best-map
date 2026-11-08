@@ -1,4 +1,4 @@
-import { ChevronRight, Copy, Download, LocateFixed, Lock, Pencil, RotateCcw, Save, Trash2 } from 'lucide-preact';
+import { ChevronRight, Copy, Download, LocateFixed, Pencil, RotateCcw, Save, Trash2 } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { itemName, kindOf } from '../../../core/content/registry';
@@ -13,8 +13,11 @@ import { type Segment, initialOpen, segmentBrief } from './page-segments';
 import type { UsedBy } from './page-used-by';
 import { type ItemAction, type ItemPage, type PageCtx, type Route, type SourceRef, itemActions, itemPage, refRoute, rowsOf } from './pages';
 import { closeSide, copyToMine, goBack, goTo, openRoute, openSegments, rememberSegments, replaceTop } from './panel-store';
+import { DELETE, DELETE_WORLD_TIP, EXPORT_FILE, SAVE_BACK_TIP, SAVE_TO_MINE, SAVE_TO_MINE_TIP } from './copy';
+import { InstantMark } from './InstantMark';
+import { oneMark } from './page-marks';
 import { PickBox } from './PickBox';
-import { kindPickable, lookOf, pickView } from './pick-view';
+import { kindPickable, lookOf, shownPick } from './pick-view';
 import { ChildSegments, WorldVariables } from './PageChildren';
 import { WaterBiomesSegment } from './PageEcology';
 import { BiomeEditor } from '../ecology/BiomeEditor';
@@ -43,10 +46,10 @@ function Actions({ p, row, src, ctx, embedded, side }: { p: ItemPage; row: ItemR
     saveable: !!row && src.t === 'world' && !row.path && saveableItem(row) !== null,
     dedicated: DEDICATED.has(p.kind.id),
     newable: !!p.kind.blank,
-  }).filter((a) => !(p.kind.id === 'biome' && src.t === 'world' && (a.id === 'copyItem' || a.id === 'removeFromWorld')));
+    // 第八十一轮：整个库复制成我的库在右上角的“⋯”里，一项的页面上不放（只读的库顶上一行是“在本世界打开 / 添加到本世界…”）
+  }).filter((a) => a.id !== 'copyLibrary' && !(p.kind.id === 'biome' && src.t === 'world' && (a.id === 'copyItem' || a.id === 'removeFromWorld')));
   const button = (a: ItemAction) => {
     const dis = a.disabled;
-    const common = { disabled: !!dis, title: dis };
     switch (a.id) {
       case 'copyLibrary':
         return (
@@ -74,8 +77,8 @@ function Actions({ p, row, src, ctx, embedded, side }: { p: ItemPage; row: ItemR
         );
       case 'saveBack':
         return (
-          <button class="small" title={`写回“${p.diffLib}”，以后用这个库新建世界时是这一份`} onClick={() => void saveBackToLibrary(p.kind, p.id, ctx)}>
-            <Save /> 存回我的库
+          <button class="small" title={SAVE_BACK_TIP(p.diffLib ?? '')} onClick={() => void saveBackToLibrary(p.kind, p.id, ctx)}>
+            <Save /> {SAVE_TO_MINE}
           </button>
         );
       case 'dedicated':
@@ -86,14 +89,14 @@ function Actions({ p, row, src, ctx, embedded, side }: { p: ItemPage; row: ItemR
         );
       case 'saveToMine':
         return (
-          <button class="small" title="别的世界也能用" onClick={() => row && void saveRow(row)}>
-            <Save /> 存进资源库
+          <button class="small" title={SAVE_TO_MINE_TIP} onClick={() => row && void saveRow(row)}>
+            <Save /> {SAVE_TO_MINE}
           </button>
         );
       case 'exportItem':
         return (
           <button class="small" title="单独这一项导出成文件" onClick={() => row && exportRow(row)}>
-            <Download /> 导出文件
+            <Download /> {EXPORT_FILE}
           </button>
         );
       case 'copyItem':
@@ -113,8 +116,8 @@ function Actions({ p, row, src, ctx, embedded, side }: { p: ItemPage; row: ItemR
       case 'removeFromWorld':
         return (
           <span title={dis}>
-            <button class="small" {...common} onClick={() => remove && void runTrusted(remove, '正在移出…').then((ok) => ok && !embedded && back())}>
-              <Trash2 /> 移出本世界
+            <button class="small" disabled={!!dis} title={dis ?? DELETE_WORLD_TIP} onClick={() => remove && void runTrusted(remove, '正在删除…').then((ok) => ok && !embedded && back())}>
+              <Trash2 /> {DELETE}
             </button>
           </span>
         );
@@ -215,14 +218,16 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
     const to = refRoute(ref, id, src, ctx);
     return to ? () => openRoute(to) : null;
   };
-  const v = !embedded ? pickView(src, ctx) : null;
+  const v = !embedded ? shownPick(src, ctx) : null;
   const pick = v && kindPickable(v, p.kind.id) ? v : null;
   const note = pick ? lookOf(pick, { kind: p.kind.id, id: p.id }).note : null;
   const swatch = row ? swatchOf(row) : typeof item.color === 'string' ? item.color : null;
   const sample = p.kind.id === 'nameStyle' && row ? sampleLine(row) : '';
   const biome = p.kind.id === 'biome';
+  const mark = oneMark({ isDefault: row?.status.isDefault, inUse: p.kind.id === 'mapStyle', changed: p.diff.t === 'changed', modified: src.t === 'lib' && row?.status.modified });
+  const instant = src.t === 'world';
   const segment = (s: Segment) => (
-    <SegmentCard key={s.id} seg={s} open={open.has(s.id)} onToggle={() => toggle(s.id)} brief={segmentBrief(s, item, labelOf)}>
+    <SegmentCard key={s.id} seg={s} open={open.has(s.id)} onToggle={() => toggle(s.id)} brief={segmentBrief(s, item, labelOf)} instant={instant && !!s.instant}>
       {s.hint && <p class="hint">{s.hint}</p>}
       {s.custom === 'samples' && <Samples item={item} kindId={p.kind.id} />}
       {s.custom === 'eraDims' && src.t === 'world' ? (
@@ -256,9 +261,7 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
             {pick && <PickBox v={pick} r={{ kind: p.kind.id, id: p.id }} ctx={ctx} />}
             {swatch && <span class="swatch big" style={{ background: swatch }} />}
             <h3 class="grow ellipsis">{itemName(p.kind, item)}</h3>
-            {src.t === 'lib' && row?.status.modified && <span class="chip static">本世界改过</span>}
-            {p.diff.t === 'changed' && <span class="chip static lp-diff-chip">和库不同</span>}
-            {row?.status.isDefault && <span class="chip static">{p.kind.id === 'mapStyle' ? '在用' : '默认'}</span>}
+            {mark && <span class={`chip static ${mark.diff ? 'lp-diff-chip' : ''}`}>{mark.text}</span>}
           </div>
           <p class="hint">
             {p.kind.label}
@@ -268,17 +271,6 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
       )}
       <DiffLine p={p} />
       {sample && <p class="small lp-sample">{sample}</p>}
-      {p.readonly && !embedded && (
-        <div class="lp-readonly">
-          <Lock />
-          <span class="grow">{p.readonly}</span>
-          {p.canCopyLibrary && (
-            <button class="small primary" onClick={() => void copyToMine(src)}>
-              复制成我的库
-            </button>
-          )}
-        </div>
-      )}
       <EditorKind.Provider value={p.kind.id}>
         <RefGo.Provider value={go}>
           {/* 第七十二轮：生态是自己的编辑器（气候图、滑块、脚本框），不按字段表画 */}
@@ -405,15 +397,17 @@ function UsedBySegment({ u, kindId }: { u: UsedBy; kindId: string }) {
   );
 }
 
-function SegmentCard({ seg, open, onToggle, brief, children }: { seg: Segment; open: boolean; onToggle: () => void; brief: string; children: ComponentChildren }) {
+function SegmentCard({ seg, open, onToggle, brief, children, instant }: { seg: Segment; open: boolean; onToggle: () => void; brief: string; children: ComponentChildren; instant?: boolean }) {
   return (
     <section class={`lp-seg ${open ? 'open' : ''}`}>
       <div class="lp-seg-head" role="button" tabIndex={0} onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()}>
         <ChevronRight class="lp-seg-twist" />
         <b>{seg.title}</b>
+        {instant && <InstantMark />}
         {!open && brief && <span class="lp-seg-brief ellipsis">{brief}</span>}
       </div>
       {open && <div class="lp-seg-body">{children}</div>}
     </section>
   );
 }
+

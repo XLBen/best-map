@@ -10,7 +10,7 @@ import { showToast } from '../../state';
 import { arrangeFor } from './page-arrange';
 import { applyArrange, linkChild, newChildIn, unlinkChild } from './page-actions';
 import { type OtherOpen, hasOther, sameOther } from './other-view';
-import { kindPickable, lookOf, pickView } from './pick-view';
+import { kindPickable, lookOf, shownPick } from './pick-view';
 import { PickBox } from './PickBox';
 import { CHILD_SEARCH_FROM, CHILD_SHOW, type ChildRow, type ChildSection, type InsideRow, shownRows } from './page-children';
 import { dragOutOf } from './page-drag';
@@ -30,7 +30,7 @@ type ItemView = typeof PageItem;
 function ChildLine({ s, r, parent, src, ctx, open, onOpen, Item }: { s: ChildSection; r: ChildRow; parent: Obj; src: SourceRef; ctx: PageCtx; open: boolean; onOpen: () => void; Item: ItemView }) {
   const [moving, setMoving] = useState(false);
   // 能勾的库里子项也有勾（第六十七轮）：勾上级时默认一起勾，可以单独去掉
-  const v = pickView(src, ctx);
+  const v = shownPick(src, ctx);
   const pick = v && kindPickable(v, s.kind.id) ? v : null;
   const ref = { kind: s.kind.id, id: r.id };
   const note = pick ? lookOf(pick, ref).note : null;
@@ -48,7 +48,7 @@ function ChildLine({ s, r, parent, src, ctx, open, onOpen, Item }: { s: ChildSec
       <div
         ref={rowRef}
         class={`lp-row lp-child-row ${open ? 'open' : ''} ${r.mark?.faint ? 'faint' : ''} ${flashClass(s.kind.id, r.id)}`}
-        title={r.mark?.faint ? '生成后没用到，清理时会清掉' : undefined}
+        title={r.mark?.faint ? '生成后没用到，可以删除' : undefined}
         data-pick-row={v ? '' : undefined}
         tabIndex={v ? -1 : undefined}
       >
@@ -78,7 +78,7 @@ function ChildLine({ s, r, parent, src, ctx, open, onOpen, Item }: { s: ChildSec
             移到
           </button>
         )}
-        <button class="icon-btn lp-row-go" title="单独打开" onClick={() => openRoute({ p: 'item', kind: s.kind.id, id: r.id })}>
+        <button class="icon-btn lp-row-go" title="单独打开" aria-label="单独打开" onClick={() => openRoute({ p: 'item', kind: s.kind.id, id: r.id })}>
           <ChevronRight />
         </button>
       </div>
@@ -187,7 +187,7 @@ function ChildSeg({ s, parent, src, ctx, shut, onToggle, Item }: { s: ChildSecti
               )}
               {other && (
                 <button class={`small ${otherOn ? 'open' : ''}`} aria-pressed={otherOn} title={otherOn ? '收起' : `从别的库挑几项${s.title}，放到这里`} onClick={() => toggleOther(other)}>
-                  <Plus /> 从别的库加
+                  <Plus /> 从别的库添加…
                 </button>
               )}
               {s.canNew && (

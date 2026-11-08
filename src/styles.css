@@ -66,6 +66,13 @@
   --ok: #6cc070;
   --mark: #ffe14d;
   --sea: #1a2a40;
+  /* 分段的色条（components/ShareBar.tsx，第八十一轮）：一段一种颜色，按先后轮流用 */
+  --share-0: #4fa3e0;
+  --share-1: #6cc070;
+  --share-2: #e0b24f;
+  --share-3: #d77a5a;
+  --share-4: #a07ad0;
+  --share-5: #5ac0b8;
 
   /* 右边抽屉的宽：抽屉开着时底部条按它居中 */
   --sheet-w: min(420px, calc(100% - 80px));
@@ -1340,6 +1347,81 @@ select.ed-add {
 .ed-weight {
   width: 64px;
 }
+/* 字段下面的一行说明（第八十一轮：以前在悬停里） */
+.ed-hint {
+  margin: 2px 0 0;
+  font-size: var(--fs-xs);
+}
+/* 分段的色条（components/ShareBar.tsx，第八十一轮） */
+.share-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: var(--sp-1) 0;
+}
+.share-bar.off {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.share-track {
+  position: relative;
+  display: flex;
+  height: 24px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--press);
+  touch-action: none;
+}
+.share-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  color: var(--bg);
+  white-space: nowrap;
+}
+.share-seg.c0, .share-dot.c0 { background: var(--share-0); }
+.share-seg.c1, .share-dot.c1 { background: var(--share-1); }
+.share-seg.c2, .share-dot.c2 { background: var(--share-2); }
+.share-seg.c3, .share-dot.c3 { background: var(--share-3); }
+.share-seg.c4, .share-dot.c4 { background: var(--share-4); }
+.share-seg.c5, .share-dot.c5 { background: var(--share-5); }
+.share-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  margin-left: -6px;
+  cursor: ew-resize;
+  outline: none;
+}
+.share-divider::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 5px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+.share-divider:focus-visible::after {
+  background: var(--accent);
+}
+.share-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.share-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .ed-map:not(.nested) .ed-entry {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
@@ -1534,8 +1616,10 @@ select.ed-add {
   font-size: var(--fs-sm);
 }
 .tend-chip .ed-weight {
-  width: 52px;
-  min-height: 22px;
+  width: 150px;
+}
+.tend-chip .ed-weight .slider-track {
+  width: 80px;
 }
 .tend-name {
   white-space: nowrap;

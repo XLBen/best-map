@@ -9,10 +9,10 @@ import { closeFile, openFile, readFileAsPack } from './lib-file';
 import { homePage } from './pages';
 import type { PageCtx, SourceRef } from './page-source';
 import { searchSource } from './page-search';
-import { closeLibrary, closeSide, libPanel, libWide, listOf, lookAt, openLibrary, openRoute, rowFlash, setSource } from './panel-store';
+import { closeLibrary, closeSide, finishPicking, libPanel, libWide, listOf, lookAt, openLibrary, openRoute, rowFlash, setSource, startPicking } from './panel-store';
 import { defaultFrom, rememberFrom } from './pick-other';
 import { canPick, destFor, pickCount, pickLead, pickStore, picksOf, setPickDest, togglePickIn } from './pick-store';
-import { boxOf, cardPicks, kindPickable, lookOf, pickView, pressOf, pressRow } from './pick-view';
+import { boxOf, cardPicks, kindPickable, lookOf, pickMode, pickView, pressOf, pressRow } from './pick-view';
 import { packDialog } from './store';
 
 // 第六十七轮：看库就是添加。资源库面板上一个库的勾选怎么画、点了做什么（组件只照这些画）；两栏、右栏、“去看看”；读文件；下拉里别的库的项直接加
@@ -153,9 +153,19 @@ describe('首页', () => {
 });
 
 describe('两栏', () => {
-  it('能勾的库里点一项在右栏打开，左栏不动；勾了东西面板变宽；清空、收起右栏后收回', () => {
+  // 第八十一轮：只在挑选时（“从别的库添加…”进，“完成”出）有勾、右栏
+  it('挑选时：点一项在右栏打开，左栏不动；勾了东西面板变宽；清空、收起右栏后收回；完成回到原来那一份', () => {
     library.value = [...LIB, mine()];
     openLibrary({ entry: 'modern' });
+    // 不在挑选：照旧点进去，没有勾
+    openRoute({ p: 'item', kind: 'government', id: 'socialist-republic' });
+    expect(libPanel.value!.side).toBeUndefined();
+    expect(libPanel.value!.stack.length).toBe(2);
+    expect(pickMode.value).toBe(false);
+    setSource(lib('mine'));
+    startPicking(undefined, 'modern');
+    expect(pickMode.value).toBe(true);
+    expect(libPanel.value!.source).toEqual(lib('modern'));
     openRoute({ p: 'list', kind: 'government' });
     expect(libPanel.value!.stack.length).toBe(2);
     expect(libWide.value).toBe(false);
@@ -174,6 +184,12 @@ describe('两栏', () => {
     expect(libPanel.value!.side).toBeUndefined();
     expect(pickCount('modern')).toBe(1);
     expect(libWide.value).toBe(false);
+    // 换库还在挑选；完成回到我的库，勾的还记着
+    expect(pickMode.value).toBe(true);
+    finishPicking();
+    expect(libPanel.value!.source).toEqual(lib('mine'));
+    expect(pickMode.value).toBe(false);
+    expect(pickCount('modern')).toBe(1);
     closeLibrary();
   });
 

@@ -109,7 +109,7 @@ export function worldRows(kind: ContentKind, world: PackWorld): ItemRow[] {
   return kind.inWorld(world).map((x) => {
     const id = itemId(kind, x);
     const origin = originOf(world.small, kind.id, id, x);
-    const status: RowStatus = canApply(kind) ? { on: true, worldId: id, ...defaultMark(kind, world, id) } : { on: true, worldId: id, locked: kind.pack.note ?? '不能移出' };
+    const status: RowStatus = canApply(kind) ? { on: true, worldId: id, ...defaultMark(kind, world, id) } : { on: true, worldId: id, locked: kind.pack.note ?? '不能删除' };
     return { kind, key: `w:${kind.id}:${id}`, id, name: itemName(kind, x), item: x, source: 'world', ...(origin ? { path: origin } : {}), status };
   });
 }
@@ -136,7 +136,7 @@ export function removeCommand(row: ItemRow, world: UsageWorld): Command | null {
   if (!row.status.on || row.status.locked || rowUsage(row, world)) return null;
   const off = kindDisable(row.kind, row.status.worldId ?? row.id, world);
   const unset: Command[] = !row.status.isDefault ? [] : [row.kind.id === 'mapStyle' ? { op: 'set_map_style', id: null } : { op: 'set_name_style', id: null }];
-  return { op: 'batch', label: `移出本世界：${quoted(row)}`, commands: [...unset, off] };
+  return { op: 'batch', label: `删除${quoted(row)}`, commands: [...unset, off] };
 }
 
 // 地名风格设为世界默认：不在本世界的一起加进来（一步）。已经是默认时 null

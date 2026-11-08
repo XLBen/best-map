@@ -1,6 +1,6 @@
 import type { ContentKind, FieldDesc } from '../../../core/content/registry';
 import { DEFAULT_KEY } from '../../../core/content/link-rules';
-import { isObj, shownFields } from './fields';
+import { isObj, shownFields, valueText } from './fields';
 import { patternModules } from '../../../core/human';
 
 // 国家格局的参数（各模块的，键平铺在项里）
@@ -17,6 +17,8 @@ export interface Segment {
   custom?: 'biomeWater' | 'waterBiomes' | 'samples' | 'eraDims' | 'eraPatterns' | 'patternTip';
   // 写在这一段里的一句说明（断流、按多数显示的类型……）
   hint?: string;
+  // 第八十一轮：本世界里改了地图马上变（标题旁写“即时”）；别的段要重新生成才用上
+  instant?: boolean;
 }
 
 interface SegDef {
@@ -25,6 +27,7 @@ interface SegDef {
   keys: readonly string[];
   custom?: Segment['custom'];
   hint?: string;
+  instant?: boolean;
 }
 
 const BASIC = '基本';
@@ -133,12 +136,12 @@ const TABLE: Record<string, readonly SegDef[]> = {
     { id: 'water', title: '河与路', keys: ['river', 'riverBank', 'road', 'roadMinor', 'quietRoad', 'quietRoadMinor'] },
     { id: 'text', title: '字', keys: ['countryLabel'] },
   ],
-  // 第七十八轮：省份划分（core/content/province-kind.ts）。改了以后在“省份 ⋯”里划分省份才用上；湖的归属改了马上整理
+  // 第七十八轮：省份划分（core/content/province-kind.ts）。湖的归属改了马上整理（即时）；别的改了以后底下“重新生成”（第八十一轮）
   provinceRules: [
     { id: 'basic', title: BASIC, keys: ['name', 'description'] },
-    { id: 'size', title: '大小', keys: ['size', 'varied', 'wasteland'], hint: '改了以后在“省份 ⋯”里点“划分省份”才用上' },
-    { id: 'water', title: '湖与海', keys: ['lakeMode', 'seaByDistance'], hint: '湖的归属改了马上整理，别的省份不动' },
-    { id: 'borders', title: '省界', keys: ['riverCost', 'ridgeCost'], hint: '省界跨河、跨山脊的代价' },
+    { id: 'size', title: '大小', keys: ['size', 'varied', 'wasteland', 'seaByDistance'] },
+    { id: 'water', title: '湖', keys: ['lakeMode'], hint: '只整理湖边的省份', instant: true },
+    { id: 'borders', title: '省界', keys: ['riverCost', 'ridgeCost'] },
   ],
   cityRank: [
     { id: 'basic', title: BASIC, keys: ['name', 'icon', 'color', 'description'] },
@@ -157,6 +160,9 @@ const TABLE: Record<string, readonly SegDef[]> = {
   ],
 };
 
+// 页面上不列的字段（第八十一轮）：国家等级的“多少”只在时代没写比例时用，内置的时代都写了；比例在时代的页面上（数据照旧留着）
+export const HIDDEN: Readonly<Record<string, readonly string[]>> = { countryTier: ['weight'] };
+
 const memo = new Map<string, { fields: readonly FieldDesc[]; segs: Segment[] }>();
 
 // 这种内容的几段：字段全部归到某一段（测试查着）；表里没写的种类、没写到的字段放进“基本”
@@ -170,7 +176,8 @@ export function segmentsOf(kind: ContentKind): Segment[] {
     const fields = kind.fields.filter((f) => d.keys.includes(f.key));
     // 字段的先后按这一段写的
     const sorted = [...fields].sort((a, b) => d.keys.indexOf(a.key) - d.keys.indexOf(b.key));
-    return { id: d.id, title: d.title, fields: k === 0 ? [...sorted, ...rest] : sorted, ...(d.custom ? { custom: d.custom } : {}), ...(d.hint ? { hint: d.hint } : {}) };
+    const shown = (k === 0 ? [...sorted, ...rest] : sorted).filter((f) => !HIDDEN[kind.id]?.includes(f.key));
+    return { id: d.id, title: d.title, fields: shown, ...(d.custom ? { custom: d.custom } : {}), ...(d.hint ? { hint: d.hint } : {}), ...(d.instant ? { instant: true } : {}) };
   });
   memo.set(kind.id, { fields: kind.fields, segs });
   return segs;
@@ -195,7 +202,7 @@ export function fieldBrief(f: FieldDesc, v: unknown, labelOf: LabelOf = plainLab
     case 'longtext':
       return typeof v === 'string' ? short(v) : '';
     case 'number':
-      return typeof v === 'number' ? `${f.label} ${v}${f.unit ?? ''}` : '';
+      return typeof v === 'number' ? `${f.label} ${valueText(f, v)}` : '';
     case 'bool':
       return v === true ? f.label : '';
     case 'color':

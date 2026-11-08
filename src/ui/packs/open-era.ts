@@ -23,3 +23,9 @@ export function openEraPage(library: string | null, small: Small | null | undefi
   const page = eraPage(library, small, lib, seg);
   if (page) openLibraryAt(page.source, page.stack);
 }
+
+// 生成设置（第八十一轮，gen-settings.ts）：本世界最常调的几项在一页上。“文化 ⋯”“国家 ⋯”“省份 ⋯”、新建向导建好后都开它
+export const GEN_PAGE: { source: SourceRef; stack: Route[] } = { source: WORLD_SOURCE, stack: [HOME, { p: 'gen' }] };
+export function openGenSettings(): void {
+  openLibraryAt(GEN_PAGE.source, GEN_PAGE.stack);
+}

@@ -81,7 +81,7 @@ export async function saveRow(row: ItemRow) {
   if (item === null) return;
   const r = await saveItem(row.kind.pack.key, item);
   if (!r.ok) showToast(r.error, true);
-  else showToast(r.stored ? `“${row.name}”已存进资源库（我的资源）` : '存不进浏览器：只在这次打开的页面里', !r.stored);
+  else showToast(r.stored ? `“${row.name}”已存到我的库（我的资源）` : '存不进浏览器：只在这次打开的页面里', !r.stored);
 }
 
 // 单独这一项导出成文件

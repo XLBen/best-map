@@ -1,12 +1,17 @@
-import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, FileUp, Plus, Redo2, Undo2, X } from 'lucide-preact';
+import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, FileUp, Lock, Plus, X } from 'lucide-preact';
 import { memo } from 'preact/compat';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { packFileName } from '../../../core/packs';
+import { canApply, packFileName } from '../../../core/packs';
 import { panelLibrary } from '../../library';
 import { copyLibrary, createLibrary, deleteLibrary, libEdits } from '../../library-edit';
-import { askText, askUser, canRedo, canUndo, download, redo, showToast, undo, world } from '../../state';
-import { type Crumb, type PageCtx, type Route, type SourceMenuItem, type SourceRef, WORLD_SOURCE, crumbs, entryOf, sourceKind, sourceMenu, sourceTitle } from './pages';
-import { closeLibrary, copyToMine, goBack, goDepth, lastPress, libPanel, livePanel, openBasket, pickingIn, setSource } from './panel-store';
+import { askText, askUser, download, showToast, world } from '../../state';
+import { kindOf } from '../../../core/content/registry';
+import { type Crumb, type PageCtx, type Route, type SourceMenuItem, type SourceRef, WORLD_SOURCE, crumbs, entryOf, itemOf, kindReadonly, sourceKind, sourceMenu, sourceTitle } from './pages';
+import { closeLibrary, copyToMine, finishPicking, goBack, goDepth, lastPress, libPanel, livePanel, openBasket, openLibraryAt, pickThis, pickingIn, setSource, startPicking } from './panel-store';
+import { ADD_TO_WORLD, BACK_TO_WORLD, COPY_LIBRARY, COPY_LIBRARY_TIP, EXPORT_FILE, NOT_WORLD_NOTE, OPEN_IN_WORLD, OPEN_IN_WORLD_TIP, PICK_DONE, PICK_ENTER, PICK_ENTER_TIP, TIDY, TIDY_TIP, pickHeadAfter, pickHeadBefore, pickPending, readonlyLine } from './copy';
+import { addNow } from './pick-add';
+import { shownPick } from './pick-view';
+import { PageGen } from './PageGen';
 import { EcologyHubPage, PageHome } from './PageHome';
 import { PageItem } from './PageItem';
 import { PageList } from './PageList';
@@ -16,8 +21,8 @@ import { LibOther } from './LibOther';
 import { LibSide } from './LibSide';
 import { closeFile, installFile, openFile } from './lib-file';
 import { panelKeys } from './lib-keys';
-import { defaultFrom, rememberFrom } from './pick-other';
-import { pickCount, setPickDest } from './pick-store';
+import { rememberFrom } from './pick-other';
+import { pickCount } from './pick-store';
 import { RegenBar as RegenBarRaw } from './RegenBar';
 import { openPackList, packDialog } from './store';
 import { tidyWorld } from './tidy';
@@ -196,57 +201,30 @@ const MoreMenu = memo(function MoreMenu({ src, ctx }: { src: SourceRef; ctx: Pag
   );
   return (
     <div class="lp-more" ref={box}>
-      <button class={`icon-btn ${open ? 'open' : ''}`} title="更多" onClick={() => setOpen(!open)}>
+      <button class={`icon-btn ${open ? 'open' : ''}`} title="更多" aria-label="更多" onClick={() => setOpen(!open)}>
         <Ellipsis />
       </button>
       {open && (
         <div class="lp-source-menu right">
-          {e && (k === 'builtin' || k === 'imported') && item('复制成我的库', '复制一份来改', () => void copyToMine(src))}
+          {e && (k === 'builtin' || k === 'imported') && item(COPY_LIBRARY, COPY_LIBRARY_TIP, () => void copyToMine(src))}
           {e && k === 'mine' && item('改名…', '', () => void renameLibrary(e.key, e.pack.name))}
-          {e && k === 'file' && item('装进资源库…', '查过脚本后存进资源库', () => installFile(e.key))}
+          {e && k === 'file' && item('存到我的库…', '查过脚本后存进资源库', () => installFile(e.key))}
           {e &&
             k === 'file' &&
             item('不看这个文件', '从下拉里去掉，勾的也去掉', () => {
               setSource(ctx.world ? WORLD_SOURCE : { t: 'lib', key: ctx.lib[0].key });
               closeFile(e.key);
             })}
-          {e && k !== 'file' && item('导出文件', '整个库存成一个文件', () => download(packFileName(e.pack), JSON.stringify(e.pack, null, 2), 'application/json'))}
+          {e && k !== 'file' && item(EXPORT_FILE, '整个库存成一个文件', () => download(packFileName(e.pack), JSON.stringify(e.pack, null, 2), 'application/json'))}
           {e && k === 'mine' && item('删除这个库…', '用过它的世界不受影响', () => void removeLibrary(e.key, e.pack.name))}
-          {k === 'world' && item('从本世界存进资源库…', '挑几样存成一个资源包', () => (packDialog.value = { view: 'export' }))}
-          {k === 'world' && item('清理没用到的…', '清掉列表上变淡的内容', () => void tidyWorld())}
+          {k === 'world' && item('存到我的库…', '挑几样存成一个资源包', () => (packDialog.value = { view: 'export' }))}
+          {k === 'world' && item(`${TIDY}…`, TIDY_TIP, () => void tidyWorld())}
           {item('资源包…', '资源库里的包：导出、删除', openPackList)}
         </div>
       )}
     </div>
   );
 });
-
-// 撤销、重做：看本世界时是世界的（和顶栏同一个），看我的库时是这个库自己的
-const UndoButtons = memo(function UndoButtons({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
-  void libEdits.tick.value;
-  const k = sourceKind(src, ctx);
-  if (k === 'builtin' || k === 'imported' || k === 'file' || k === null) return null;
-  const lib = src.t === 'lib' ? src.key : null;
-  const u = lib ? libEdits.canUndo(lib) : canUndo.value;
-  const r = lib ? libEdits.canRedo(lib) : canRedo.value;
-  return (
-    <>
-      <button class="icon-btn" disabled={!u} title={lib ? '撤销（这个库，⌘Z）' : '撤销（⌘Z）'} onClick={() => (lib ? libEdits.undo(lib) : void undo())}>
-        <Undo2 />
-      </button>
-      <button class="icon-btn" disabled={!r} title={lib ? '重做（这个库，⇧⌘Z）' : '重做（⇧⌘Z）'} onClick={() => (lib ? libEdits.redo(lib) : void redo())}>
-        <Redo2 />
-      </button>
-    </>
-  );
-});
-
-// “从库里添加…”（原来右上角的“导入”，第六十七轮）：加到正在看的本世界或我的库，切到上次用的库
-function startAdding(src: SourceRef, ctx: PageCtx) {
-  setPickDest(src.t === 'lib' ? { lib: src.key } : 'world');
-  const from = defaultFrom(src, ctx);
-  if (from) setSource({ t: 'lib', key: from });
-}
 
 // 读进来的文件：顶上一条“装进资源库…”
 const FileBar = memo(function FileBar({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
@@ -255,14 +233,67 @@ const FileBar = memo(function FileBar({ src, ctx }: { src: SourceRef; ctx: PageC
   return (
     <div class="lp-filebar">
       <span class="hint grow ellipsis" title={e.file}>
-        文件：{e.file}，没装进资源库
+        文件：{e.file}，没存进资源库
       </span>
       <button class="small" onClick={() => installFile(e.key)}>
-        装进资源库…
+        存到我的库…
       </button>
     </div>
   );
 });
+
+// 看的不是本世界时顶上一行（第八十一轮）：只读的库写“这是“X”，只能看”，一项的页面上能在本世界打开（本世界有它时）或添加到本世界；
+// 我的库写“改这里不影响当前世界”。挑选时、读进来的文件（FileBar）不写
+const SourceBanner = memo(function SourceBanner({ src, ctx, route }: { src: SourceRef; ctx: PageCtx; route: Route }) {
+  if (src.t === 'world' || !ctx.world) return null;
+  const e = entryOf(src, ctx);
+  if (!e || e.file) return null;
+  const kind = route.p === 'item' ? kindOf(route.kind) : undefined;
+  const readonly = kind ? kindReadonly(src, kind, ctx) : sourceKind(src, ctx) !== 'mine' ? '只读' : null;
+  if (!readonly) return <p class="hint lp-banner">{NOT_WORLD_NOTE}</p>;
+  const inWorld = route.p === 'item' && kind && itemOf(WORLD_SOURCE, kind, route.id, ctx) !== undefined;
+  return (
+    <div class="lp-readonly lp-banner">
+      <Lock />
+      <span class="grow ellipsis">{readonlyLine(e.pack.name)}</span>
+      {route.p === 'item' && kind ? (
+        inWorld ? (
+          <button class="small primary" title={OPEN_IN_WORLD_TIP} onClick={() => openLibraryAt(WORLD_SOURCE, [{ p: 'home' }, { p: 'item', kind: route.kind, id: route.id }])}>
+            {OPEN_IN_WORLD}
+          </button>
+        ) : canApply(kind) ? (
+          <button class="small primary" onClick={() => pickThis(route)}>
+            {ADD_TO_WORLD}
+          </button>
+        ) : null
+      ) : (
+        <button class="small" onClick={() => setSource(WORLD_SOURCE)}>
+          {BACK_TO_WORLD}
+        </button>
+      )}
+    </div>
+  );
+});
+
+// 挑选时的“完成”：勾了还没添加的先问一句
+async function finishWithPicks(src: SourceRef, ctx: PageCtx) {
+  const v = shownPick(src, ctx);
+  const n = v?.preview.count ?? 0;
+  if (v && n > 0) {
+    const r = await askUser({
+      title: pickPending(n),
+      text: '勾的会记着，下次挑选时还在。',
+      choices: [
+        { value: 'add', label: `添加 ${n} 项`, primary: true },
+        { value: 'later', label: '先不加' },
+        { value: 'cancel', label: '取消' },
+      ],
+    });
+    if (r !== 'add' && r !== 'later') return;
+    if (r === 'add') await addNow(v, ctx, false);
+  }
+  finishPicking();
+}
 
 // ---------- 返回与面包屑 ----------
 
@@ -308,6 +339,8 @@ function Page({ route, src, ctx }: { route: Route; src: SourceRef; ctx: PageCtx 
       return <EcologyHubPage src={src} ctx={ctx} />;
     case 'table':
       return <WaterTablePage src={src} ctx={ctx} />;
+    case 'gen':
+      return <PageGen ctx={ctx} />;
     case 'list':
       return <PageList key={JSON.stringify(route)} route={route} src={src} ctx={ctx} />;
     case 'item':
@@ -344,6 +377,7 @@ export function LibPanel() {
   const src = live.source;
   const route = stack[stack.length - 1];
   const list = crumbs(stack, src, ctx);
+  const pick = !!live.pick;
   const picking = pickingIn(src, ctx);
   const count = picking ? pickCount(src.key) : 0;
   const side = live.side?.p === 'item' ? live.side : null;
@@ -362,30 +396,38 @@ export function LibPanel() {
       onKeyDown={(e) => panelKeys(e, body.current, src, ctx, !!side || !!live.basket || !!other)}
     >
       <div class="lp-main">
-        <div class="lp-head">
+        <div class={`lp-head ${pick ? 'picking' : ''}`}>
           <span class="lp-title">
+            {pick && <span class="lp-pick-word">{pickHeadBefore}</span>}
             <SourcePicker src={src} ctx={ctx} />
+            {pick && <span class="lp-pick-word">{pickHeadAfter}</span>}
             {count > 0 && <span class="lp-picked">已勾 {count}</span>}
           </span>
           <span class="lp-actions">
-            <UndoButtons src={src} ctx={ctx} />
-            {canAdd && (
-              <button class="small lp-import" title={src.t === 'world' ? '从别的库挑几项加到本世界' : '从别的库挑几项加到这个库'} onClick={() => startAdding(src, ctx)}>
-                从库里添加…
+            {pick ? (
+              <button class="small primary" onClick={() => void finishWithPicks(src, ctx)} title="Esc">
+                {PICK_DONE}
               </button>
+            ) : (
+              canAdd && (
+                <button class="small lp-import" title={PICK_ENTER_TIP} onClick={() => startPicking()}>
+                  {PICK_ENTER}
+                </button>
+              )
             )}
-            <MoreMenu src={src} ctx={ctx} />
-            <button class="icon-btn" onClick={closeLibrary} title="关闭">
+            {!pick && <MoreMenu src={src} ctx={ctx} />}
+            <button class="icon-btn" onClick={closeLibrary} title="关闭" aria-label="关闭">
               <X />
             </button>
           </span>
         </div>
         <FileBar src={src} ctx={ctx} />
-        {src.t === 'world' && <RegenBar ctx={ctx} />}
+        {!pick && <SourceBanner src={src} ctx={ctx} route={route} />}
         {stack.length > 1 && <NavBar list={list} />}
         <div class="lp-body" ref={body} onScroll={(e) => scrolls.current.set(key, (e.currentTarget as HTMLDivElement).scrollTop)}>
           <Page route={route} src={src} ctx={ctx} />
         </div>
+        {src.t === 'world' && <RegenBar ctx={ctx} />}
         {narrow && count > 0 && !over && (
           <button class="lp-basket-bar" onClick={openBasket}>
             <span class="grow">已勾 {count} 项</span>

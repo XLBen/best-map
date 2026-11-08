@@ -251,6 +251,9 @@ export function createLibEditor(backend: LibBackend = localBackend(), opts: LibE
     canEdit: (key: string) => !!editable(key),
     canUndo: (key: string) => (heads.get(key)?.undo.length ?? 0) > 0,
     canRedo: (key: string) => (heads.get(key)?.redo.length ?? 0) > 0,
+    // 撤销、重做的是哪一步（顶栏按钮的悬停写它，第八十一轮）
+    undoLabel: (key: string): string | null => heads.get(key)?.undo.at(-1)?.label ?? null,
+    redoLabel: (key: string): string | null => heads.get(key)?.redo.at(-1)?.label ?? null,
     // 还有没写进存储的（测试、关页面前）
     isDirty: (key: string) => !!heads.get(key)?.dirty,
 

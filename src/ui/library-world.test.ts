@@ -145,7 +145,7 @@ describe('资源库：添加到本世界、移出本世界', () => {
     const row = worldRows(kind, eng.world).find((r) => r.id === idle.id)!;
     expect(rowUsage(row, eng.world)).toBeNull();
     const off = removeCommand(row, eng.world)!;
-    expect(off).toMatchObject({ op: 'batch', label: `移出本世界：文化“${row.name}”`, commands: [{ op: 'set_content', kind: 'culture', id: idle.id, item: null }] });
+    expect(off).toMatchObject({ op: 'batch', label: `删除文化“${row.name}”`, commands: [{ op: 'set_content', kind: 'culture', id: idle.id, item: null }] });
     eng.exec(off);
     expect(worldCultures(w.small).some((c) => c.id === idle.id)).toBe(false);
     // 第三十轮：内置的地形类别也是普通内容，没画过的能移出

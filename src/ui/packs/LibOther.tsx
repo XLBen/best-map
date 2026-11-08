@@ -77,7 +77,7 @@ export function LibOther({ src, o, ctx, over }: { src: SourceRef; o: OtherOpen; 
     setOpenKey(null);
     search.current?.focus({ preventScroll: true });
   }, [o.kind, o.dim, o.onto?.parent]);
-  const head = `从别的库加 · ${o.label}`;
+  const head = `从别的库添加 · ${o.label}`;
   return (
     <aside
       class="lp-side lo-pane"
@@ -103,7 +103,7 @@ export function LibOther({ src, o, ctx, over }: { src: SourceRef; o: OtherOpen; 
           {o.onto && <span class="hint"> → 加到“{o.onto.title}”下面</span>}
         </b>
         {!over && (
-          <button class="icon-btn" onClick={closeOther} title="收起（Esc）">
+          <button class="icon-btn" onClick={closeOther} title="关闭（Esc）" aria-label="关闭（Esc）">
             <X />
           </button>
         )}

@@ -31,7 +31,7 @@ export function tidyLines(plan: TidyPlan): { label: string; hint?: string }[] {
 
 export function tidyText(plan: TidyPlan): string {
   const n = plan.removed.length;
-  return `清掉 ${n} 项生成后没用到的内容，地图不变，可以撤销。${plan.kept.length ? `${plan.kept.length} 项清掉后地图会变，留着。` : ''}自己做的、改过的存进资源库。河、湖、生态、画风不清：现在没有的，以后可能用到。`;
+  return `删除 ${n} 项生成后没用到的内容，地图不变，可以撤销。${plan.kept.length ? `${plan.kept.length} 项删除后地图会变，留着。` : ''}自己做的、改过的存到我的库。河、湖、生态、画风不删：现在没有的，以后可能用到。`;
 }
 
 export async function tidyWorld(): Promise<boolean> {
@@ -44,18 +44,18 @@ export async function tidyWorld(): Promise<boolean> {
   const plan = await planTidy(only);
   if (!plan) return false;
   if (!plan.command) {
-    showToast(`${plan.kept.length} 项没用到，但清掉后地图会变`);
+    showToast(`${plan.kept.length} 项没用到，但删除后地图会变`);
     return false;
   }
   const v = await askUser({
-    title: '清理没用到的',
+    title: '删除没用到的',
     text: tidyText(plan),
     lines: tidyLines(plan),
     choices: [
-      { value: 'ok', label: `清理 ${plan.removed.length} 项`, primary: true },
+      { value: 'ok', label: `删除 ${plan.removed.length} 项`, primary: true },
       { value: 'cancel', label: '取消' },
     ],
   });
   if (v !== 'ok') return false;
-  return exec({ op: 'batch', label: `清理没用到的 · ${plan.removed.length} 项`, commands: [plan.command] }, '正在清理…');
+  return exec({ op: 'batch', label: `删除没用到的 · ${plan.removed.length} 项`, commands: [plan.command] }, '正在删除…');
 }

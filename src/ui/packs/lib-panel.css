@@ -752,15 +752,49 @@ body.lp-dragging * {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* 第八十一轮：面板底下的一条（看本世界、改了要重新生成时），不随列表滚 */
 .lp-regen {
+  flex: none;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
   background: var(--accent-bg);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
 }
-.lp-regen .hint {
+.lp-regen-text > * {
   display: block;
+}
+.lp-regen .hint.warn {
+  color: var(--warn-text);
+}
+/* 看的不是本世界时顶上一行（第八十一轮） */
+.lp-banner {
+  margin: 0 var(--sp-3) var(--sp-1);
+}
+p.lp-banner {
+  font-size: var(--fs-xs);
+}
+/* 改了马上变的一段（第八十一轮） */
+.lp-instant {
+  margin-left: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--ok);
+}
+/* 从别的库挑（第八十一轮）：标题是“从 [库] 挑选” */
+.lp-head.picking {
+  background: var(--accent-bg);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+.lp-pick-word {
+  flex: none;
+  font-size: var(--fs-sm);
+}
+.lp-gen-card {
+  margin-bottom: var(--sp-2);
+}
+.lp-gen h5 {
+  margin-top: var(--sp-3);
 }
 .lp-regen button {
   flex: none;

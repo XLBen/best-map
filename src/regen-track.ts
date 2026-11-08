@@ -8,8 +8,33 @@ import type { SmallState } from '../core/world';
 // 不碰界面，测试直接调
 
 export type Content = SmallState['content'];
-export type RegenScope = 'human' | 'countries' | 'settlements';
-export type RegenBase = Readonly<Record<RegenScope, Content>>;
+export type RegenScope = 'human' | 'countries' | 'settlements' | 'provinces';
+// hand：上次生成之后手改过的几样（第八十一轮：重新生成的条上写“手改过的国家会被换掉”）
+export type RegenBase = Readonly<Record<RegenScope, Content>> & { readonly hand?: readonly RegenScope[] };
+
+// 手改的命令改的是哪一样（重新生成时会被换掉的：锁定的、自己放的城市不算；人文的重新生成留着手改过的格，不算）
+const HAND: Partial<Record<Command['op'], RegenScope>> = {
+  paint_country: 'countries',
+  restore_country: 'countries',
+  new_country: 'countries',
+  merge_countries: 'countries',
+  split_country: 'countries',
+  set_country: 'countries',
+  remove_country: 'countries',
+  set_bloc: 'countries',
+  move_capital: 'countries',
+  assign_province: 'provinces',
+  merge_province: 'provinces',
+  split_province: 'provinces',
+  cut_province: 'provinces',
+  set_province: 'provinces',
+  regenerate_provinces: 'provinces',
+};
+function handOf(cmd: Command, out = new Set<RegenScope>()): Set<RegenScope> {
+  if (cmd.op === 'batch') for (const c of cmd.commands) handOf(c, out);
+  else if (HAND[cmd.op]) out.add(HAND[cmd.op]!);
+  return out;
+}
 
 // 这条命令重新生成了哪几样。重新生成人文时国家的领土不动（写了 countries 才重长）；重新生成国家时人口按新的国家重算；城市跟着人文、国家一起重算
 function scopesOf(cmd: Command, out = new Set<RegenScope>()): Set<RegenScope> {
@@ -32,6 +57,10 @@ function scopesOf(cmd: Command, out = new Set<RegenScope>()): Set<RegenScope> {
     case 'regenerate_settlements':
       out.add('settlements');
       break;
+    // 第八十一轮：整张图重新划分省份（重新划分一片是手改）
+    case 'generate_provinces':
+      out.add('provinces');
+      break;
   }
   return out;
 }
@@ -45,7 +74,7 @@ export class RegenTrack {
   private at = 0;
 
   private fresh(content: Content): RegenBase {
-    return { human: content, countries: content, settlements: content };
+    return { human: content, countries: content, settlements: content, provinces: content };
   }
 
   // 新建、打开了世界
@@ -68,8 +97,15 @@ export class RegenTrack {
       // 新的一步：后面的（撤销掉的）不要了
       for (const k of [...this.steps.keys()]) if (k > position) this.steps.delete(k);
       const redone = p ? scopesOf(p) : null;
-      const next = { ...prev };
+      const next: { -readonly [K in RegenScope]: Content } & { hand?: readonly RegenScope[] } = { ...prev };
       for (const s of redone ?? []) next[s] = content;
+      if (p) {
+        const hand = new Set(prev.hand ?? []);
+        for (const s of redone ?? []) hand.delete(s);
+        for (const s of handOf(p)) hand.add(s);
+        if (hand.size) next.hand = [...hand];
+        else delete next.hand;
+      }
       this.steps.set(position, next);
     } else if (!this.steps.has(position)) this.steps.set(position, this.fresh(content));
     this.at = position;

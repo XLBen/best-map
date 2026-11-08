@@ -2,12 +2,13 @@ import type { Command } from '../../../core/commands';
 import { stableJson } from '../../../core/content/refs';
 import type { Culture, Dimension, Era } from '../../../core/human/era';
 import type { SmallState } from '../../../core/world';
+import { type ProvinceRules, provinceSeed, worldProvinceRules } from '../../../core/province-rules';
 import type { LibraryEntry } from '../../library';
 import type { Content, RegenBase, RegenScope } from '../../regen-track';
 import { beyondGroupIds, regenerateCommand, withPackImports } from '../domain/human';
 import { worldLibrary } from '../domain/packChoice';
 
-// 面板顶上的“重新生成”（第六十二轮）：内容改了、地图还没用上时才出现。和上一次生成时的内容比（regen-track.ts 记着），
+// 面板底下的“改了 N 项 · 重新生成”（第六十二轮在顶上，第八十一轮挪到底下、省份划分也算）：内容改了、地图还没用上时才出现。和上一次生成时的内容比（regen-track.ts 记着），
 // 所以撤销掉改动就没了，就地展开的项、世界里别处改的都算（比的是世界，不是这一页）。
 //
 // 什么算“确实需要”：
@@ -23,9 +24,11 @@ import { worldLibrary } from '../domain/packChoice';
 //   政体、派系、国家等级改了    重新生成国家（人口按新的国家重算，锁定的不动）
 //   两样都改了                  重新生成人文和国家
 //   只有城市等级、地标、点改了  重新生成城市（锁定的、自己放的不动）
-// 人文、国家重新生成时城市跟着重算，所以这时不用另外一步
+//   省份划分改了（第八十一轮）  按世界的种子重新划分省份（同“省份 ⋯”的划分省份；“湖”改了马上整理，不算）
+// 人文、国家重新生成时城市跟着重算，所以这时不用另外一步；省份和别的一起时一个 batch，先划分省份。
+// 条上写会重做什么；上次生成之后手改过的国家、省份会被换掉时另写一句（regen-track.ts 记着 hand）
 
-type Small = Pick<SmallState, 'content' | 'human' | 'settlementRules'>;
+type Small = Pick<SmallState, 'content' | 'human' | 'settlementRules'> & Partial<Pick<SmallState, 'provinces'>>;
 type Store = Record<string, Record<string, unknown>>;
 
 const HUMAN: readonly string[] = ['era', 'popValue', 'valueGroup', 'cultureGroup', 'culture'];
@@ -93,46 +96,90 @@ function humanChanges(small: Small, base: Content, lib: readonly LibraryEntry[])
 
 const changesIn = (small: Small, base: Content, kinds: readonly string[]) => kinds.flatMap((k) => changedIds(base, small.content, k).map((id) => `${k}:${id}`));
 
+// 第八十一轮：省份划分也走这一条。“湖”改了马上整理（不算）；名字、说明不算。世界里没有时按默认的比
+const PROVINCE_KEYS: readonly (keyof ProvinceRules)[] = ['size', 'varied', 'wasteland', 'seaByDistance', 'riverCost', 'ridgeCost'];
+function provinceChanges(small: Small, base: Content): string[] {
+  if (!Object.keys(small.provinces ?? {}).length) return [];
+  const a = worldProvinceRules({ content: base });
+  const b = worldProvinceRules(small);
+  if (a === b || PROVINCE_KEYS.every((k) => a[k] === b[k])) return [];
+  return [`provinceRules:${b.id}`];
+}
+
 export interface RegenNeed {
   scopes: RegenScope[];
-  // 按钮上的字
+  // 按钮上的字（“添加并重新生成国家”用它；面板底下的条上只写“重新生成”）
   label: string;
-  // 灰色的一句：会重算什么
+  // 灰色的一句：会重做什么
   what: string;
+  // 手改过、会被换掉的（没有时 null）
+  warn: string | null;
   // 改了几项
   count: number;
 }
 
-export function regenNeed(small: Small, base: RegenBase | null, lib: readonly LibraryEntry[] = []): RegenNeed | null {
-  if (!base || !small.human) return null;
-  const hasCountries = !!small.human.countryRules;
-  const hasCities = !!small.settlementRules;
-  const human = humanChanges(small, base.human, lib);
+const HAND_NAME: Record<RegenScope, string> = { provinces: '省份', countries: '国家', human: '人口', settlements: '城市' };
+
+// provinces：省份划分算不算（从资源库添加的“添加并重新生成”不算它，照旧写一句）
+export function regenNeed(small: Small, base: RegenBase | null, lib: readonly LibraryEntry[] = [], opts: { provinces?: boolean } = {}): RegenNeed | null {
+  if (!base) return null;
+  const prov = opts.provinces === false ? [] : provinceChanges(small, base.provinces ?? base.human);
+  const hasHuman = !!small.human;
+  const hasCountries = hasHuman && !!small.human!.countryRules;
+  const hasCities = hasHuman && !!small.settlementRules;
+  const human = hasHuman ? humanChanges(small, base.human, lib) : [];
   const gov = hasCountries ? changesIn(small, base.countries, GOV) : [];
   const settle = hasCities ? changesIn(small, base.settlements, SETTLE) : [];
-  const count = human.length + gov.length + settle.length;
+  const count = prov.length + human.length + gov.length + settle.length;
   if (!count) return null;
-  const cities = hasCities ? '、城市' : '';
-  if (human.length && gov.length) return { scopes: ['human', 'countries'], count, label: '重新生成人文和国家', what: `重算人口、文化、国家${cities}，锁定的不动` };
-  if (gov.length) return { scopes: ['countries'], count, label: '重新生成国家', what: `重算国家、人口${cities}，锁定的不动` };
-  if (human.length) return { scopes: ['human'], count, label: '重新生成人文', what: `重算人口、文化${cities}，国家的领土不动` };
-  return { scopes: ['settlements'], count, label: '重新生成城市', what: '重算城市、道路和地标，锁定的、自己放的不动' };
+  const scopes: RegenScope[] = [];
+  let label = '';
+  if (human.length && gov.length) {
+    scopes.push('human', 'countries');
+    label = '重新生成人文和国家';
+  } else if (gov.length) {
+    scopes.push('countries');
+    label = '重新生成国家';
+  } else if (human.length) {
+    scopes.push('human');
+    label = '重新生成人文';
+  } else if (settle.length) {
+    scopes.push('settlements');
+    label = '重新生成城市';
+  }
+  if (prov.length) {
+    scopes.unshift('provinces');
+    if (!label) label = '重新划分省份';
+  }
+  // 会重做什么：人文、国家重新生成时城市跟着重算
+  const redo: string[] = [];
+  if (prov.length) redo.push('省份');
+  if (scopes.includes('human')) redo.push('人口、文化');
+  if (scopes.includes('countries')) redo.push(scopes.includes('human') ? '国家' : '国家、人口');
+  if (hasCities && (scopes.includes('human') || scopes.includes('countries') || scopes.includes('settlements'))) redo.push('城市');
+  const keep = scopes.includes('countries') || prov.length ? '锁定的不动' : scopes.includes('human') ? '国家的领土不动' : '锁定的、自己放的不动';
+  const what = `会重做${redo.join('、')}；${keep}`;
+  const lost = (base.hand ?? []).filter((s) => scopes.includes(s) && s !== 'human' && s !== 'settlements').map((s) => HAND_NAME[s]);
+  return { scopes, count, label, what, warn: lost.length ? `手改过的${lost.join('、')}会被换掉` : null };
 }
 
-// 点按钮发的命令：和“文化 ⋯”“国家 ⋯”“城市 ⋯”里的重新生成同一条
+// 点按钮发的命令：和“文化 ⋯”“国家 ⋯”“城市 ⋯”“省份 ⋯”里的同一条；几样都要时一步（batch，先划分省份：国家按省份长）
 export function regenCommand(need: Pick<RegenNeed, 'scopes'>, small: SmallState, lib: readonly LibraryEntry[]): Command {
-  if (need.scopes.includes('human')) return regenerateCommand(small, lib, need.scopes.includes('countries'));
-  if (need.scopes.includes('countries')) return withPackImports({ op: 'regenerate_countries' }, small, lib);
-  return { op: 'regenerate_settlements' };
+  const parts: Command[] = [];
+  if (need.scopes.includes('provinces')) parts.push({ op: 'generate_provinces', seed: provinceSeed(small) });
+  if (need.scopes.includes('human')) parts.push(regenerateCommand(small, lib, need.scopes.includes('countries')));
+  else if (need.scopes.includes('countries')) parts.push(withPackImports({ op: 'regenerate_countries' }, small, lib));
+  else if (need.scopes.includes('settlements')) parts.push({ op: 'regenerate_settlements' });
+  return parts.length === 1 ? parts[0] : { op: 'batch', label: '重新生成', commands: parts };
 }
 
 // 从资源库添加之后要不要重新生成（第六十六轮，“添加并重新生成”的按钮）：拿添加前后的内容比，规则和这个按钮一样，只算这一次加的。
 // after：添加之后世界里的内容。世界还没生成人文（国家、城市）时那一样不算，没有要重新生成的时 null
 export function addedNeed(small: Small, after: Content, lib: readonly LibraryEntry[] = []): RegenNeed | null {
-  return regenNeed({ ...small, content: after }, { human: small.content, countries: small.content, settlements: small.content }, lib);
+  return regenNeed({ ...small, content: after }, { human: small.content, countries: small.content, settlements: small.content, provinces: small.content }, lib, { provinces: false });
 }
 
 // 按钮的字：“添加并重新生成国家”“添加并重新生成人文”“添加并重新生成城市”（人文和国家都要时“添加并重新生成人文和国家”）
 export const addRegenLabel = (need: Pick<RegenNeed, 'label'> | null): string | null => (need ? `添加并${need.label}` : null);
 
-export const REGEN_KINDS: readonly string[] = [...HUMAN, ...GOV, ...SETTLE];
+export const REGEN_KINDS: readonly string[] = [...HUMAN, ...GOV, ...SETTLE, 'provinceRules'];

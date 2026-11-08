@@ -56,7 +56,7 @@ function Line({ n, depth, c }: { n: BasketNode; depth: number; c: LineCtx }) {
           {notes.length > 0 && <span class="hint lb-line-note">{notes.join('。')}</span>}
         </span>
         {r.kind !== 'field' && (
-          <button class="icon-btn lb-x" title={removeTitle(n)} onClick={() => removePickIn(c.key, { kind: r.kind, id: r.id }, c.ctx)}>
+          <button class="icon-btn lb-x" title={removeTitle(n)} aria-label={removeTitle(n)} onClick={() => removePickIn(c.key, { kind: r.kind, id: r.id }, c.ctx)}>
             <X />
           </button>
         )}
@@ -166,7 +166,7 @@ export function LibBasket({ v, ctx, other }: { v: PickView; ctx: PageCtx; other?
       {/* 第六十六轮去掉了“自动去掉 N 条写到这里没有的内容”（新手看不懂，也没法做什么）；stripCount 照旧算，测试用 */}
       {(p.dropped.length > 0 || line || hasZeroWeightGroup(p)) && (
         <div class="lb-foot">
-          {hasZeroWeightGroup(p) && <p class="hint">组的比重是 0，不参与生成；勾整组才参与</p>}
+          {hasZeroWeightGroup(p) && <p class="hint">组的“多少”是 0，不参与生成；勾整组才参与</p>}
           {p.dropped.length > 0 && (
             <p class="warn small" title={p.dropped.map((d) => `${d.kindLabel}“${d.name}”：${d.reason}`).join('\n')}>
               {skippedLine(p.dropped)}：{p.dropped.slice(0, 3).map((d) => d.name).join('、')}

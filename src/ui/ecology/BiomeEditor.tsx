@@ -13,6 +13,8 @@ import type { Obj } from '../packs/fields';
 import { BiomeWaterSegment } from '../packs/PageEcology';
 import type { PageCtx, SourceRef } from '../packs/pages';
 import { closeLibrary } from '../packs/panel-store';
+import { InstantMark } from '../packs/InstantMark';
+import { INSTANT_TIP } from '../packs/copy';
 import { rangePick } from '../tools/public';
 import { BiomeAdvanced } from './BiomeAdvanced';
 import { BiomeChart } from './BiomeChart';
@@ -55,6 +57,11 @@ export function BiomeEditor({ sp, src, ctx, onSelect }: BiomeEditorProps) {
   const rect = speciesRect(sp);
   return (
     <div class="biome-editor">
+      {t.inWorld && (
+        <p class="hint row">
+          <InstantMark /> {INSTANT_TIP}
+        </p>
+      )}
       <p class="hint">色块是最适合的冷暖干湿：拖动移动，拖边改大小，拖到图边为“不限”。灰点是陆地，黄圈是指针所在。</p>
       <BiomeChart w={w} all={t.all} selected={sp} onSelect={onSelect} live={t.inWorld} readonly={!!t.readonly} onCommit={(id, r) => void t.edit(id, rectPatch(t.all.find((x) => x.id === id) ?? sp, r), '正在计算…')} />
       <p class="hint">
@@ -76,7 +83,7 @@ export function BiomeEditor({ sp, src, ctx, onSelect }: BiomeEditorProps) {
   );
 }
 
-// 在地图上看：临时换底图（第七十二轮从“图层”挪来的几张）
+// 看底图：临时换底图（第七十二轮从“图层”挪来的几张；第八十一轮以前叫“在地图上看”）
 function OnMap({ sp, inWorld }: { sp: Species; inWorld: boolean }) {
   const cur = shownEditorView();
   const list = EDITOR_VIEWS.filter((v) => !v.worldOnly || inWorld);
@@ -84,7 +91,7 @@ function OnMap({ sp, inWorld }: { sp: Species; inWorld: boolean }) {
   return (
     <>
       <label class="row">
-        <span class="grow">在地图上看</span>
+        <span class="grow">看底图</span>
         <select value={cur ?? ''} onChange={(e) => showEditorView(((e.target as HTMLSelectElement).value || null) as never, inWorld ? sp.id : null)}>
           <option value="">不换底图</option>
           {list.map((v) => (
@@ -99,7 +106,7 @@ function OnMap({ sp, inWorld }: { sp: Species; inWorld: boolean }) {
 
 function Basics({ sp, t }: { sp: Species; t: BiomeTarget }) {
   const [name, setName] = useState(sp.name);
-  // 拖着“强势程度”时先显示拖到的数，松手才提交
+  // 拖着“强弱”时先显示拖到的数，松手才提交
   const [competition, setCompetition] = useState<number | null>(null);
   useEffect(() => setCompetition(null), [sp.id, sp.competition]);
   useEffect(() => setName(sp.name), [sp.id, sp.name]);
@@ -112,11 +119,11 @@ function Basics({ sp, t }: { sp: Species; t: BiomeTarget }) {
       </div>
       <Slider
         stacked
-        label="强势程度"
+        label="强弱"
         pos={COMPETITION.pos(competition ?? sp.competition)}
         text={(competition ?? sp.competition).toFixed(1)}
         changed={competition !== null && competition !== sp.competition}
-        note="都能长时，强势的占上风"
+        note="都能长时，强的占上风"
         onDraft={(p) => setCompetition(COMPETITION.at(p))}
         onCommit={(p) => {
           const v = COMPETITION.at(p);

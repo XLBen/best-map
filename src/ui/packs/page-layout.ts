@@ -1,5 +1,6 @@
 // 首页的排法（第五十九轮，计划里的草图）：哪几段、每段哪几张卡片。
 // 'dims' 是时代写的每一维一张（宗教……），'variables' 是时代规则里的变量，'ecology' 是生态与水系（第七十一轮以前叫 water）。别的是内容种类的 id。
+// 本世界的首页最上面另有一张“生成设置”（第八十一轮，gen-settings.ts、PageGen.tsx），时代的卡片在它下面。
 // 卡片的归属（融入）由库的 arrange 决定（第六十轮，core/content/arrange.ts）：homePage 收一张“卡片 → 上级”的表（Inside）。这里列的是都单独成卡时的样子
 
 export type CardDef = 'dims' | 'variables' | 'ecology' | (string & {});

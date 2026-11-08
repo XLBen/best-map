@@ -8,10 +8,12 @@ import { DEFAULT_LIBRARY } from '../../../core/packs/builtin-tree';
 import { worldLibrary } from '../../../core/packs/switch';
 import { panelLibrary, refreshLibrary } from '../../library';
 import { copyLibrary, libEdits } from '../../library-edit';
-import { showToast, world } from '../../state';
-import { HOME, type OpenRequest, type PageCtx, type Route, type SourceRef, WORLD_SOURCE, liveSource, liveStack, openTarget, popRoute, pushRoute, sameSource } from './pages';
+import { canRedo, canUndo, history, redo, showToast, undo, world } from '../../state';
+import { HOME, type OpenRequest, type PageCtx, type Route, type SourceRef, type UndoTarget, WORLD_SOURCE, liveSource, liveStack, openTarget, popRoute, pushRoute, sameSource, undoTarget } from './pages';
 import { type OtherOpen, sameOther } from './other-view';
-import { canPick, pickCount, pickStore, setPickDest } from './pick-store';
+import { canPick, pickCount, pickStore, setPickDest, togglePickIn } from './pick-store';
+import { pickMode } from './pick-view';
+import { defaultFrom } from './pick-other';
 import { ESC_RANK, pushEscape } from '../shell/escape';
 
 // 资源库面板的状态（第五十九轮）：看的是哪一份、点到了第几层。关上再打开回到原来的地方。
@@ -29,6 +31,8 @@ export interface PanelState {
   basket?: boolean;
   // 右栏里的“从别的库加”（本世界、我的库的列表和上级页面）；at：打开时左栏是哪一页（换了页面就收起）
   other?: (OtherOpen & { at: string }) | null;
+  // 第八十一轮：从别的库挑（一种模式，“从别的库添加…”进，“完成”出）。back：完成后回到哪里（加到的那一份）
+  pick?: { back: { source: SourceRef; stack: Route[] } } | null;
 }
 
 export const libPanel = signal<PanelState | null>(null);
@@ -44,9 +48,11 @@ export function livePanel(st: PanelState, ctx: PageCtx = pageCtx()): PanelState 
   const same = sameSource(source, st.source);
   const stack = same ? liveStack(st.stack, source, ctx) : [HOME];
   // 右栏的那一项还在（撤销了新建、库删了时收起）
-  const side = same && st.side && source.t === 'lib' && canPick(source.key, ctx) && liveStack([st.side], source, ctx)[0] === st.side ? st.side : null;
+  const side = same && st.pick && st.side && source.t === 'lib' && canPick(source.key, ctx) && liveStack([st.side], source, ctx)[0] === st.side ? st.side : null;
   const other = same && st.other && st.other.at === routeKey(stack) ? st.other : null;
-  return { source, stack, ...(side ? { side } : {}), ...(st.basket && same ? { basket: true } : {}), ...(other ? { other } : {}) };
+  // 挑选的模式只在库里（库删了、切回本世界时结束）
+  const pick = st.pick && source.t === 'lib' ? st.pick : null;
+  return { source, stack, ...(side ? { side } : {}), ...(st.basket && same ? { basket: true } : {}), ...(other ? { other } : {}), ...(pick ? { pick } : {}) };
 }
 
 const routeKey = (stack: readonly Route[]): string => JSON.stringify(stack[stack.length - 1]);
@@ -56,9 +62,11 @@ function set(next: PanelState) {
   const st = next.other && next.other.at !== routeKey(next.stack) ? { ...next, other: null } : next;
   libPanel.value = st;
   last = st;
+  pickMode.value = !!st.pick;
 }
 
-// 打开：req 写了就开到那一页，没写时回到上次的地方（没开过时看本世界；没有世界时看默认的库）
+// 打开：req 写了就开到那一页，没写时看本世界（第八十一轮：以前回到上次看的那一份，常常是只读的库）；
+// 上次看的就是本世界时回到上次的那一页。没有世界时回到上次的地方（没开过时看默认的库）
 export function openLibrary(req?: OpenRequest) {
   // 从存储读只要一次（一个带六个库的存储每读一次要在主线程上解开约 9 MB）：之后的改动都在内存里
   if (!loaded) {
@@ -71,8 +79,7 @@ export function openLibrary(req?: OpenRequest) {
     set(openTarget(req, ctx, small ? worldLibrary(small) : undefined, DEFAULT_LIBRARY));
     return;
   }
-  const start: PanelState = last ?? (world.value ? { source: WORLD_SOURCE, stack: [HOME] } : { source: { t: 'lib', key: DEFAULT_LIBRARY }, stack: [HOME] });
-  set(livePanel(start, ctx));
+  set(livePanel(startOf(last, !!world.value), ctx));
 }
 
 // 开到某一份的某一层（第七十二轮：“编辑生态类型…”、没涂成的“编辑生态”、脚本出错的“编辑”开到本世界的那种生态）。
@@ -87,9 +94,16 @@ export function openLibraryAt(source: SourceRef, stack: Route[]) {
   set(livePanel({ source, stack }, pageCtx()));
 }
 
+// 不带请求打开时从哪里开始（测试直接调）：有世界时总是本世界
+export function startOf(prev: PanelState | null, hasWorld: boolean): PanelState {
+  if (hasWorld) return prev?.source.t === 'world' ? { source: WORLD_SOURCE, stack: prev.stack } : { source: WORLD_SOURCE, stack: [HOME] };
+  return prev ? { source: prev.source, stack: prev.stack } : { source: { t: 'lib', key: DEFAULT_LIBRARY }, stack: [HOME] };
+}
+
 export function closeLibrary() {
   if (libPanel.value) last = libPanel.value;
   libPanel.value = null;
+  pickMode.value = false;
   void libEdits.flushAll();
 }
 
@@ -103,21 +117,52 @@ function current(): PanelState | null {
   return st && livePanel(st);
 }
 
-// 换一份看：回到首页
+// 换一份看：回到首页。挑选时换的是从哪个库挑（还在挑选）；换到本世界、我的库自己时结束挑选
 export function setSource(source: SourceRef) {
   const st = current();
-  if (st && sameSource(st.source, source)) {
-    set({ source, stack: [HOME] });
-    return;
-  }
+  const pick = st?.pick && source.t === 'lib' && canPick(source.key, pageCtx()) ? st.pick : null;
+  if (!(st && sameSource(st.source, source))) void libEdits.flushAll();
+  set({ source, stack: [HOME], ...(pick ? { pick } : {}) });
+}
+
+// ---------- 从别的库挑（第八十一轮） ----------
+
+// 进入：加到正在看的这一份（本世界、我的库），切到上次用的库（list：直接开到这一种的列表）
+export function startPicking(list?: Extract<Route, { p: 'list' }>, from?: string) {
+  const st = current();
+  if (!st) return;
+  const ctx = pageCtx();
+  setPickDest(st.source.t === 'lib' ? { lib: st.source.key } : 'world');
+  const key = from ?? defaultFrom(st.source, ctx);
+  if (!key) return;
   void libEdits.flushAll();
-  set({ source, stack: [HOME] });
+  const src: SourceRef = { t: 'lib', key };
+  set({ source: src, stack: list ? liveStack([HOME, list], src, ctx) : [HOME], pick: { back: { source: st.source, stack: st.stack } } });
+}
+
+// 只读的库里一项的“添加到本世界…”：进入挑选，这一项勾上，在右栏打开
+export function pickThis(r: Extract<Route, { p: 'item' }>) {
+  const st = current();
+  if (!st || st.source.t !== 'lib') return;
+  const ctx = pageCtx();
+  setPickDest('world');
+  if (!canPick(st.source.key, ctx)) return;
+  togglePickIn(st.source.key, { kind: r.kind, id: r.id }, true, ctx);
+  const back = { source: WORLD_SOURCE, stack: [HOME] };
+  set({ source: st.source, stack: st.stack.length > 1 ? st.stack.slice(0, -1) : st.stack, side: r, pick: st.pick ?? { back } });
+}
+
+// 完成：回到加到的那一份（勾的还记着，下次挑选时还在）
+export function finishPicking() {
+  const st = current();
+  if (!st?.pick) return;
+  set(livePanel({ source: st.pick.back.source, stack: st.pick.back.stack }, pageCtx()));
 }
 
 // ---------- 两栏（第六十七轮） ----------
 
-// 这一份能不能勾（看的是库，并且有地方加）
-export const pickingIn = (src: SourceRef, ctx: PageCtx = pageCtx()): src is { t: 'lib'; key: string } => src.t === 'lib' && canPick(src.key, ctx);
+// 这一份能不能勾（在挑选、看的是库，并且有地方加）
+export const pickingIn = (src: SourceRef, ctx: PageCtx = pageCtx()): src is { t: 'lib'; key: string } => pickMode.value && src.t === 'lib' && canPick(src.key, ctx);
 
 // 打开一项：能勾的库里在右栏打开，左栏留在原来的列表（勾选不丢）；别的照旧点进去
 export function openRoute(r: Route) {
@@ -130,7 +175,7 @@ export function openRoute(r: Route) {
 export function closeSide() {
   const st = current();
   if (st?.other) set({ ...st, other: null });
-  else if (st && (st.side || st.basket)) set({ source: st.source, stack: st.stack });
+  else if (st && (st.side || st.basket)) set({ source: st.source, stack: st.stack, ...(st.pick ? { pick: st.pick } : {}) });
 }
 
 // “从别的库加”（第六十八轮）：在右栏打开；再点一次同一个按钮收起。加到的是左栏这一份
@@ -163,7 +208,7 @@ export const libWide = computed(() => {
   if (!st) return false;
   const ctx = pageCtx();
   const live = livePanel(st, ctx);
-  return !!live.other || (pickingIn(live.source, ctx) && (!!live.side || pickCount(live.source.key) > 0));
+  return !!live.other || (!!live.pick && pickingIn(live.source, ctx) && (!!live.side || pickCount(live.source.key) > 0));
 });
 
 // ---------- 刚加的行（第六十七轮） ----------
@@ -270,12 +315,13 @@ export function goBack() {
   if (st) set({ ...st, stack: popRoute(st.stack) });
 }
 
-// Esc：先收起右栏（第六十七轮；“从别的库加”开着时先收它，第六十八轮），再一层层返回，首页再按一次关上
+// Esc：先收起右栏（第六十七轮；“从别的库加”开着时先收它，第六十八轮），再一层层返回，首页再按一次关上（挑选时是完成）
 pushEscape(ESC_RANK.library, () => {
   const st = libPanel.value;
   if (!st) return false;
   if (st.other || st.side || st.basket) closeSide();
   else if (st.stack.length > 1) goBack();
+  else if (st.pick) finishPicking();
   else closeLibrary();
   return true;
 });
@@ -291,8 +337,39 @@ export const replaceTop = (r: Route) => {
   if (st) set({ ...st, stack: [...st.stack.slice(0, -1), r] });
 };
 
-// 上一次点的是不是面板里（⌘Z 撤销哪一边，见 pages.ts 的 undoTarget）
+// 上一次点的是不是面板里（添加之后记一下；第八十一轮起 ⌘Z 撤销哪一边只看面板看的是哪一份，见 pages.ts 的 undoTarget）
 export const lastPress = { inPanel: false };
+
+// 顶栏的撤销、⌘Z 撤销哪一边（第八十一轮）：面板开着、看的是我的库时是这个库的，看别的库时没有可撤销的，别的都是世界
+export function undoNow(): { target: UndoTarget; lib: string | null } {
+  const st = libPanel.value;
+  const ctx = pageCtx();
+  const src = st ? livePanel(st, ctx).source : null;
+  const target = undoTarget(src, ctx);
+  return { target, lib: target === 'library' && src?.t === 'lib' ? src.key : null };
+}
+
+export function undoHere(): void {
+  const u = undoNow();
+  if (u.lib) libEdits.undo(u.lib);
+  else if (u.target === 'world') void undo();
+}
+export function redoHere(): void {
+  const u = undoNow();
+  if (u.lib) libEdits.redo(u.lib);
+  else if (u.target === 'world') void redo();
+}
+
+// 顶栏的撤销、重做：能不能点、悬停写哪一步（世界的看历史，我的库的看它自己的）
+export function undoState(): { canUndo: boolean; canRedo: boolean; undo: string | null; redo: string | null; lib: boolean } {
+  void libEdits.tick.value;
+  const u = undoNow();
+  if (u.lib) return { canUndo: libEdits.canUndo(u.lib), canRedo: libEdits.canRedo(u.lib), undo: libEdits.undoLabel(u.lib), redo: libEdits.redoLabel(u.lib), lib: true };
+  if (u.target === 'none') return { canUndo: false, canRedo: false, undo: null, redo: null, lib: false };
+  const h = history.value;
+  const done = h.filter((x) => x.done);
+  return { canUndo: canUndo.value, canRedo: canRedo.value, undo: done.at(-1)?.summary ?? null, redo: h.find((x) => !x.done)?.summary ?? null, lib: false };
+}
 
 // 哪几段展开着（按种类记，这次打开页面期间）
 const segOpen = new Map<string, Set<string>>();

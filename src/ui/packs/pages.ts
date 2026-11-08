@@ -31,7 +31,9 @@ export type Route =
   | { p: 'list'; kind: string; dim?: string; group?: string; hideOn?: boolean; loose?: string }
   | { p: 'item'; kind: string; id: string; seg?: string }
   | { p: 'ecology' }
-  | { p: 'table' };
+  | { p: 'table' }
+  // 第八十一轮：生成设置（本世界最常调的几项，gen-settings.ts）
+  | { p: 'gen' };
 
 export const HOME: Route = { p: 'home' };
 
@@ -60,6 +62,8 @@ export function routeLabel(r: Route, src: SourceRef, ctx: PageCtx): string {
       return '生态与水系';
     case 'table':
       return '总表';
+    case 'gen':
+      return '生成设置';
     case 'list': {
       if (r.dim) return dimensionLabel(r.dim, src, ctx);
       const k = kindOf(r.kind);
@@ -120,7 +124,7 @@ export interface HomePage {
   note: string | null;
 }
 
-// 时代规则的一句话：年份、人口密度、变量
+// 时代的一句话：年份、人口密度、变量（第八十一轮起“时代规则”都叫“时代”）
 export function eraSummary(e: Era): string {
   const parts: string[] = [];
   if (e.years) parts.push(`${e.years[0]}–${e.years[1]}`);
@@ -240,7 +244,7 @@ export function homePage(src: SourceRef, ctx: PageCtx, inside: Inside = arrangeF
         ...says('era'),
       };
   const e = entryOf(src, ctx);
-  const note = e && !eras.length ? '没有时代规则，新建世界时选不到这个库' : null;
+  const note = e && !eras.length ? '没有时代，新建世界时选不到这个库' : null;
   return { era, sections: noWorld ? [] : sections, noWorld, note };
 }
 
@@ -545,7 +549,7 @@ export function itemActions(src: SourceRef, row: ItemRow | undefined, ctx: PageC
     if (can.changed) out.push({ id: 'useSource' }, { id: 'saveBack' });
     if (can.dedicated) out.push({ id: 'dedicated' });
     if (can.saveable) out.push({ id: 'saveToMine' });
-    if (!row.status.locked) out.push(can.remove ? { id: 'removeFromWorld' } : { id: 'removeFromWorld', disabled: can.usage ?? '不能移出' });
+    if (!row.status.locked) out.push(can.remove ? { id: 'removeFromWorld' } : { id: 'removeFromWorld', disabled: can.usage ?? '不能删除' });
   }
   out.push({ id: 'exportItem' });
   if (k === 'mine') out.push({ id: 'copyItem' }, { id: 'deleteItem' });
@@ -687,10 +691,11 @@ function libWithMissing(kindId: string | undefined, first: string, ctx: PageCtx)
 
 // ---------- ⌘Z 撤销哪一边 ----------
 
-// 面板开着、看的是我的库、最后点的是面板里：撤销这个库；别的都是世界。内置的库上点了面板不撤销世界，免得看不见的东西变了
+// 第八十一轮：只看面板看的是哪一份（以前还看最后点的是不是面板里，顶栏的撤销却总是世界的，两样对不上）。
+// 面板关着、看本世界：世界；看我的库：这个库；看内置的库、读进来的文件：没有可撤销的（免得看不见的世界变了）
 export type UndoTarget = 'world' | 'library' | 'none';
-export function undoTarget(src: SourceRef | null, ctx: PageCtx, inPanel: boolean): UndoTarget {
-  if (!src || !inPanel || src.t === 'world') return 'world';
+export function undoTarget(src: SourceRef | null, ctx: PageCtx): UndoTarget {
+  if (!src || src.t === 'world') return 'world';
   return sourceKind(src, ctx) === 'mine' ? 'library' : 'none';
 }
 

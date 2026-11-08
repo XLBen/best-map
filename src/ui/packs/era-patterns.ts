@@ -90,5 +90,6 @@ export function withNationalism(era: Obj, v: number | undefined): Obj {
 }
 
 // 滑块的字段（画成和别的字段一样的滑块）
-export const amountField = (r: Pick<EraPatternRow, 'name' | 'hint'>): FieldDesc => ({ key: 'amount', label: r.name, type: 'number', min: 0, max: AMOUNT_MAX, step: 0.1, hint: r.hint });
-export const NATIONALISM_FIELD: FieldDesc = { key: 'nationalism', label: '文化的倒向', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '民族主义：越大，国界越跟着文化走' };
+// 第八十一轮：说明写在页面上的一行灰字里，太长（模块的“多少”是什么意思）放在这一行的悬停里（EraPatterns.tsx）
+export const amountField = (r: Pick<EraPatternRow, 'name' | 'hint'>): FieldDesc => ({ key: 'amount', label: r.name, type: 'number', min: 0, max: AMOUNT_MAX, step: 0.1 });
+export const NATIONALISM_FIELD: FieldDesc = { key: 'nationalism', label: '按文化分国', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '越大国界越跟着文化走' };

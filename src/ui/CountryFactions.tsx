@@ -41,11 +41,11 @@ export function FactionSection({ w, m }: { w: World; m: CountryMeta }) {
       <div class="row between">
         <h5>派系</h5>
         {m.factions ? (
-          <button class="small" onClick={() => void exec(patchCommand(m.id, { factions: null }), '正在保存…')} title="按基础分量和人口算">
+          <button class="small" onClick={() => void exec(patchCommand(m.id, { factions: null }), '正在保存…')} title="按派系的“多少”和人口算">
             恢复自动
           </button>
         ) : (
-          <span class="hint" title="按基础分量和人口算，拖滑块可以改">
+          <span class="hint" title="按派系的“多少”和人口算，拖滑块可以改">
             自动
           </span>
         )}

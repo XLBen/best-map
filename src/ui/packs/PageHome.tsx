@@ -1,4 +1,4 @@
-import { Anchor, BookOpen, Castle, Church, Crown, Droplets, Ellipsis, Eraser, Gem, Globe, Grid3x3, Handshake, LandPlot, Landmark, Languages, Layers, MapPin, Mountain, Palette, Scale, Shapes, Sprout, Trees, Users, UsersRound, Variable, Waves } from 'lucide-preact';
+import { Anchor, BookOpen, Castle, Church, Crown, Droplets, Ellipsis, Eraser, Gem, Globe, Grid3x3, Handshake, LandPlot, Landmark, Languages, Layers, MapPin, Mountain, Palette, Scale, Shapes, SlidersHorizontal, Sprout, Trees, Users, UsersRound, Variable, Waves } from 'lucide-preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Arrange } from '../../../core/content/arrange';
 import { cleanableSet } from '../../../core/content/cleanable';
@@ -11,8 +11,10 @@ import { type Card, type PageCtx, type SourceRef, ecologyHub, homePage } from '.
 import { Row } from './PageList';
 import { searchSource } from './page-search';
 import { openRoute } from './panel-store';
-import { type PickView, cardPicks, pickView } from './pick-view';
+import { type PickView, cardPicks, shownPick } from './pick-view';
 import { tidyWorld } from './tidy';
+import { GEN_CARD_NOTE, GEN_TITLE, TIDY, TIDY_TIP } from './copy';
+import { genPage, genSummary } from './gen-settings';
 
 // 首页与“生态与水系”这一层（第五十九轮）：几段，每种内容一张带个数的卡片（数据见 pages.ts 的 homePage）。
 // 第六十轮：我的库里能把一张卡拖到另一张上（融入），上级写的“含 X”能拖出来（拆出来）；卡片的“⋯”做同样的事，没有鼠标时用。
@@ -89,6 +91,7 @@ function CardMenu({ actions, a }: { actions: ArrangeAction[]; a: Arranging }) {
       <button
         class={`icon-btn ${at ? 'open' : ''}`}
         title="融入、拆出来"
+        aria-label="融入、拆出来"
         onClick={(e) => {
           if (at) return setAt(null);
           const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -214,11 +217,29 @@ function SearchHits({ src, ctx, q, v }: { src: SourceRef; ctx: PageCtx; q: strin
   );
 }
 
+// 本世界的首页最上面（第八十一轮）：生成设置，最常调的几项在一页上
+function GenCard({ ctx }: { ctx: PageCtx }) {
+  const g = useMemo(() => genPage(ctx), [ctx.world]);
+  if (!g || (!g.era && !g.provinces)) return null;
+  const go = () => openRoute({ p: 'gen' });
+  return (
+    <div class="lp-era lp-gen-card" role="button" tabIndex={0} onClick={go} onKeyDown={(e) => e.key === 'Enter' && go()}>
+      <span class="lp-card-icon">
+        <SlidersHorizontal />
+      </span>
+      <span class="lp-card-text">
+        <span class="lp-card-title">{GEN_TITLE}</span>
+        <span class="hint ellipsis">{genSummary(g) || GEN_CARD_NOTE}</span>
+      </span>
+    </div>
+  );
+}
+
 export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
   const [q, setQ] = useState('');
   const arrange = arrangeFor(src, ctx);
   const p = homePage(src, ctx, arrange);
-  const v = pickView(src, ctx);
+  const v = shownPick(src, ctx);
   if (p.noWorld) {
     return (
       <div class="lp-empty">
@@ -247,12 +268,13 @@ export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
   return (
     <>
       {search}
+      {src.t === 'world' && <GenCard ctx={ctx} />}
       {p.era && <EraCard era={p.era} a={a} v={v} />}
       {p.note && <p class="hint">{p.note}</p>}
       {clean > 0 && (
-        <button class="lp-clean" title="清掉列表上变淡的内容，地图不变" onClick={() => void tidyWorld()}>
+        <button class="lp-clean" title={TIDY_TIP} onClick={() => void tidyWorld()}>
           <Eraser />
-          <span class="grow">清理没用到的</span>
+          <span class="grow">{TIDY}</span>
           <span class="lp-count">{clean}</span>
         </button>
       )}
@@ -272,7 +294,7 @@ export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
 
 export function EcologyHubPage({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
   const hub = ecologyHub(src, ctx);
-  const v = pickView(src, ctx);
+  const v = shownPick(src, ctx);
   return (
     <>
       <div class="lp-cards">

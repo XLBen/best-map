@@ -11,7 +11,7 @@ import { Seg } from '../common';
 import { RangeSliders } from '../components/RangeSliders';
 import { Slider } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
-import { type EditorIssue, type Obj, addedValue, colorHex, isTitleField, plainHex, withHex, defaultValue, isSparse, isObj, issuesAt, moveItem, newKey, numberText, objectOf, parseTags, renameKey, setField, shownFields, sliderScale, sparseSplit, tagsText } from './fields';
+import { type EditorIssue, type Obj, addedValue, colorHex, isTitleField, plainHex, withHex, defaultValue, isSparse, isObj, issuesAt, moveItem, newKey, objectOf, parseTags, renameKey, setField, shownFields, sliderScale, sparseSplit, tagsText, valueText } from './fields';
 import { Draft, Errors, type Path } from './editor-parts';
 import { Grip, OneRef, TagRefs, TitleEditor, TitleListEditor, TupleEditor, TuplesEditor, WeightTable, WeightedEditor, useDragSort } from './editors';
 import { TendencyEditor } from './TendencyEditor';
@@ -70,7 +70,7 @@ function SparseBox({ fields, value, onChange, path = [], issues }: Props) {
       {present.map((f) => (
         <div class="ed-sparse" key={f.key}>
           <Field f={f} value={value[f.key]} path={[...path, f.key]} issues={issues} onChange={(v) => onChange(setField(fields, value, f.key, v))} />
-          <button class="small icon ghost" title="删除" onClick={() => drop(f.key)}>
+          <button class="small icon ghost" title="删除" aria-label="删除" onClick={() => drop(f.key)}>
             <X />
           </button>
         </div>
@@ -184,11 +184,10 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
   if (icon || image) {
     return (
       <div class="ed-field">
-        <span class="ed-label" title={f.hint}>
-          {f.label}
-        </span>
+        <span class="ed-label">{f.label}</span>
         <div class="ed-control">
           {icon ? <IconSelect kindId={kindId!} value={value} onChange={onChange} optional={f.optional} /> : <ImageField value={value} onChange={onChange} />}
+          <Hint f={f} />
           <Errors issues={issues} path={path} />
         </div>
       </div>
@@ -199,21 +198,19 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
   if (isTitleField(f)) {
     return (
       <div class={`ed-group ${bad ? 'bad' : ''}`}>
-        <div class="ed-label" title={f.hint}>
-          {f.label}
-        </div>
+        <div class="ed-label">{f.label}</div>
+        <Hint f={f} />
         <TitleEditor value={value} onChange={onChange} orig={f.key !== 'rulers'} keyRef={f.keyRef} />
         <Errors issues={issues} path={path} />
       </div>
     );
   }
-  // 按引用的比例表（第四十五轮：格局、时代的各等级占多少）
+  // 按引用的比例表（第四十五轮：时代的各等级占多少；第八十一轮是一条分段的色条）
   if (f.type === 'map' && f.keyRef && f.value?.type === 'number') {
     return (
       <div class={`ed-group ${bad ? 'bad' : ''}`}>
-        <div class="ed-label" title={f.hint}>
-          {f.label}
-        </div>
+        <div class="ed-label">{f.label}</div>
+        <Hint f={f} />
         <WeightTable f={f} value={value} onChange={onChange} />
         <Errors issues={issues} path={path} />
       </div>
@@ -223,13 +220,12 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
   if (f.type === 'json' && f.of && f.optional && !isObj(value)) {
     return (
       <div class="ed-field">
-        <span class="ed-label" title={f.hint}>
-          {f.label}
-        </span>
+        <span class="ed-label">{f.label}</span>
         <div class="ed-control">
           <button class="small" onClick={() => onChange(objectOf(f.of!))}>
             <Plus /> 添加
           </button>
+          <Hint f={f} />
         </div>
       </div>
     );
@@ -237,10 +233,11 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
   if (COMPLEX.has(f.type) && !(f.type === 'json' && f.of)) {
     return (
       <details class={`ed-group ${bad ? 'bad' : ''}`} open={bad || count < 8}>
-        <summary title={f.hint}>
+        <summary>
           {f.label}
           {f.type !== 'script' && f.type !== 'json' && <span class="hint"> {count}</span>}
         </summary>
+        <Hint f={f} />
         <Control f={f} value={value} onChange={onChange} path={path} issues={issues} />
         <Errors issues={issues} path={path} />
       </details>
@@ -249,9 +246,8 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
   if (f.type === 'range') {
     return (
       <div class={`ed-group ${bad ? 'bad' : ''}`}>
-        <div class="ed-label" title={f.hint}>
-          {f.label}
-        </div>
+        <div class="ed-label">{f.label}</div>
+        <Hint f={f} />
         <Control f={f} value={value} onChange={onChange} path={path} issues={issues} />
         <Errors issues={issues} path={path} />
       </div>
@@ -260,14 +256,15 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
   if (f.type === 'json' && f.of) {
     return (
       <div class="ed-group">
-        <div class="ed-label row between" title={f.hint}>
+        <div class="ed-label row between">
           {f.label}
           {f.optional && (
-            <button class="small icon ghost" title="删除" onClick={() => onChange(undefined)}>
+            <button class="small icon ghost" title="删除" aria-label="删除" onClick={() => onChange(undefined)}>
               <X />
             </button>
           )}
         </div>
+        <Hint f={f} />
         <FieldsBox fields={f.of} value={isObj(value) ? value : objectOf(f.of)} path={path} issues={issues} onChange={onChange} />
         <Errors issues={issues} path={path} />
       </div>
@@ -275,18 +272,22 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
   }
   return (
     <div class="ed-field">
-      <span class="ed-label" title={f.hint}>
-        {f.label}
-      </span>
+      <span class="ed-label">{f.label}</span>
       <div class="ed-control">
         <Control f={f} value={value} onChange={onChange} path={path} issues={issues} />
+        <Hint f={f} />
         <Errors issues={issues} path={path} />
       </div>
     </div>
   );
 }
 
-// 写了上下限、步子不太密的数：滑块（第五十九轮，松手才换上）；可以不写的旁边一个去掉
+// 字段的说明（第八十一轮：以前只在悬停里）：一行灰字写在字段下面，不超过 20 个字（fields.test.ts 查着）
+function Hint({ f }: { f: FieldDesc }) {
+  return f.hint ? <p class="hint ed-hint">{f.hint}</p> : null;
+}
+
+// 写了上下限的数：滑块（第五十九轮，松手才换上；第八十一轮：范围很大的按对数，单位写在数后面，比例写成百分之几）；可以不写的旁边一个去掉
 function NumberSlider({ f, value, onChange }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void }) {
   const scale = sliderScale(f)!;
   const [draft, setDraft] = useState<number | null>(null);
@@ -297,8 +298,7 @@ function NumberSlider({ f, value, onChange }: { f: FieldDesc; value: unknown; on
       <Slider
         label={f.label}
         pos={cur === null ? 0 : scale.pos(cur)}
-        text={cur === null ? '不写' : `${numberText(cur, f.step)}${f.unit ?? ''}`}
-        title={f.hint}
+        text={cur === null ? '不写' : valueText(f, cur)}
         onDraft={(p) => setDraft(scale.at(p))}
         onCommit={(p) => {
           const v = scale.at(p);
@@ -308,7 +308,7 @@ function NumberSlider({ f, value, onChange }: { f: FieldDesc; value: unknown; on
         onCancel={() => setDraft(null)}
       />
       {f.optional && cur !== null && (
-        <button class="small icon ghost" title="不写" onClick={() => onChange(undefined)}>
+        <button class="small icon ghost" title="不写" aria-label="不写" onClick={() => onChange(undefined)}>
           <X />
         </button>
       )}
@@ -440,7 +440,7 @@ function ListEditor({ f, value, onChange, path, issues }: { f: FieldDesc; value:
           <div class={`ed-item ${it.dropClass}`} onDragOver={it.onDragOver} onDrop={it.onDrop}>
             {list.length > 1 && <Grip {...drag.handle(k)} />}
             <FieldsBox fields={of} value={isObj(item) ? item : {}} path={[...path, k]} issues={issues} onChange={(v) => onChange(list.map((x, j) => (j === k ? v : x)))} />
-            <button class="small icon ghost" title="删除" onClick={() => onChange(list.filter((_, j) => j !== k))}>
+            <button class="small icon ghost" title="删除" aria-label="删除" onClick={() => onChange(list.filter((_, j) => j !== k))}>
               <X />
             </button>
           </div>
@@ -472,7 +472,7 @@ export function MapEditor({ f, value, onChange, path, issues }: { f: FieldDesc; 
             {keyLabel(k) && <span class="hint">{keyLabel(k)}</span>}
             <button
               class="small icon ghost"
-              title="删除"
+              title="删除" aria-label="删除"
               onClick={() => {
                 const next = { ...obj };
                 delete next[k];

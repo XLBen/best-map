@@ -1,12 +1,10 @@
-import { erasing, helpOpen, measure, openPanel, picking, provinceSet, redo, selectedFeature, selectedLake, selectedProvince, selectedRiver, sheet, tool, uiHidden, undo, wizardOpen, world } from '../../state';
+import { erasing, helpOpen, measure, openPanel, picking, provinceSet, selectedFeature, selectedLake, selectedProvince, selectedRiver, sheet, tool, uiHidden, wizardOpen, world } from '../../state';
 import { mapApi } from '../camera';
 import { TOOL_DEFS, category, eraserModes, setTool, toolsOf } from '../defs/tools';
 import { nudgeSlider } from './sliders';
 import { ESC_RANK, isTyping, pushEscape, runEscape } from './escape';
 import { packDialog } from '../packs/store';
-import { libEdits } from '../../library-edit';
-import { lastPress, libPanel, livePanel, pageCtx } from '../packs/panel-store';
-import { undoTarget } from '../packs/pages';
+import { lastPress, redoHere, undoHere } from '../packs/panel-store';
 import { formEditor } from '../form-store';
 import { mapsDialog, saveMap, saveMapAs } from '../maps/store';
 
@@ -69,15 +67,9 @@ export function onKeyDown(e: KeyboardEvent) {
   }
   if (mod && e.key.toLowerCase() === 'z') {
     e.preventDefault();
-    // 面板开着、看我的库、最后点的是面板里：撤销这个库（第五十九轮）；别的都是世界
-    const st = libPanel.value;
-    const ctx = pageCtx();
-    const src = st ? livePanel(st, ctx).source : null;
-    const target = undoTarget(src, ctx, lastPress.inPanel);
-    if (target === 'library' && src?.t === 'lib') {
-      if (e.shiftKey) libEdits.redo(src.key);
-      else libEdits.undo(src.key);
-    } else if (target === 'world') void (e.shiftKey ? redo() : undo());
+    // 和顶栏的撤销同一个（第八十一轮）：面板看我的库时撤销这个库，看别的库时不撤销，别的都是世界
+    if (e.shiftKey) redoHere();
+    else undoHere();
     return;
   }
   if (mod || e.altKey || !world.value) return;

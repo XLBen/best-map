@@ -1,7 +1,7 @@
 import { addNow } from './pick-add';
 import type { PageCtx, SourceRef } from './pages';
 import { closeSide } from './panel-store';
-import { pickView } from './pick-view';
+import { shownPick } from './pick-view';
 
 // 资源库面板里的键盘（第六十七轮）。挂在面板上，焦点在面板里才收到，不抢地图的快捷键（处理了的不再往外传）：
 //   上下键   在行间移动（行是 [data-pick-row]；搜索框里按下键到第一行）
@@ -29,7 +29,7 @@ export function panelKeys(e: KeyboardEvent, body: HTMLElement | null, src: Sourc
     return;
   }
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-    const v = pickView(src, ctx);
+    const v = shownPick(src, ctx);
     if (!v) return;
     if (v.preview.count) void addNow(v, ctx, false);
     return done();

@@ -99,7 +99,7 @@ describe('列表上的标记', () => {
     const lines = tidyLines(plan);
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.every((l) => /\d+$/.test(l.label))).toBe(true);
-    expect(tidyText(plan)).toContain(`清掉 ${plan.removed.length} 项`);
+    expect(tidyText(plan)).toContain(`删除 ${plan.removed.length} 项`);
     expect(tidyText(plan)).toContain('河、湖、生态');
     // 包一层写历史里的字：移出的照样报出来（自己做的存进资源库），一次撤销
     const before = JSON.stringify(e.world.small.content);

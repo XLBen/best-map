@@ -1,11 +1,12 @@
 import { Boxes, CircleEllipsis, Globe, Layers, MousePointer, Redo2, Undo2, WandSparkles } from 'lucide-preact';
 import type { PanelId } from '../../state';
-import { canRedo, canUndo, openPanel, redo, togglePanel, undo, world } from '../../state';
+import { openPanel, togglePanel, world } from '../../state';
 import { CATEGORIES, category, setCategory, setTool } from '../defs/tools';
 import type { CategoryDef, Icon } from '../defs/types';
 import { mapStatus } from '../maps/store';
 import { LIBRARY_NOTE } from '../copy';
-import { libPanel, toggleLibrary } from '../packs/panel-store';
+import { libPanel, redoHere, toggleLibrary, undoHere, undoState } from '../packs/panel-store';
+import { redoTitle, undoTitle } from '../packs/copy';
 import { MapKindSwitch } from './MapKind';
 
 // 顶栏：左边是资源库（第四十五轮，最左边）、整个世界的事（世界、更多、调整）和撤销、重做，
@@ -58,6 +59,21 @@ function PointerButton() {
   );
 }
 
+// 撤销、重做（第八十一轮）：资源库面板看我的库时是这个库的，看别的库时不能点，别的都是世界的；悬停写撤销的是哪一步
+function UndoRedo() {
+  const u = undoState();
+  return (
+    <>
+      <button class="tb-btn icon" disabled={!u.canUndo} onClick={undoHere} title={undoTitle(u.undo, u.lib)} aria-label="撤销">
+        <Undo2 size={18} />
+      </button>
+      <button class="tb-btn icon" disabled={!u.canRedo} onClick={redoHere} title={redoTitle(u.redo, u.lib)} aria-label="重做">
+        <Redo2 size={18} />
+      </button>
+    </>
+  );
+}
+
 export function TopBar() {
   const w = world.value;
   return (
@@ -69,12 +85,7 @@ export function TopBar() {
         <PanelButton panel="more" icon={CircleEllipsis} label="更多" disabled={!w} title="历史、偏好、上手说明" />
         <PanelButton panel="adjust" icon={WandSparkles} label="调整" disabled={!w} title="冷暖干湿、四季、河流多少" />
         <span class="tb-sep" />
-        <button class="tb-btn icon" disabled={!canUndo.value} onClick={() => void undo()} title="撤销（⌘Z / Ctrl+Z）">
-          <Undo2 size={18} />
-        </button>
-        <button class="tb-btn icon" disabled={!canRedo.value} onClick={() => void redo()} title="重做（⇧⌘Z / Ctrl+Shift+Z）">
-          <Redo2 size={18} />
-        </button>
+        <UndoRedo />
       </div>
       <div class="tb-group">
         <PointerButton />

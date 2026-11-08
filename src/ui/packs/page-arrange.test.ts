@@ -349,7 +349,7 @@ describe('面包屑和返回', () => {
 
   it('⌘Z：改安排和改内容在我的库的同一个栈里', () => {
     const ctx = ctxOf(null, [copy()]);
-    expect(undoTarget(lib('m2'), ctx, true)).toBe('library');
+    expect(undoTarget(lib('m2'), ctx)).toBe('library');
   });
 });
 

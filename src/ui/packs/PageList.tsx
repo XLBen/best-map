@@ -5,16 +5,19 @@ import { DIMENSION } from '../../../core/content/link-rules';
 import { kindOf } from '../../../core/content/registry';
 import { libEdits } from '../../library-edit';
 import { showToast } from '../../state';
-import { type ListPage, type ListRow, type PageCtx, type Route, type SourceRef, listPage, sourceKind } from './pages';
+import { type ListPage, type ListRow, type PageCtx, type Route, type SourceRef, listPage } from './pages';
 import { newItemIn } from './page-actions';
 import { InsideRows } from './PageChildren';
 import { PickBox } from './PickBox';
-import { copyToMine, flashClass, goTo, libPanel, openRoute, toggleOther, useFlashScroll } from './panel-store';
+import { flashClass, goTo, libPanel, openRoute, startPicking, useFlashScroll } from './panel-store';
 import { allLook } from './pick-look';
-import { type OtherOpen, hasOther, sameOther } from './other-view';
+import { type OtherOpen, hasOther } from './other-view';
 import { setPicksIn } from './pick-store';
-import { type PickView, kindPickable, lookOf, pickView } from './pick-view';
+import { type PickView, kindPickable, lookOf, shownPick } from './pick-view';
 import { swatchOf } from './row-actions';
+import { oneMark } from './page-marks';
+import { PICK_ENTER, PICK_ENTER_TIP, TIDY, TIDY_TIP } from './copy';
+import { otherLibs, pickFrom } from './other-view';
 import { tidyWorld } from './tidy';
 
 // 列表（第五十九轮）：这一种内容的每一项，点进去是这一项的页面。我的库里能拖动换先后（同一个小包里，把手在右边）。
@@ -22,7 +25,7 @@ import { tidyWorld } from './tidy';
 
 let dragging: string | null = null;
 
-const FAINT_NOTE = '生成后没用到，清理时会清掉';
+const FAINT_NOTE = '生成后没用到，可以删除';
 
 export function Row({ r, src, ctx, movable, v }: { r: ListRow; src: SourceRef; ctx: PageCtx; movable: boolean; v: PickView | null }) {
   const swatch = swatchOf(r);
@@ -33,6 +36,7 @@ export function Row({ r, src, ctx, movable, v }: { r: ListRow; src: SourceRef; c
   const note = pick ? lookOf(pick, ref).note : null;
   const rowRef = useRef<HTMLDivElement>(null);
   useFlashScroll(rowRef, r.kind.id, r.id);
+  const mark = oneMark({ isDefault: st.isDefault, inUse: r.kind.id === 'mapStyle', changed: r.mark?.changed, modified: src.t === 'lib' && st.modified });
   return (
     <div
       ref={rowRef}
@@ -70,13 +74,7 @@ export function Row({ r, src, ctx, movable, v }: { r: ListRow; src: SourceRef; c
         {swatch ? <span class="swatch" style={{ background: swatch }} /> : null}
         <span class="lp-row-name ellipsis">{r.name}</span>
         {r.hint && <span class="hint ellipsis lp-row-hint">{r.hint}</span>}
-        {src.t === 'lib' && st.modified && <span class="hint">本世界改过</span>}
-        {r.mark?.changed && (
-          <span class="lp-diff" title="和来源的库不同">
-            和库不同
-          </span>
-        )}
-        {st.isDefault && <span class="hint">{r.kind.id === 'mapStyle' ? '在用' : '默认'}</span>}
+        {mark && <span class={mark.diff ? 'lp-diff' : 'hint'}>{mark.text}</span>}
       </button>
       {note && (
         <span class="hint ellipsis lp-row-why" title={note}>
@@ -93,15 +91,21 @@ export function Row({ r, src, ctx, movable, v }: { r: ListRow; src: SourceRef; c
   );
 }
 
-// 别的库里有这一种时：在右栏打开“从别的库加”（第六十八轮，LibOther.tsx），再点一次收起
+// 别的库里有这一种时：从别的库添加（第八十一轮：进入挑选，开到那个库的这一种的列表；以前在右栏开一栏）
 function FromOtherLib({ p, route, src, ctx }: { p: ListPage; route: Extract<Route, { p: 'list' }>; src: SourceRef; ctx: PageCtx }) {
   const o: OtherOpen = { kind: p.kind.id, ...(route.dim ? { dim: route.dim } : {}), label: p.title };
   const has = useMemo(() => hasOther(o, src, ctx), [o.kind, o.dim, src.t === 'lib' ? src.key : '', ctx.lib]);
   if (!has) return null;
-  const on = sameOther(libPanel.value?.other, o);
   return (
-    <button class={`small ${on ? 'open' : ''}`} aria-pressed={on} title={on ? '收起' : `从别的库挑几项${p.title}，可以多选`} onClick={() => toggleOther(o)}>
-      <Plus /> 从别的库加
+    <button
+      class="small"
+      title={PICK_ENTER_TIP}
+      onClick={() => {
+        const from = pickFrom(otherLibs(o, src, ctx), src, ctx);
+        startPicking({ p: 'list', kind: o.kind, ...(o.dim ? { dim: o.dim } : {}) }, from ?? undefined);
+      }}
+    >
+      <Plus /> {PICK_ENTER}
     </button>
   );
 }
@@ -133,7 +137,7 @@ function AllBox({ v, p, route, ctx }: { v: PickView; p: ListPage; route: Extract
 export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list' }>; src: SourceRef; ctx: PageCtx }) {
   const [q, setQ] = useState('');
   const p = useMemo(() => listPage(src, route, ctx, q), [src.t === 'lib' ? src.key : '', route, ctx.world, ctx.lib, q]);
-  const v = pickView(src, ctx);
+  const v = shownPick(src, ctx);
   const search = useRef<HTMLInputElement>(null);
   // 进库的列表时光标在搜索框（第六十七轮）
   useEffect(() => {
@@ -157,11 +161,6 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
         {searchable && <input ref={search} class="grow" type="search" placeholder="搜索" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />}
         {!searchable && <span class="grow" />}
         {!p.readonly && <FromOtherLib p={p} route={route} src={src} ctx={ctx} />}
-        {p.readonly && sourceKind(src, ctx) !== 'world' && sourceKind(src, ctx) !== 'file' && (
-          <button class="small" title={p.readonly} onClick={() => void copyToMine(src)}>
-            复制成我的库
-          </button>
-        )}
         {p.alsoNew && (
           <button class="small" onClick={() => void create(p.alsoNew!, p.defaults)}>
             <Plus /> 新建组
@@ -174,9 +173,9 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
         )}
       </div>
       {faint > 0 && (
-        <button class="lp-clean" title={FAINT_NOTE} onClick={() => void tidyWorld()}>
+        <button class="lp-clean" title={TIDY_TIP} onClick={() => void tidyWorld()}>
           <Eraser />
-          <span class="grow">清理没用到的</span>
+          <span class="grow">{TIDY}</span>
           <span class="lp-count">{faint}</span>
         </button>
       )}

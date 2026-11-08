@@ -8,7 +8,7 @@ import type { Obj } from './fields';
 import { type PageCtx, type SourceRef, rowsOf } from './page-source';
 import { RefGo } from './RefPicker';
 
-// 时代页面“国家”一段里的国家格局与文化的倒向（第七十五轮）：一种格局一个“多少”的滑块，右边打开、去掉；下面加一种；最后是文化的倒向。
+// 时代页面“国家”一段里的国家格局与按文化分国（第七十五轮叫“文化的倒向”）：一种格局一个“多少”的滑块，右边打开、去掉；下面加一种；最后是文化的倒向。
 // 改了交给页面的 save（本世界一条命令，我的库走它的撤销；只读的库整段在 fieldset disabled 里）
 export function EraPatterns({ era, src, ctx, onChange }: { era: Obj; src: SourceRef; ctx: PageCtx; onChange: (next: Obj) => void }) {
   const kind = kindOf('countryPattern');
@@ -23,14 +23,14 @@ export function EraPatterns({ era, src, ctx, onChange }: { era: Obj; src: Source
       {rows.map((r) => {
         const open = r.missing ? null : (go?.('countryPattern', r.id) ?? null);
         return (
-          <div class={`ed-sparse ${r.missing ? 'faint' : ''}`} key={`${r.index}:${r.id}`}>
+          <div class={`ed-sparse ${r.missing ? 'faint' : ''}`} key={`${r.index}:${r.id}`} title={r.hint}>
             <FieldsBox fields={[amountField(r)]} value={{ amount: r.amount }} onChange={(o) => typeof o.amount === 'number' && onChange(withPatternAmount(era, r.index, o.amount))} issues={[]} />
             {open && (
-              <a class="ref-go" role="button" title="打开这一项" onClick={open}>
+              <a class="ref-go" role="button" title="打开这一项" aria-label="打开这一项" onClick={open}>
                 <ChevronRight />
               </a>
             )}
-            <button class="small icon ghost" title="删除" onClick={() => onChange(withoutPattern(era, r.index))}>
+            <button class="small icon ghost" title="删除" aria-label="删除" onClick={() => onChange(withoutPattern(era, r.index))}>
               <X />
             </button>
           </div>

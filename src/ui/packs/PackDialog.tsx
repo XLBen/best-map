@@ -259,7 +259,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
         {p.author && <span class="muted">　作者：{p.author}</span>}
       </p>
       {p.description && <p class="hint">{p.description}</p>}
-      {read.legacy === 'wordPack' && <p class="hint">地名风格，装进资源库后可以用</p>}
+      {read.legacy === 'wordPack' && <p class="hint">地名风格，存到我的库后可以用</p>}
       <PackContents pack={p} />
       <Problems list={problems} />
       {ask && <TrustBlock scripts={scripts} />}
@@ -339,12 +339,12 @@ function ExportView() {
     // 不在这里把脚本记为信任：世界里的脚本可能来自别人的世界文件（没运行脚本打开的），
     // 自己写的、信任过的包里的本来就信任了；没信任过的，以后用到世界时照样先问
     const r = await installPack(stored, { mine: true });
-    showToast(r.ok ? `“${preview.name}”已存进资源库` : '存不进浏览器：只在这次打开的页面里');
+    showToast(r.ok ? `“${preview.name}”已存到我的库` : '存不进浏览器：只在这次打开的页面里');
     close();
   };
   return (
     <>
-      <ModalHead title="从本世界存进资源库" onClose={close} closeTitle="取消" />
+      <ModalHead title="存到我的库" onClose={close} closeTitle="取消" />
       <div class="grid2">
         <label>
           <span class="hint">名字</span>
@@ -373,7 +373,7 @@ function ExportView() {
       <div class="modal-foot">
         <button onClick={close}>取消</button>
         <button disabled={empty} onClick={() => void save()} title="存进“我的资源”，可用到别的世界">
-          存进资源库
+          存到我的库
         </button>
         <button class="primary" disabled={empty} onClick={() => exportFile(preview)} title="存成文件，可以发给别人">
           导出文件

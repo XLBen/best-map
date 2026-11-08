@@ -20,6 +20,8 @@ import { clearBarPreview, holdBarPreview, showProvinceCommand, showSplit } from 
 import { provinceMultiCommands } from './province-panel';
 import { PROVINCE_RULES_NOTE, PROVINCE_RULES_TIP } from './copy';
 import { openProvinceRules } from './packs/open-province';
+import { openGenSettings } from './packs/open-era';
+import { GEN_OPEN_TIP, GEN_TITLE } from './packs/copy';
 import { registerPanels } from './defs/panel-registry';
 
 // 省份：底部条上的“选中省份”编辑（不常用的在它的“⋯”里）、省份着色开关；“省份 ⋯”里的划分省份、换一种划分（规则在资源库的“省份划分”里）
@@ -372,16 +374,28 @@ function DivideBox({ w }: { w: World }) {
       </p>
       <div class="row between">
         <span class="hint">{PROVINCE_RULES_NOTE}</span>
-        <button
-          class="link-btn small"
-          title={PROVINCE_RULES_TIP}
-          onClick={() => {
-            openPanel.value = null;
-            openProvinceRules(w.small);
-          }}
-        >
-          省份划分
-        </button>
+        <span class="row">
+          <button
+            class="link-btn small"
+            title={GEN_OPEN_TIP}
+            onClick={() => {
+              openPanel.value = null;
+              openGenSettings();
+            }}
+          >
+            {GEN_TITLE}
+          </button>
+          <button
+            class="link-btn small"
+            title={PROVINCE_RULES_TIP}
+            onClick={() => {
+              openPanel.value = null;
+              openProvinceRules(w.small);
+            }}
+          >
+            省份划分
+          </button>
+        </span>
       </div>
       {/* 鼠标停在按钮上：地图上先画出新的省界和省名（与点下去的结果相同）；点下去照样一下就做，可以撤销 */}
       <div class="row wrap">

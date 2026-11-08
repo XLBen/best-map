@@ -66,11 +66,29 @@ export function defaultValue(f: FieldDesc): unknown {
   }
 }
 
-// 数的滑块（第五十九轮）：写了上下限和步子、一共不超过这么多格的数用滑块，别的（从 0.001 到一万这样的）还是框
+// 数的滑块（第五十九轮）：写了上下限和步子、一共不超过这么多格的数是等间距的滑块。
+// 第八十一轮：别的也都是滑块——范围很大的（人口密度 0.001–10000、国家大小、各组占多少 0–1000）按对数，
+// 停的地方是两位有效数字的数（logScale，0 起的第一格是 0）；有负数又很宽的按更粗的步子等间距。
+// 值 → 位置 → 值：停得到的数原样回来（测试查着）
 const SLIDER_MAX_STEPS = 2000;
-export function sliderScale(f: Pick<FieldDesc, 'min' | 'max' | 'step'>): { pos: (v: number) => number; at: (p: number) => number } | null {
+// 下限的这么多倍以上才按对数
+const LOG_FROM = 50;
+export interface NumberScale {
+  pos: (v: number) => number;
+  at: (p: number) => number;
+  // 停得到的数（对数的；等间距的没有）
+  stops?: readonly number[];
+}
+export function sliderScale(f: Pick<FieldDesc, 'min' | 'max' | 'step'>): NumberScale | null {
   const { min: lo, max: hi, step } = f;
-  if (lo === undefined || hi === undefined || !step || hi <= lo || (hi - lo) / step > SLIDER_MAX_STEPS) return null;
+  if (lo === undefined || hi === undefined || !step || hi <= lo) return null;
+  if ((hi - lo) / step <= SLIDER_MAX_STEPS) return linearScale(lo, hi, step);
+  const start = lo > 0 ? lo : step;
+  if (lo >= 0 && hi / start >= LOG_FROM) return logScale(lo, hi, step);
+  // 有负数、范围很宽：步子放粗到不超过 2000 格
+  return linearScale(lo, hi, step * Math.ceil((hi - lo) / step / SLIDER_MAX_STEPS));
+}
+function linearScale(lo: number, hi: number, step: number): NumberScale {
   const digits = decimals(step);
   return {
     pos: (v) => Math.max(0, Math.min(1, (v - lo) / (hi - lo))),
@@ -80,12 +98,63 @@ export function sliderScale(f: Pick<FieldDesc, 'min' | 'max' | 'step'>): { pos: 
     },
   };
 }
+// 对数：从下限（下限是 0 时从一步）到上限，停在两位有效数字的数上；下限是 0 时第一格是 0
+export function logScale(lo: number, hi: number, step: number): NumberScale {
+  const start = lo > 0 ? lo : step;
+  // 两位有效数字的数全都停得到（每十倍 90 个：1.0、1.1……9.9），加上两头
+  const all = new Set<number>([start, hi]);
+  for (let e = Math.floor(Math.log10(start)); e <= Math.ceil(Math.log10(hi)); e++)
+    for (let m = 10; m < 100; m++) {
+      const v = Number((m * Math.pow(10, e - 1)).toPrecision(2));
+      if (v >= start && v <= hi) all.add(v);
+    }
+  const stops: number[] = [...(lo > 0 ? [] : [lo]), ...[...all].sort((a, b) => a - b)];
+  const last = stops.length - 1;
+  // 最近的一格：按比例算远近（0 只和 0 近）
+  const nearest = (v: number): number => {
+    if (!(v > stops[0])) return 0;
+    if (v >= stops[last]) return last;
+    let a = 0;
+    let b = last;
+    while (b - a > 1) {
+      const m = (a + b) >> 1;
+      if (stops[m] <= v) a = m;
+      else b = m;
+    }
+    if (stops[a] <= 0) return v < stops[b] / 2 ? a : b;
+    return v / stops[a] <= stops[b] / v ? a : b;
+  };
+  // 位置按对数算（两位有效数字的格在每十倍里疏密不一，按格数算会偏）；下限是 0 时最左边一小段是 0
+  const zero = lo > 0 ? 0 : 1 / Math.max(2, last);
+  const span = Math.log(hi / start);
+  const posOf = (v: number): number => (v <= 0 ? 0 : zero + ((1 - zero) * Math.log(v / start)) / span);
+  return {
+    stops,
+    pos: (v) => Math.max(0, Math.min(1, posOf(stops[nearest(v)]))),
+    at: (p) => {
+      const q = Math.max(0, Math.min(1, p));
+      if (zero && q < zero / 2) return stops[0];
+      return stops[nearest(start * Math.exp(((Math.max(q, zero) - zero) / (1 - zero)) * span))];
+    },
+  };
+}
 const decimals = (step: number): number => {
   const s = String(step);
   const k = s.indexOf('.');
   return k < 0 ? 0 : s.length - k - 1;
 };
 export const numberText = (v: number, step?: number): string => (step ? v.toFixed(decimals(step)) : String(v));
+
+// 滑块右边写的数（第八十一轮）：单位写在数后面；单位是 % 的存的是 0–1，写成百分之几；按对数的写原样（两位有效数字），一万以上加千位的逗号
+export function valueText(f: Pick<FieldDesc, 'min' | 'max' | 'step' | 'unit'>, v: number): string {
+  if (f.unit === '%') {
+    const d = Math.max(0, decimals(f.step ?? 0.01) - 2);
+    return `${Number((v * 100).toFixed(d))}%`;
+  }
+  const log = !!sliderScale(f)?.stops;
+  const n = log ? (v >= 1e4 ? v.toLocaleString('en-US') : String(v)) : numberText(v, f.step);
+  return f.unit ? `${n} ${f.unit}` : n;
+}
 
 // 列表里把第 from 项挪到第 to 项的位置（拖动换先后，第四十五轮）
 export function moveItem<T>(list: readonly T[], from: number, to: number): T[] {

@@ -32,8 +32,8 @@ export function sourceTitle(src: SourceRef, ctx: PageCtx): string {
   return src.t === 'world' ? '本世界' : (entryOf(src, ctx)?.pack.name ?? src.key);
 }
 
-// 标题下拉里读进来的文件写成“文件：xxx（没装进资源库）”
-export const fileTitle = (e: Pick<LibraryEntry, 'file' | 'pack'>): string => `文件：${e.pack.name || e.file}（没装进资源库）`;
+// 标题下拉里读进来的文件写成“文件：xxx（没存到我的库）”
+export const fileTitle = (e: Pick<LibraryEntry, 'file' | 'pack'>): string => `文件：${e.pack.name || e.file}（没存到我的库）`;
 
 // 来源不在了（库删掉了、世界关了）：回到本世界
 export const liveSource = (src: SourceRef, ctx: PageCtx): SourceRef => (src.t === 'lib' && !entryOf(src, ctx) ? WORLD_SOURCE : src);
@@ -94,7 +94,7 @@ export function itemOf(src: SourceRef, kind: ContentKind, id: string, ctx: PageC
   return itemsOf(src, kind, ctx).find((x) => itemId(kind, x) === id);
 }
 
-export const kindTitle = (k: ContentKind): string => (k.id === 'popValue' ? '取值' : k.id === 'landmarkType' ? '地标' : k.id === 'pointType' ? '自定义点' : k.id === 'riverType' ? '河' : k.id === 'lakeType' ? '湖' : k.id === 'islandType' ? '岛' : k.id === 'cityRank' ? '城市等级' : k.id === 'era' ? '时代规则' : k.label);
+export const kindTitle = (k: ContentKind): string => (k.id === 'popValue' ? '取值' : k.id === 'landmarkType' ? '地标' : k.id === 'pointType' ? '自定义点' : k.id === 'riverType' ? '河' : k.id === 'lakeType' ? '湖' : k.id === 'islandType' ? '岛' : k.id === 'cityRank' ? '城市等级' : k.id === 'era' ? '时代' : k.label);
 
 // 列表的来源（rows.ts：行里有状态），同一项只列一次。按世界、库记着，点进点出不重算
 const rowsMemo = new WeakMap<object, Map<string, ItemRow[]>>();
