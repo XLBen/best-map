@@ -29,12 +29,17 @@
 - `countries/count.ts` 几个国家（`averageCountryKm2` 就是时代的 `countryKm2`，第七十七轮去掉了“分裂 ↔ 统一”；`plannedCountries`、`apportion`、`landComponents`、`countCountries`）；`seeds.ts` 挑政体（`govWeights`、`pickGov`，限谁用）、等级（`govFit`）、起点（`placeSeeds`）；`grow.ts` 两遍往外长（`growOwners`，预留的地方、格局加的代价 `stepCost`，第七十九轮长之前合成一个函数；第八十四轮过大河、翻分水岭的倍数 `crossingCosts` → `CountryRun.cross`，领土补齐的那一圈也用）；`capitals.ts` 首都（第八十四轮：集团之后挪到人口的重心一带最好的城址 `bestCapital`、`placeCapitals`，再按 `countryPopScale` 让首都一带的人多一些）；`cleanup.ts` 隔海的、住满、湖、飞地（`cleanupOwners`，`Seed.overseas` 的不放掉；飞地那一步 `mergeDetached` 格局改了领土后再调）
 - `countries/records.ts` 颜色、名字（`titleContext`：等级 + `cultureContext`：主流文化、最典型的宗教……）、称号、建国年份、历史、写进原因建档案（`writeRecords`）；`diplomacy.ts` 邻国、附庸（格局的钩子）、同盟与敌对；`stage.ts` 国家一步按先后调各步与格局的钩子（`growCountries`；往外长之前放开 `Region.open`）、首都一带的人口、国家的移民（之前殖民地掺进新土认同）；`relate.ts` 集团一步（`blocsStage`，帝国、联邦、同盟是格局的 relate）
 - `countries/patterns.ts` 国家格局（第七十三轮）：模块的接口（`reserve`、`grow`、`after`、`diplomacy`、`relate` 五个钩子）、登记（`registerPattern`，先后就是调的先后）、时代的格局 → 每个模块的用法（`patternUses`）、`runPatterns`；`patterns/` 内置的模块：第七十三轮的 `holy-empire.ts`（邦联并成帝国，诸侯的个数第七十四轮成了参数）、`federation.ts`、`alliance.ts`、`vassals.ts`；第七十四轮的 `city-league.ts` 城邦群、`river-empire.ts` 大河帝国、`central-empire.ts` 集权帝国、`khanate.ts` 游牧汗国、`colonies.ts` 殖民地（列强、名字、颜色、新土认同 `settleColonies`）、`multiethnic.ts` 多民族帝国、`nationalism.ts` 民族主义（时代没列也用）、`unification.ts` 民族统一、`nation-state.ts` 民族国家、`post-colonial.ts` 前殖民地国家；第七十五轮的 `race-realms.ts` 种族王国（种族那一维 `raceDimension`、地方的三类 `landKinds`：古林、山地、荒原；古林的种族守着森林，山地的分成几个要塞小国结成同盟，荒原的结成部落联盟；长完以后空着的、住得下人的地方归别的王国 `fillLeftover`）、`outposts.ts` 殖民据点（本族最大的几国当宗主，公司领地或殖民据点；只占自己那一片，`trimOutposts`）；模块的 `tip`（资源库里的一句）、`roles`（档案里的一句，`roleText`；Seed.role → CountryMeta.role）；`common.ts` 共用的圈地方、撒起点（`scatterSeeds`）、陆块与本土（`lands`、`homeLands`）、草原荒漠（`steppeSpecies`）、长完以后的并国与压紧（`mergeOwners`、`dropSeeds`、`addSeed`）；`index.ts` 按先后登记、格局项的格式 `countryPatternSchema`（各模块的参数平铺）；`pattern-kinds.ts` 国家格局（`countryPattern`）登记进登记表
-- `country-edit.ts` 改国家的命令、整理、改地形后的修补
+- `country-edit.ts` 改国家的命令、整理（第八十五轮：连档案一起整理）、改地形后的修补
 - `country-layers.ts` 国家的一层、国界的分组、颜色、统计、派系影响力 `countryFactions`（政体列的，基础分量加人口，用到时才算，第五十三轮；来源可以按与国教的关系）、国教 `countryFaith`、国名的位置
 - `claims.ts` 领土补齐（国家一步之后、人口之前）；`blocs.ts` 帝国、联邦、同盟（`small.blocs`）的查、名字、整理、命令（生成在 `countries/relate.ts` 与格局里）、同盟模式的颜色（`memberBlocs`：殖民地跟着宗主）；`federate.ts` 把一国切成联邦的成员邦（第七十三轮从 `blocs.ts` 分出来）
 - `tiers.ts` 国家等级的格式与世界里的列表（按 order 排）、生效的比例 `tierWeights`（只按时代的 tiers；第七十七轮去掉了每个世界选的格局 countryLayout）、邦联 / 联邦 / 附庸的规则、首都的样子 `capitalLook`（第四十二轮）；`tier-kinds.ts` 登记进登记表；`packs/countries/` 内置的五级、十八种国家格局（`patterns.json`，放在每个库的“时代”小包里）
 - `flags.ts` 旗帜的规则与 SVG；`packs/governments/` 内置政体与派系
 - `auto.ts` 自动的结果（`causes.countryAuto`、`popAuto*`），橡皮擦的“恢复自动”（第二十七轮）
+
+## 国家的档案：统治者、家族、备注、大事（第八十五轮）
+- `archive-types.ts` 类型（`RulerMeta`、`DynastyMeta`、`CountryLore`、`HistoryEvent`、`ArchiveState`，`world.ts` 照旧导出）；`archive-store.ts` `small.archive` 的读、换（不可变：`putLore`、`putEvent` 换成新对象）、每次改国家后的整理 `tidyArchive`（合并时大事归并进去的那一国）
+- `rulers.ts` 每国生成的统治者与家族（`generateLore`：3–8 位、1–3 个家族，最后一位是以前的 ruler 的名字）、名单与家族的编辑、按家族列 `rulersByDynasty`；`events.ts` 生成的结盟、开战、从属（`generateEvents`），大事的编辑，年表 `countryTimeline`（建国、即位按年份、名单现列）
+- `archive-keep.ts` 重新长国家时留什么（`archiveBefore`、`writeArchive`，generate.ts 的最后一步）；`wiki.ts` 导出维基的每一页（`wikiFiles`、`safeFileName`）；`roads-image.ts` 道路图（从 `export.ts` 搬来）
 
 ## 城市、道路、地标、点（第二十四轮）
 - `settle-types.ts` 城市等级（第四十二轮多了地图上的浓淡、大小）、地标类型、点的类型的格式与等级规则；`settle-content.ts` 世界里的列表；`settle-kinds.ts` 登记进登记表

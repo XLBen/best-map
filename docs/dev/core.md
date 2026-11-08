@@ -61,9 +61,9 @@
 ## 引擎与命令
 - `world.ts` 世界的数据（原因、推导、小数据 `SmallState`、各种 schema）；`world-token.ts` 一个世界全部数组的“这一批”编号（`arraysToken`，第八十轮：主线程上数组没变时相同；城市表、城市地标的列表、国家的统计按它当键）
 - `commands.ts` 命令的入口：`applyCommand`（校验、撤销记录、内容的增减）、`revert`、`runOp`；照旧导出 `Command`、`Dirty`……
-- `commands/` 第四十一轮从 commands.ts 拆出来：`schema.ts` 命令的格式（`baseCommands` 的先后不要调换）、`shared.ts` 共用的（`Dirty`、`UndoRecord`、`ApplyContext`、`RunResult`）、每类一个 `runXxxOp`：`terrain.ts`、`nature.ts`（生态、约束、画的河、河湖岛的种类、场）、`provinces.ts`、`features.ts`（地名、片区、内容、风格、画风）、`human.ts`、`settlements.ts`
+- `commands/` 第四十一轮从 commands.ts 拆出来：`schema.ts` 命令的格式（`baseCommands` 的先后不要调换）、`shared.ts` 共用的（`Dirty`、`UndoRecord`、`ApplyContext`、`RunResult`）、每类一个 `runXxxOp`：`terrain.ts`、`nature.ts`（生态、约束、画的河、河湖岛的种类、场）、`provinces.ts`、`features.ts`（地名、片区、内容、风格、画风）、`human.ts`、`settlements.ts`、`archive.ts`（第八十五轮：国家的备注、统治者、家族、大事）
 - `engine.ts` 历史、撤销缓存、预览、检查点、空闲预热（`warmSteps`）、`fixLakeProvinces`；第八十三轮拆出：`engine-recompute.ts` 按标记重算的流水线（`recomputeDerived`、`passStats`），`engine-types.ts` 世界文件、检查点、预览结果的类型，`engine-helpers.ts` 预览的差异、复制世界
-- `small-copy.ts` 小数据的副本（第四十七轮）：内容（`small.content`，不可变）按引用共用，别的是一段 JSON；撤销记录、比较、预览的克隆都用它第五十四轮：人口群体（`small.popGroups`）也按引用共用。
+- `small-copy.ts` 小数据的副本（第四十七轮）：内容（`small.content`，不可变）按引用共用，别的是一段 JSON；撤销记录、比较、预览的克隆都用它第五十四轮：人口群体（`small.popGroups`）也按引用共用。第八十五轮：国家的档案（`small.archive`）也是，`postedSmall` 占位内容和档案，`withoutContent` 只占位内容（预览、快照里内容没换时）。
 - `preview-world.ts` 预览世界（只带变了的数组；`postedPatch`：内容没换时不发）；`doc-version.ts` 世界文件的版本（`DOC_VERSION`）与打开前的检查
 - `rng.ts` 随机数与噪声（按位置取，与格数无关）；`digest.ts` 64 位哈希；`errors.ts`、`type-id.ts`、`world-types.ts` 为避免循环引用拆出来的小文件
 
@@ -88,7 +88,7 @@
 ## 输出
 - `subcell.ts` 格以下的细节、栅格化（`rasterizeWorld`），屏幕与导出共用，着色器里同一套式子；第八十三轮拆开（照旧导出）：`subcell-noise.ts` 与 GLSL 逐位一致的哈希与噪声，`subcell-coast.ts` 海岸值（`coastValues` / `shownCoastValues`）、破碎度、海岸类型，`subcell-locate.ts` 点在哪个三角形
 - `display.ts` 画面上的一点画的是哪一格、画面上的海岸场（`displayCoast`、`displayCellAt`、`shoreCrossing`）
-- `export.ts` 导出；`export-terrain.ts` 导出用的地形（id、中文名、地形图的颜色；生态的 `terrain` 选它）；`thumbnail.ts` 向导缩略图；`presets.ts` 世界大小、纬度带、星球格数（`planetCells`）
+- `export.ts` 导出（第八十五轮：单独导出多了“导出维基” `wikiZip`）；`export-terrain.ts` 导出用的地形（id、中文名、地形图的颜色；生态的 `terrain` 选它）；`thumbnail.ts` 向导缩略图；`presets.ts` 世界大小、纬度带、星球格数（`planetCells`）
 
 ## 测试用
 - `testing/fixtures.ts` 共用的世界模板与 `snapshot(key, build)`（建一次，每个测试拿副本）；`withoutHeights`、`plainEngine`（第五十五轮之前的生态，比算法和旧代码相同的测试用）；第七十七轮去掉的参数换成库里的规则：`humanExec` / `generateHuman` 收带比重的组（`TestGroup`，比重写进世界里的组）和改时代的 `era`，`fragKm2`（以前的“分裂 ↔ 统一”换成时代的国家大小）、`OLD_LAYOUTS`（以前的四种格局）、`eraCommand` / `setEra`；第七十八轮：以前 generate_provinces 的规则换成改世界里的省份划分（`provinceRulesCommand` / `setProvinceRules`、先改再划分的 `divideProvinces`，以前的小 · 中 · 大是 `OLD_SIZES`）；`testing/eras.ts` 按时代查内置内容
