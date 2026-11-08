@@ -421,12 +421,16 @@ function coastOf(world: World, terrain: Float32Array): Float64Array {
 export function glacialTerrain(world: World, terrain: Float32Array, ice: Float64Array): Float32Array {
   const f = glacialFieldOf(world, ice);
   if (!f.any) return terrain;
-  let skip: Uint8Array | null = null;
-  if (world.small.lakes.length) skip = userLakeMask(world);
-  const fixed = world.causes.islandHeight;
-  if (fixed) {
-    skip ??= new Uint8Array(world.mesh.n);
-    for (let i = 0; i < world.mesh.n; i++) if (fixed[i] !== FREE_HEIGHT) skip[i] = 1;
-  }
-  return scourTerrain(world, terrain, ice, f, coastOf(world, terrain), skip);
+  // 不挖的格、离海的距离只在要重新挖的时候才算（记着的那一份照用时不算）
+  const skip = (): Uint8Array | null => {
+    let mask: Uint8Array | null = null;
+    if (world.small.lakes.length) mask = userLakeMask(world);
+    const fixed = world.causes.islandHeight;
+    if (fixed) {
+      mask ??= new Uint8Array(world.mesh.n);
+      for (let i = 0; i < world.mesh.n; i++) if (fixed[i] !== FREE_HEIGHT) mask[i] = 1;
+    }
+    return mask;
+  };
+  return scourTerrain(world, terrain, ice, f, () => coastOf(world, terrain), skip);
 }

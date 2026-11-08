@@ -226,9 +226,9 @@ export const glacialOn = { on: true };
 // 挖过冰川的地形（米）。地形没挖时的样子 terrain（流水线的 e.base.terrain）不动，返回挖过的一份（没有要挖的时返回 terrain 本身）。
 // 陆格里低于高度上限的小洼（depth > 0 的格连成的一片）按四周最低的岸取平底，再往下挖 depth（按高度、离海渐弱）：
 // 一片小洼一定低过它的岸，水文照常按溢出口蓄成湖。一片洼只看它自己与四周的岸（海算 0 m），与洼之间的先后无关。
-// skip：不挖的格（放的湖、湖里定了高度的岛）。按地形（对象）与强度的内容记最近两份：冷暖笔刷没碰到冰川时直接照用
+// skipOf：不挖的格（放的湖、湖里定了高度的岛），coastOf：离海的距离；都只在要重新挖时才取。按地形（对象）与冰盖的内容记最近两份：冷暖笔刷没碰到冰川时直接照用
 const scourMemo = new WeakMap<Float32Array, { g: Float64Array; out: Float32Array }[]>();
-export function scourTerrain(world: World, terrain: Float32Array, ice: Float64Array, f: GlacialField, coastKm: Float64Array, skip: Uint8Array | null): Float32Array {
+export function scourTerrain(world: World, terrain: Float32Array, ice: Float64Array, f: GlacialField, coastOf: () => Float64Array, skipOf: () => Uint8Array | null): Float32Array {
   if (!f.any || !glacialOn.on) return terrain;
   const list = scourMemo.get(terrain) ?? [];
   const hit = list.find((e) => sameIce(e.g, ice));
@@ -238,7 +238,7 @@ export function scourTerrain(world: World, terrain: Float32Array, ice: Float64Ar
   const scale = world.small.planet.mountainScale / 6000;
   const dig = new Float64Array(n);
   let out = terrain;
-  if (scourDepths(f.depth, f.limit, causes.land, skip, coastKm, mesh.spacing * kmPerUnit, scale, terrain, dig)) {
+  if (scourDepths(f.depth, f.limit, causes.land, skipOf(), coastOf(), mesh.spacing * kmPerUnit, scale, terrain, dig)) {
     out = terrain.slice();
     glacialStats.carved += scourBlobs(mesh, causes.land, dig, out);
   }
