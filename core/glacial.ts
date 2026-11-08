@@ -146,8 +146,24 @@ export function iceLat(world: World, i: number, warm = solarWarm(world.small.pla
 
 // 冰盖：每格“冰的纬度”超过冰盖南界多少度（0 是冰盖没到过）。新算一份（流水线在气候这一层算，存进 derived.ice）；
 // 强度、高度上限都只由它与噪声定（glacialFieldOf）
-// legacy：第八十五轮的做法（只按新建时的纬度，见 glacial-legacy.ts）
+// legacy：第八十五轮的做法（只按新建时的纬度，见 glacial-legacy.ts）。
+// 输入（网格、种子、比例尺、纬度的范围与挪动、太阳、冷暖笔刷）与上一次逐值相同时还是上一次的数组（堆山、改岩性、画陆地都不碰它们）
+let lastIce: { mesh: World['mesh']; key: string; tOff: Float32Array; out: Float64Array } | null = null;
 export function iceStrength(world: World, legacy = false): Float64Array {
+  const s = world.settings;
+  const key = `${legacy}|${s.seed}|${world.kmPerUnit}|${s.latNorth},${s.latSouth}|${world.small.planet.latShift}|${world.small.planet.solar}`;
+  const tOff = world.causes.tempOffset;
+  if (lastIce && lastIce.mesh === world.mesh && lastIce.key === key && sameF32(lastIce.tOff, tOff)) return lastIce.out;
+  const out = iceStrengthNew(world, legacy);
+  lastIce = { mesh: world.mesh, key, tOff: tOff.slice(), out };
+  return out;
+}
+function sameF32(a: Float32Array, b: Float32Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function iceStrengthNew(world: World, legacy: boolean): Float64Array {
   const n = world.mesh.n;
   const g = new Float64Array(n);
   const z = iceNoise(world);
