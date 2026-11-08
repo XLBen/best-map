@@ -5,7 +5,7 @@ import type { Bloc, CountryMeta } from '../world';
 import { baseOf, one, titleFor, titleRand } from './blocs';
 import type { GenContext } from './context';
 import { averageCountryKm2 } from './countries/count';
-import { countryColor, nameCountry, rulerTitleOf, yearText } from './countries/records';
+import { countryColor, nameCountry, yearText } from './countries/records';
 import { cultureById } from './era';
 import { makeFlag } from './flags';
 import { governmentById, titled } from './government';
@@ -177,10 +177,7 @@ export function federate(ctx: GenContext, m: CountryMeta, parts: number, seed: n
   const t0 = tierOf(fedArea(live[0].cs));
   if (t0) m.tier = t0;
   else delete m.tier;
-  // 等级变了：统治者的称号跟着（第四十三轮，称号按等级）
-  const rt = rulerTitleOf(world, m, era);
-  if (rt) m.ruler = { ...m.ruler, title: rt };
-  else if (m.ruler.title) m.ruler = { name: m.ruler.name, ...(m.ruler.orig ? { orig: m.ruler.orig } : {}) };
+  // 等级变了：统治者的称号跟着（第四十三轮，称号按等级；第八十五轮起统治者在生成的最后才起，按那时的等级，见 rulers.ts）
   m.history = `${yearText(m.founded)}，${culture?.name ?? m.primaryCulture}建立${fedName.zh}，${m.name}是联邦的首府所在。`;
   for (const { cs, k } of live) {
     if (k === 0) continue;
@@ -199,7 +196,6 @@ export function federate(ctx: GenContext, m: CountryMeta, parts: number, seed: n
       acceptedGroups: [...m.acceptedGroups],
       allies: [],
       rivals: [],
-      ruler: { name: '' },
       founded: m.founded,
       history: '',
       tier: tierOf(fedArea(cs)),

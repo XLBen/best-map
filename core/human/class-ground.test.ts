@@ -85,6 +85,7 @@ describe('力度 0：逐位和第五十七轮相同', () => {
   // 第七十四轮又重录这五个值（撤销记录照旧不变）：中世纪的国家有意改了（集权帝国、游牧汗国、民族主义），时代多了两种格局
   // 第七十五轮再重录这五个值：档案多了格局里的角色（role）；核对过不写 role 时与第七十四轮的值逐个相同
   // 第八十四轮又重录 region 的世界摘要（0–4、u1–u4；撤销记录照旧不变）：人文有意改了（见 docs/dev/history/第84轮.md）
+  // 第八十五轮又重录这九个值（撤销记录照旧不变）：小数据多了国家的档案（small.archive）、国家去掉了 ruler（见 docs/dev/history/第85轮.md）
   it('一块带人文的地区：不写力度', () => expect(classOnlyDigests(humanRegion())).toEqual(recorded.region));
   it('整个星球：不写力度', () => expect(classOnlyDigests(smallGlobe())).toEqual(recorded.globe));
   it('写 strength: 0 和不写相同', () => expect(classOnlyDigests(smallGlobe(), { strength: 0 })).toEqual(recorded.globe));

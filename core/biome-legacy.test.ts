@@ -26,6 +26,7 @@ import { type InvadeTable, invadeBoost, suitability, vegShares } from './vegetat
 // 第七十八轮：省份划分的规则成了世界里的内容（新世界多一份内置的“省份划分”和它的来源，small.provinceRules 换成 provinceSeed，版本 18），重录 golden-full 的 small 两项、libraries 的 content、origin；核对过：同样的操作在 82e28a7 上与这一轮上，去掉这几个键以后每一次摘要逐个相同（见 docs/dev/history/第78轮.md）
 // 第八十四轮：人文有意改了（人口在国家之前、首都、国界顺着山河、资源、港口与海路、宗教的发源地），重录 r29 的 medieval、modern、fantasy 与 libraries.medieval 里人文的几项
 // （人口、群体、human、国家、集团、城市、道路、地标、省名、地名）；宜居度、地形类别、资源、content、origin、golden、golden-full 都没变
+// 第八十五轮：国家的档案去掉了 ruler（统治者在 small.archive），只重录 r29 的 medieval、modern、fantasy 与 libraries.medieval 的 countries；别的一项没变
 describe('没写高度范围的生态和第五十四轮逐值相同', () => {
   const plain = () => withoutHeights(newWorldContentCommands());
 

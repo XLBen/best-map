@@ -1,4 +1,4 @@
-import { type Content, postedSmall } from '../core/small-copy';
+import { type Content, withoutContent } from '../core/small-copy';
 import type { SmallState } from '../core/world';
 
 // 快照里的 small.content（第四十七轮）：带着一整个库的世界有 300 KB 上下，每发一次快照结构化克隆一遍。内容是不可变的（见 core/small-copy.ts），
@@ -8,7 +8,8 @@ import type { SmallState } from '../core/world';
 // 第五十四轮：人口群体（small.popGroups）同样的办法：世界加了几个变量后有上万个群体，也是整个换掉的。
 // 第八十轮：小数据的其余各段（城市、地标、省份、集团……；按 JSON 比）也是这样：没变的段写占位 0、列进 sameSmall，主线程沿用手上同一个对象；
 // 国家按一国一国比：没变的国家写 0（sameCountries），主线程沿用那一国的对象（只改了一国的名字时，别的国家、它们的旗都是原来的对象）。
-// 这几样要主线程用上了上一份（secBase 与手上的 secRev 相同）才拼得起来，对不上时同样要一份完整的
+// 这几样要主线程用上了上一份（secBase 与手上的 secRev 相同）才拼得起来，对不上时同样要一份完整的。
+// 第八十五轮：国家的档案（small.archive）是不可变的，按对象比（不序列化），没换时同样写占位、列进 sameSmall
 
 export interface PostedContent {
   small: SmallState;
@@ -40,6 +41,7 @@ export class ContentSender {
   private json = new Map<string, string>();
   private countryJson = new Map<string, string>();
   private countryOrder = '';
+  private lastArchive: unknown;
   constructor(private readonly worker: number) {}
 
   // 小数据的各段：与上一次发的 JSON 相同的写占位 0（full 时都带上）
@@ -52,6 +54,14 @@ export class ContentSender {
     for (const [k, v] of Object.entries(small)) {
       if (OWN_KEYS.has(k) || v === null || typeof v !== 'object') continue;
       seen.add(k);
+      if (k === 'archive') {
+        if (!full && !first && v === this.lastArchive) {
+          out[k] = 0;
+          same.push(k);
+        }
+        this.lastArchive = v;
+        continue;
+      }
       if (k === 'countries') {
         const metas = v as Record<string, unknown>;
         const posted: Record<string, unknown> = {};
@@ -86,6 +96,7 @@ export class ContentSender {
       this.json.set(k, j);
     }
     for (const k of [...this.json.keys()]) if (!seen.has(k)) this.json.delete(k);
+    if (!seen.has('archive')) this.lastArchive = undefined;
     if (!seen.has('countries')) {
       this.countryJson.clear();
       this.countryOrder = '';
@@ -112,7 +123,7 @@ export class ContentSender {
     const secBase = `${this.worker}/${this.packs}`;
     const sec = this.sections(small, full);
     this.packs++;
-    const base = noContent ? postedSmall(sec.small) : sec.small;
+    const base = noContent ? withoutContent(sec.small) : sec.small;
     return {
       small: noGroups ? { ...base, popGroups: 0 as unknown as SmallState['popGroups'] } : base,
       contentRev,

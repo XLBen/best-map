@@ -28,7 +28,6 @@ import {
   namePatch,
   patchCommand,
   regenerateCountriesCommand,
-  rulerPatch,
   titlePreview,
   yearText,
 } from './domain/countries';
@@ -254,11 +253,8 @@ describe('国家的档案', () => {
     expect(titlePreview(eng.world, n, gov)).toBe('新国');
   });
 
-  it('统治者、建国年份、历史：没变时 null；年份认“公元前 500 年”', () => {
+  it('建国年份、历史：没变时 null；年份认“公元前 500 年”（统治者第八十五轮起是一份名单，见 archive-ui.test.ts）', () => {
     const m = nations().world.small.countries![ids(nations().world)[0]];
-    expect(rulerPatch(m, m.ruler.name, m.ruler.orig ?? '', m.ruler.title ?? '')).toBeNull();
-    expect(rulerPatch(m, '', '', '')).toBeNull();
-    expect(rulerPatch(m, '阿德', '', '国王')).toEqual({ ruler: { name: '阿德', title: '国王' } });
     expect(foundedPatch(m, String(m.founded))).toBeNull();
     expect(foundedPatch(m, '公元前 500 年')).toEqual({ founded: -500 });
     expect(foundedPatch(m, '1066')).toEqual({ founded: 1066 });

@@ -43,3 +43,38 @@ export const ERA_PAGE_TIP = '打开资源库里的时代';
 // 省份面板（第七十八轮）：省份划分的规则在资源库里
 export const PROVINCE_RULES_NOTE = '省份多大在“生成设置”里改';
 export const PROVINCE_RULES_TIP = '打开资源库里本世界的省份划分';
+
+// 国家档案里的备注、统治者、家族、大事（第八十五轮）
+export const ARCHIVE_TEXT = {
+  note: '备注',
+  notePlaceholder: '这一国的设定、故事……',
+  rulers: '统治者',
+  addRuler: '加统治者',
+  newRuler: '新统治者',
+  addDynasty: '加家族',
+  newDynasty: '新家族',
+  noDynasty: '不属于家族',
+  dynasty: '家族',
+  titlePlaceholder: '国王、可汗……',
+  parent: '父母',
+  noParent: '没写',
+  title: '称号',
+  orig: '原文',
+  reign: '在位',
+  now: '至今',
+  earlier: '往前',
+  later: '往后',
+  remove: '删除',
+  more: '更多',
+  timeline: '大事年表',
+  addEvent: '加大事',
+  newEvent: '新的大事',
+  linked: '牵涉',
+  addLinked: '加一国',
+  // 说明（悬停、灰字，不超过 20 个字）
+  rulersHint: '最后一位是现在的统治者',
+  reignHint: '结束空着是至今',
+  fromRuler: '跟着统治者的名单改',
+  fromFounded: '跟着建国的年份改',
+  current: '现在的统治者',
+} as const;

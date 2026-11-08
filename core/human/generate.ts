@@ -4,6 +4,7 @@ import type { CountryRules, Derived, HumanHearth, HumanState, SettlementRules, S
 import type { GenContext, GenGroup, HumanStage } from './context';
 import { fillAddedDims } from './add-dimension';
 import { snapshotCountries, snapshotPop } from './auto';
+import { archiveBefore, writeArchive } from './archive-keep';
 import { claimsStage } from './claims';
 import { capitalsStage } from './countries/capitals';
 import { culturesStage } from './cultures';
@@ -19,7 +20,7 @@ import { worldTerrainClasses } from './terrain-class';
 import { generateSettlements, settlementRules } from './settle-gen';
 import { clearCities } from './settlements';
 
-// 生成人文（第二十二轮）：文化圈 → 人口 → 国家（第二十三轮）→ 领土补齐 → 帝国、联邦、同盟（第二十六轮）→ 首都 → 国家的移民，
+// 生成人文（第二十二轮）：文化圈 → 人口 → 国家（第二十三轮）→ 领土补齐 → 帝国、联邦、同盟（第二十六轮）→ 首都 → 国家的移民（→ 第八十五轮：统治者、大事），
 // 每一步是一个 HumanStage（见 context.ts）。第八十四轮：人口挪到国家之前，首都挪到人口的重心一带（countries/capitals.ts），宜居度含资源的倍数
 // 结果写进原因（causes.popTotal / popGroup / popShare）与 small.human、small.popGroups，像省份一样“生成一次、之后修补”。
 // 第三十轮：生成只读世界里的内容——时代、取值、文化组、文化、地名风格、政体、派系都由界面先从资源包加进世界
@@ -182,8 +183,11 @@ export function generateHuman(
     ...(keep ? { keep } : {}),
     ...(countries ? { countries } : {}),
   };
+  // 第八十五轮：重新长国家时档案里留什么（archive-keep.ts）：长之前记下原来的
+  const before = countries?.mode === 'generate' ? archiveBefore(world) : null;
   for (const stage of STAGES) stage.run(ctx);
   fillAddedDims(ctx);
+  if (before) writeArchive(world, before, countries!.rules.seed >>> 0, era);
   const state: HumanState = {
     era: era.id,
     seed,

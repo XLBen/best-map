@@ -59,7 +59,6 @@ export const countryPatchSchema = z
     subject: z.enum(SUBJECT_KINDS).nullable().optional(),
     allies: z.array(countryId).max(64).optional(),
     rivals: z.array(countryId).max(64).optional(),
-    ruler: z.object({ name: z.string().min(1).max(40), orig: z.string().max(80).optional(), title: z.string().max(16).optional() }).optional(),
     founded: z.number().int().min(-100000).max(100000).optional(),
     history: z.string().max(4000).optional(),
     locked: z.boolean().optional(),
@@ -103,6 +102,39 @@ export const landmarkPatchSchema = z
   .strict();
 export const pointPatchSchema = z.object({ type: typeIdSchema.optional(), name: z.string().max(40).optional(), note: nullableText(2000), attachedCity: settleId.nullable().optional() }).strict();
 export const mapXY = z.number().min(-10).max(10);
+// 国家的档案（第八十五轮）：统治者、家族、大事
+export const yearSchema = z.number().int().min(-100000).max(100000);
+export const archiveId = z.number().int().min(1);
+export const rulerInputSchema = z
+  .object({
+    name: z.string().min(1).max(40),
+    orig: z.string().max(80).optional(),
+    title: z.string().max(16).optional(),
+    from: yearSchema,
+    to: yearSchema.optional(),
+    dynasty: archiveId.optional(),
+    parent: archiveId.optional(),
+    note: z.string().max(2000).optional(),
+  })
+  .strict();
+export const rulerPatchSchema = z
+  .object({
+    name: z.string().min(1).max(40).optional(),
+    orig: nullableText(80),
+    title: nullableText(16),
+    from: yearSchema.optional(),
+    to: yearSchema.nullable().optional(),
+    dynasty: archiveId.nullable().optional(),
+    parent: archiveId.nullable().optional(),
+    note: nullableText(2000),
+  })
+  .strict();
+export const eventInputSchema = z
+  .object({ year: yearSchema, title: z.string().min(1).max(80), note: z.string().max(2000).optional(), countries: z.array(countryId).min(1).max(16) })
+  .strict();
+export const eventPatchSchema = z
+  .object({ year: yearSchema.optional(), title: z.string().min(1).max(80).optional(), note: nullableText(2000), countries: z.array(countryId).min(1).max(16).optional() })
+  .strict();
 
 export const fieldName = z.string().regex(/^[\w-]+$/, '场名只能包含字母、数字、下划线和连字符');
 export const paintField = z.union([z.enum(['erodDelta', 'tempOffset', 'moistOffset']), z.string().regex(/^field:[\w-]+$/)]);
@@ -452,6 +484,19 @@ export const baseCommands = [
   // 给世界的时代加一维（第五十四轮）：只把现有的人按这一维分开，文化、国家、城市都不动。这一维的取值要已经在世界里（界面在同一个批量里先 set_content）。
   // era 省略时是人文用的时代；写了别的时代时只改那个时代（换库时把世界加的维度带到新时代）
   z.object({ op: z.literal('add_dimension'), dimension: z.object({ id: typeIdSchema, label: z.string().min(1).max(12) }), era: typeIdSchema.optional() }),
+  // 国家的档案（第八十五轮，见 human/rulers.ts、human/events.ts；执行在 commands/archive.ts）：备注；统治者加、改、删、排先后（to 是第几位，0 起）；
+  // 家族加、改、删；大事加、改、删（countries 的第一国是写它的那一国，别的是牵涉的）。都不改地图
+  z.object({ op: z.literal('set_country_note'), id: countryId, note: z.string().max(4000).nullable() }),
+  z.object({ op: z.literal('add_ruler'), id: countryId, ruler: rulerInputSchema, at: z.number().int().min(0).optional() }),
+  z.object({ op: z.literal('set_ruler'), id: countryId, ruler: archiveId, patch: rulerPatchSchema }),
+  z.object({ op: z.literal('remove_ruler'), id: countryId, ruler: archiveId }),
+  z.object({ op: z.literal('move_ruler'), id: countryId, ruler: archiveId, to: z.number().int().min(0) }),
+  z.object({ op: z.literal('add_dynasty'), id: countryId, name: z.string().min(1).max(40), orig: z.string().max(80).optional(), founder: archiveId.optional() }),
+  z.object({ op: z.literal('set_dynasty'), id: countryId, dynasty: archiveId, patch: z.object({ name: z.string().min(1).max(40).optional(), orig: nullableText(80), founder: archiveId.nullable().optional() }).strict() }),
+  z.object({ op: z.literal('remove_dynasty'), id: countryId, dynasty: archiveId }),
+  z.object({ op: z.literal('add_event'), event: eventInputSchema }),
+  z.object({ op: z.literal('set_event'), event: archiveId, patch: eventPatchSchema }),
+  z.object({ op: z.literal('remove_event'), event: archiveId }),
 ] as const;
 
 // provinceNames：命令执行时新起的省名（省份编号 → 名字），由引擎记下，重放、重做时照用。

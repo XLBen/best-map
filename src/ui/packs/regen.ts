@@ -7,6 +7,7 @@ import type { LibraryEntry } from '../../library';
 import type { Content, RegenBase, RegenScope } from '../../regen-track';
 import { beyondGroupIds, regenerateCommand, withPackImports } from '../domain/human';
 import { worldLibrary } from '../domain/packChoice';
+import { REGEN_KEEPS_ARCHIVE } from './copy';
 
 // 面板底下的“改了 N 项 · 重新生成”（第六十二轮在顶上，第八十一轮挪到底下、省份划分也算）：内容改了、地图还没用上时才出现。和上一次生成时的内容比（regen-track.ts 记着），
 // 所以撤销掉改动就没了，就地展开的项、世界里别处改的都算（比的是世界，不是这一页）。
@@ -26,7 +27,7 @@ import { worldLibrary } from '../domain/packChoice';
 //   只有城市等级、地标、点改了  重新生成城市（锁定的、自己放的不动）
 //   省份划分改了（第八十一轮）  按世界的种子重新划分省份（同“省份 ⋯”的划分省份；“湖”改了马上整理，不算）
 // 人文、国家重新生成时城市跟着重算，所以这时不用另外一步；省份和别的一起时一个 batch，先划分省份。
-// 条上写会重做什么；上次生成之后手改过的国家、省份会被换掉时另写一句（regen-track.ts 记着 hand）
+// 条上写会重做什么（第八十五轮：有国家时加一句“手写的档案留着”）；上次生成之后手改过的国家、省份会被换掉时另写一句（regen-track.ts 记着 hand）
 
 type Small = Pick<SmallState, 'content' | 'human' | 'settlementRules'> & Partial<Pick<SmallState, 'provinces'>>;
 type Store = Record<string, Record<string, unknown>>;
@@ -171,7 +172,9 @@ export function regenNeed(small: Small, base: RegenBase | null, lib: readonly Li
   if (scopes.includes('countries')) redo.push(scopes.includes('human') ? '国家' : '国家、人口');
   if (hasCities && (scopes.includes('human') || scopes.includes('countries') || scopes.includes('settlements'))) redo.push('城市');
   const keep = scopes.includes('countries') || prov.length ? '锁定的不动' : scopes.includes('human') ? '国家的领土不动' : '锁定的、自己放的不动';
-  const what = `会重做${redo.join('、')}；${keep}`;
+  // 第八十五轮：国家档案里手写的（备注、改过的统治者、自己写的大事）留着
+  const lore = hasCountries && (scopes.includes('countries') || scopes.includes('human')) ? `；${REGEN_KEEPS_ARCHIVE}` : '';
+  const what = `会重做${redo.join('、')}；${keep}${lore}`;
   const lost = (base.hand ?? []).filter((s) => scopes.includes(s) && s !== 'human' && s !== 'settlements').map((s) => HAND_NAME[s]);
   return { scopes, count, label, what, warn: lost.length ? `手改过的${lost.join('、')}会被换掉` : null };
 }

@@ -7,7 +7,9 @@ import { FactionSection, StackBar } from './CountryFactions';
 import { Flag } from './panels/countries';
 import { Seg } from './common';
 import { COUNTRY_TABS, type CountryTab, countryTab, patch, run } from './country-archive';
-import { ColorCapital, FlagSection, Glance, NameSection, TerritorySection } from './archives/country-overview';
+import { ColorCapital, FlagSection, Glance, NameSection, NoteSection, TerritorySection } from './archives/country-overview';
+import { RulersSection } from './archives/country-rulers';
+import { TimelineSection } from './archives/country-timeline';
 import { CultureSection, GovernmentSection, RulerSection } from './archives/country-politics';
 import { CitySection, StatsSection } from './archives/country-people';
 import { DiplomacySection } from './archives/country-relations';
@@ -17,7 +19,8 @@ import { registerArchive } from './defs/archive-registry';
 // 国家的档案（第二十三轮）：右边的抽屉，选中的国家。名字、旗帜、颜色、首都、政体、主流文化与兼容的文化组、统计、派系、外交、统治者、
 // 建国年份、历史。改的都是 set_country 的 patch；字在离开框（或回车）时提交，历史停下一会儿也提交。
 // 第二十六轮：头上写等级；外交里有从属的种类、所在的帝国、联邦、同盟（加入、退出、新建，见 domain/blocs.ts）。
-// 第二十七轮：分成几页（概览 · 政治 · 人口与城市 · 关系 · 历史）；名字和原文一起改；领土的操作（涂领土、分成两半、并入别国、删除）放进概览
+// 第二十七轮：分成几页（概览 · 政治 · 人口与城市 · 关系 · 历史）；名字和原文一起改；领土的操作（涂领土、分成两半、并入别国、删除）放进概览。
+// 第八十五轮：概览最后是备注；历史页加统治者与家族（archives/country-rulers.tsx）、大事年表（archives/country-timeline.tsx）
 
 
 export { StackBar };
@@ -71,6 +74,7 @@ export function CountryArchive() {
           <ColorCapital w={w} m={m} />
           <FlagSection w={w} m={m} />
           <TerritorySection w={w} m={m} remove={() => void remove()} />
+          <NoteSection w={w} m={m} />
         </>
       )}
       {tab === 'politics' && (
@@ -78,7 +82,7 @@ export function CountryArchive() {
           <GovernmentSection w={w} m={m} />
           <CultureSection w={w} m={m} />
           <FactionSection w={w} m={m} />
-          <RulerSection m={m} />
+          <RulerSection w={w} m={m} />
         </>
       )}
       {tab === 'people' && (
@@ -89,7 +93,14 @@ export function CountryArchive() {
       )}
       {tab === 'relations' && <DiplomacySection w={w} m={m} />}
       {/* 历史按国家重建（第四十轮：只这一段）：没提交的字在卸下时写进原来那一国 */}
-      {tab === 'history' && <HistorySection key={m.id} m={m} />}
+      {/* 第八十五轮：统治者与家族、大事年表 */}
+      {tab === 'history' && (
+        <>
+          <HistorySection key={m.id} m={m} />
+          <RulersSection key={`r${m.id}`} w={w} m={m} />
+          <TimelineSection key={`t${m.id}`} w={w} m={m} />
+        </>
+      )}
     </div>
   );
 }

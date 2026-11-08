@@ -1,5 +1,5 @@
 import { Paintbrush, ScanSearch, SplitSquareHorizontal, Trash2 } from 'lucide-preact';
-import { FLAG_EMBLEMS, FLAG_LAYOUTS, type FlagSpec, blocsOf, cellName } from '../../../core/human';
+import { FLAG_EMBLEMS, FLAG_LAYOUTS, type FlagSpec, blocsOf, cellName, loreOf } from '../../../core/human';
 import type { CountryMeta, World } from '../../../core/world';
 import { setOptions, switchTool } from '../../state';
 import { focusOn } from '../camera';
@@ -8,7 +8,9 @@ import { popText } from '../domain/human';
 import { Flag } from '../panels/countries';
 import { confirmMerge, selectCountry } from '../tools/countries';
 import { EMBLEM_NAMES, LAYOUT_NAMES, flagPartName, withEmblem, withLayout, patch, run } from '../country-archive';
-import { CountrySelect, Line, NamePair } from './fields';
+import { CountrySelect, Line, LongText, NamePair } from './fields';
+import { ARCHIVE_TEXT } from '../copy';
+import { noteCommand } from '../domain/country-lore';
 
 // 国家档案的“概览”一页（第七十轮从 CountryArchive.tsx 按页分出来）
 
@@ -181,5 +183,15 @@ export function Glance({ w, m }: { w: World; m: CountryMeta }) {
         </>
       )}
     </div>
+  );
+}
+
+// 备注（第八十五轮）：自己写的设定、故事；停下一秒、离开框时提交（set_country_note，能撤销）。重新生成国家时留着
+export function NoteSection({ w, m }: { w: World; m: CountryMeta }) {
+  return (
+    <section>
+      <h5>{ARCHIVE_TEXT.note}</h5>
+      <LongText id={`country:${m.id}:note`} value={loreOf(w.small, m.id).note ?? ''} placeholder={ARCHIVE_TEXT.notePlaceholder} rows={3} maxLength={4000} onCommit={(t) => void run(noteCommand(w, m.id, t))} />
+    </section>
   );
 }

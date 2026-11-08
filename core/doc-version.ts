@@ -15,8 +15,9 @@ import { CommandError } from './errors';
 // 第七十八轮是 18：省份划分的规则成了资源库里的内容（provinceRules），划分省份的命令只写种子、去掉了“只整理湖”（set_lake_mode）（格式变了）。
 // 第八十四轮是 19：人口在国家之前、首都挪到人口的重心、国界顺着山河、宗教按发源地传播、港口与海路、资源有用处，旧文件里生成人文的命令重放出来不一样；
 // 资源多了两项（habitability、cityBonus），人口的修补多了 moves。
+// 第八十五轮是 20：国家的统治者从一项（ruler）换成一份名单，有了家族、备注、大事（small.archive），set_country 不再有 ruler，多了档案的命令。
 // 单独放一个小文件：主线程打开文件、读自动保存时也要查，不必引进整个引擎
-export const DOC_VERSION = 19;
+export const DOC_VERSION = 20;
 export const OLD_DOC_ERROR = '旧版本的世界文件打不开';
 
 // 打开前先查：不是世界文件、是旧版本的世界时报错（不去重放）

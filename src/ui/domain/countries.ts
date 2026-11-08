@@ -215,13 +215,7 @@ export function namePatch(m: CountryMeta, name: string, orig: string): CountryPa
   return { name: n, ...(o ? { orig: o } : {}) };
 }
 
-// 统治者：名字不能空
-export function rulerPatch(m: CountryMeta, name: string, orig: string, title: string): CountryPatch | null {
-  const r = { name: name.trim(), orig: orig.trim(), title: title.trim() };
-  if (!r.name) return null;
-  if (r.name === m.ruler.name && r.orig === (m.ruler.orig ?? '') && r.title === (m.ruler.title ?? '')) return null;
-  return { ruler: { name: r.name, ...(r.orig ? { orig: r.orig } : {}), ...(r.title ? { title: r.title } : {}) } };
-}
+// 统治者（第八十五轮起是一份名单）的改动在 domain/archive.ts
 
 export function foundedPatch(m: CountryMeta, text: string): CountryPatch | null {
   const t = text.trim().replace(/^公元前\s*/, '-').replace(/\s*年$/, '');

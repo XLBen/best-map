@@ -26,6 +26,8 @@ export const INSTANT = '即时';
 export const INSTANT_TIP = '改了地图马上变';
 export const REGEN_BUSY = '正在生成…';
 export const regenCountText = (n: number) => `改了 ${n} 项`;
+// 重新生成国家、人文时：国家档案里手写的备注、统治者、大事留着（第八十五轮，规则见 core/human/archive-keep.ts）
+export const REGEN_KEEPS_ARCHIVE = '手写的档案留着';
 
 // ---------- 从别的库挑（第八十一轮：一种模式） ----------
 export const PICK_ENTER = '从别的库添加…';

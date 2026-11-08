@@ -2,7 +2,7 @@
 // 所以重放结果与当时界面上的推导状态无关（例外：generate_provinces 需要当时的水文与高程，引擎会先把推导算好；
 // 涂类别带力度时第一次执行读高程，读到的记进命令，重放照用）。
 // 第四十一轮拆成 commands/ 下几个文件（代码原样搬）：schema 命令的格式（baseCommands 的先后不要调换）、shared 共用的、
-// 每类命令一个文件（terrain、nature、provinces、features、human、settlements，各有一个 runXxxOp）。
+// 每类命令一个文件（terrain、nature、provinces、features、human、settlements，第八十五轮的 archive，各有一个 runXxxOp）。
 // 这里留 applyCommand（校验、撤销记录、内容的增减）、revert、addArrayUndo、runOp（批量、整理本世界，其余依次问各类），并照旧导出全部。
 // 加一种命令：schema.ts 的 baseCommands 加格式，对应类别的 runXxxOp 加 case，改了人文的数组的在下面 touchedArrays 里登记
 import { type Command, commandSchema, nameCarrySchema, popFixSchema, provinceFixSchema } from './commands/schema';
@@ -24,6 +24,7 @@ import { runHumanOp } from './commands/human';
 import { runNatureOp } from './commands/nature';
 import { runProvinceOp } from './commands/provinces';
 import { runSettlementOp } from './commands/settlements';
+import { runArchiveOp } from './commands/archive';
 import { runTerrainOp } from './commands/terrain';
 export { type GuidePatch, type LakePatch, type Command, commandSchema } from './commands/schema';
 export { Dirty, type UndoRecord, type ApplyContext, type RemovedItem } from './commands/shared';
@@ -342,5 +343,5 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): RunResult {
     case 'tidy_content':
       return tidyContent(world, cmd.items, ctx);
   }
-  return (runTerrainOp(world, cmd, ctx) ?? runNatureOp(world, cmd, ctx) ?? runProvinceOp(world, cmd, ctx) ?? runFeatureOp(world, cmd, ctx) ?? runHumanOp(world, cmd, ctx) ?? runSettlementOp(world, cmd, ctx)) as RunResult;
+  return (runTerrainOp(world, cmd, ctx) ?? runNatureOp(world, cmd, ctx) ?? runProvinceOp(world, cmd, ctx) ?? runFeatureOp(world, cmd, ctx) ?? runHumanOp(world, cmd, ctx) ?? runSettlementOp(world, cmd, ctx) ?? runArchiveOp(world, cmd)) as RunResult;
 }

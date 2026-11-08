@@ -2,7 +2,7 @@ import { styleById, worldStyleId } from '../../name-styles';
 import { hashString } from '../../names';
 import { mixSeed, mulberry32 } from '../../rng';
 import type { CountryMeta, PopTuple, World } from '../../world';
-import { countryBase, personName } from '../country-names';
+import { countryBase } from '../country-names';
 import { type Culture, type Era, type SubjectKind, cultureById, cultureTendency, dimensionValues, popValueById, styleOfCulture, weightedList, worldEra } from '../era';
 import { makeFlag } from '../flags';
 import { type Government, type TitleContext, govAllowed, govRestricted, govTitles, governmentById, titled } from '../government';
@@ -59,8 +59,8 @@ export function countryColor(base: string, k: number, used: Set<string>): string
 
 // ---------- 档案的几项（生成与新建国家共用） ----------
 
-// 文化的地名风格（不在世界里时用世界默认）
-function styleOf(world: World, culture: Culture | undefined) {
+// 文化的地名风格（不在世界里时用世界默认）；统治者、家族的名字也用它（第八十五轮，rulers.ts）
+export function styleOf(world: World, culture: Culture | undefined) {
   const small = world.small;
   const id = styleOfCulture(small, culture);
   return (id && styleById(small, id)) || styleById(small, worldStyleId(small))!;
@@ -91,23 +91,22 @@ export function rulerTitleOf(world: Pick<World, 'small'>, meta: Pick<CountryMeta
   return govTitles(governmentById(world.small, meta.government), titleContext(world, meta, era ?? worldEra(world.small))).ruler?.zh;
 }
 
-// 名字、统治者（taken 里的国名避开）
-export function nameCountry(world: World, meta: Pick<CountryMeta, 'id' | 'government' | 'primaryCulture' | 'tier'>, seed: number, taken: Set<string>, era?: Era): Pick<CountryMeta, 'name' | 'orig' | 'base' | 'ruler'> {
+// 一国的名字用的种子（统治者的名字也从它派生，见 rulers.ts）
+export const countrySeed = (seed: number, id: number): number => mixSeed(seed, hashString('country'), id);
+
+// 名字（taken 里的国名避开）。第八十五轮：统治者不在这里起（rulers.ts 的 generateLore，最后一位还是以前的那个名字）
+export function nameCountry(world: World, meta: Pick<CountryMeta, 'id' | 'government' | 'primaryCulture' | 'tier'>, seed: number, taken: Set<string>, era?: Era): Pick<CountryMeta, 'name' | 'orig' | 'base'> {
   const small = world.small;
   const culture = cultureById(small, meta.primaryCulture);
   const gov = governmentById(small, meta.government);
   const style = styleOf(world, culture);
-  const s = mixSeed(seed, hashString('country'), meta.id);
-  const base = countryBase(style, s, taken);
+  const base = countryBase(style, countrySeed(seed, meta.id), taken);
   const titles = govTitles(gov, titleContext(world, meta, era ?? worldEra(small)));
   const name = titled(base, titles.title);
-  const person = personName(style, mixSeed(s, 0x7e1));
-  const title = titles.ruler?.zh;
   return {
     name: name.zh,
     ...(name.orig ? { orig: name.orig } : {}),
     base: base.orig ? { zh: base.zh, orig: base.orig } : { zh: base.zh },
-    ruler: { name: person.zh, ...(person.orig ? { orig: person.orig } : {}), ...(title ? { title } : {}) },
   };
 }
 
@@ -234,7 +233,6 @@ export function writeRecords(g: CountryRun) {
       acceptedGroups: accepted,
       allies: [],
       rivals: [],
-      ruler: { name: '' },
       founded: foundedYear(era, yearRand),
       history: '',
       ...(s.tier.id ? { tier: s.tier.id } : {}),

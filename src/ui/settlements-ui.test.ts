@@ -484,8 +484,9 @@ describe('导出与仓库', () => {
   it('单独导出：EXPORT_PARTS 的每一项，按世界里有没有；没有人文的世界只有地名表', () => {
     const w = towns().world;
     const rows = exportPartRows(w);
-    expect(rows.map((r) => r.id)).toEqual(['cities', 'roads', 'roads-image', 'landmarks', 'points', 'countries', 'features', 'archive-md', 'archive-json']);
-    expect(rows.filter((r) => r.available).map((r) => r.id)).toEqual(['cities', 'roads', 'roads-image', 'landmarks', 'countries', 'features', 'archive-md', 'archive-json']);
+    // 第八十五轮：最后是导出维基
+    expect(rows.map((r) => r.id)).toEqual(['cities', 'roads', 'roads-image', 'landmarks', 'points', 'countries', 'features', 'archive-md', 'archive-json', 'wiki']);
+    expect(rows.filter((r) => r.available).map((r) => r.id)).toEqual(['cities', 'roads', 'roads-image', 'landmarks', 'countries', 'features', 'archive-md', 'archive-json', 'wiki']);
     expect(rows.find((r) => r.id === 'roads-image')!.image).toBe(true);
     expect(exportPartRows(continents().world).filter((r) => r.available).map((r) => r.id)).toEqual(['features']);
   });

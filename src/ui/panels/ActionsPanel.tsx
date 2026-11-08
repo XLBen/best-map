@@ -205,7 +205,7 @@ const WHEEL: [WheelPref, string][] = [
 ];
 
 // 单独导出（第二十四轮）：游戏文件包里的一项（城市表、道路、档案全文……），点一下只下载这一项的文件。图的宽度跟着游戏文件包选的
-const PART_TYPES: Record<string, string> = { csv: 'text/csv', geojson: 'application/geo+json', bmp: 'image/bmp', md: 'text/markdown', json: 'application/json' };
+const PART_TYPES: Record<string, string> = { csv: 'text/csv', geojson: 'application/geo+json', bmp: 'image/bmp', md: 'text/markdown', json: 'application/json', zip: 'application/zip' };
 function PartList({ w, width }: { w: World; width: number }) {
   const rows = exportPartRows(w).filter((r) => r.available);
   if (!rows.length) return null;

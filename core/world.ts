@@ -12,6 +12,7 @@ import type { ProvinceSeam } from './seams';
 import type { ScriptIssue } from './script';
 import type { SubjectKind } from './human/era';
 import type { FlagSpec } from './human/flags';
+import type { ArchiveState } from './human/archive-types';
 import type { Species } from './species';
 import { typeIdSchema } from './type-id';
 
@@ -343,7 +344,7 @@ export interface CountryMeta {
   role?: string;
   allies: number[];
   rivals: number[];
-  ruler: { name: string; orig?: string; title?: string };
+  // 第八十五轮：统治者（以前的 ruler）、家族、备注在 small.archive 里（见 human/rulers.ts），现在的统治者是那份名单的最后一位
   founded: number;
   history: string;
   // 锁定：重新生成国家时领土、档案都不动
@@ -351,6 +352,9 @@ export interface CountryMeta {
   // 等级（第二十六轮，生成时定的面积档次；第四十二轮起是世界里国家等级（countryTier）的 id，见 human/tiers.ts）。自己建的没有
   tier?: string;
 }
+// 国家的档案里的统治者、家族、大事（第八十五轮）：类型在 human/archive-types.ts，这里照旧导出
+export type { ArchiveState, CountryLore, DynastyMeta, HistoryEvent, RulerMeta } from './human/archive-types';
+
 // 城市（第二十四轮，见 human/settlements.ts）。名字、等级、所属、人口、建城年份、简介没写时都按世界现算（自动起名、按占本国人口的比例定等级……）
 export interface CityMeta {
   id: number;
@@ -497,6 +501,8 @@ export interface SmallState {
   nextCountry?: number;
   // 帝国、联邦、同盟（第二十六轮）：生成或建过才有
   blocs?: Bloc[];
+  // 国家的档案：统治者、家族、备注、大事（第八十五轮）：生成过国家才有。不可变的（见上面的 ArchiveState）
+  archive?: ArchiveState;
   // 城市、道路、地标、自定义点（第二十四轮）：编号 → 档案；下一个编号（几种共用）；生成的参数。用到时才有
   cities?: Record<string, CityMeta>;
   roads?: Record<string, RoadMeta>;

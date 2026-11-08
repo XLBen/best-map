@@ -1,5 +1,6 @@
 import { type World, longitudeOf, worldLatitude } from '../world';
 import { countryList, subjectText } from './countries';
+import { currentRuler, loreOf } from './archive-store';
 import { allCountryStats, countryFactions, countryFaith } from './country-layers';
 import { FAITH_NAMES, cultureById, cultureGroupById, worldEra } from './era';
 import { categoryName, governmentById } from './government';
@@ -136,7 +137,9 @@ export function archiveMarkdown(world: World): string {
       }
       const fac = countryFactions(world, m.id, st);
       if (fac.length) lines.push(`- 派系：${fac.map((f) => `${f.name} ${pct(f.influence)}`).join('、')}`);
-      lines.push(`- 统治者：${m.ruler.title ? `${m.ruler.title} ` : ''}${m.ruler.name}${m.ruler.orig ? `（${m.ruler.orig}）` : ''}`);
+      // 第八十五轮：现在的统治者是名单的最后一位
+      const ruler = currentRuler(small, m.id);
+      if (ruler) lines.push(`- 统治者：${ruler.title ? `${ruler.title} ` : ''}${ruler.name}${ruler.orig ? `（${ruler.orig}）` : ''}`);
       lines.push(`- 建国：${m.founded} 年`);
       // 殖民地（第七十四轮）写“殖民地 · 宗主国 X”
       if (m.overlord !== undefined) lines.push(m.subject === 'colony' ? `- ${subjectText('colony', countryName(m.overlord))}` : `- 宗主：${countryName(m.overlord)}`);
@@ -146,6 +149,8 @@ export function archiveMarkdown(world: World): string {
       if (m.rivals.length) lines.push(`- 敌对：${m.rivals.map(countryName).join('、')}`);
       out.push(...lines, '');
       if (m.history) out.push(m.history, '');
+      const note = loreOf(small, m.id).note;
+      if (note) out.push(note, '');
     }
   }
   const cities = table.list.filter((c) => !c.point);
@@ -199,7 +204,9 @@ export function archiveJson(world: World): string {
     version: 1,
     ...(era ? { era: { id: era.id, name: era.name } } : {}),
     ...(pop ? { population: Math.round(pop.total), cultures: pop.cultures.map((c) => ({ id: c.id, name: c.name, population: Math.round(c.pop) })) } : {}),
-    countries: countryList(small).map((m) => ({ ...m, stats: stats.get(m.id), factions: countryFactions(world, m.id, stats.get(m.id)) })),
+    // 第八十五轮：备注、统治者、家族跟着每一国，大事另列（一件存一份，countries 是牵涉的几国）
+    countries: countryList(small).map((m) => ({ ...m, ...loreOf(small, m.id), stats: stats.get(m.id), factions: countryFactions(world, m.id, stats.get(m.id)) })),
+    events: Object.values(small.archive?.events ?? {}).sort((a, b) => a.year - b.year || a.id - b.id),
     cities: cities.map((a) => ({
       id: a.id,
       name: a.name,

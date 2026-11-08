@@ -1,6 +1,6 @@
 import { Lock, LockOpen, ScanSearch, Trash2 } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type { Command } from '../../core/commands';
 import { cityArchive, landmarkTypeById, pointTypeById } from '../../core/human';
 import type { World } from '../../core/world';
@@ -8,6 +8,7 @@ import { iconOf } from '../render/settle-draw';
 import { type SettleRef, exec, nameMode, selectedSettle, world } from '../state';
 import { focusOn } from './camera';
 import { Line, ShareRow, StackBar, TextField } from './CountryArchive';
+import { LongText } from './archives/fields';
 import { Toggle } from './components/Toggle';
 import { capitalCommand, countriesByName, yearText } from './domain/countries';
 import { popText, shareText } from './domain/human';
@@ -36,37 +37,6 @@ import { registerArchive } from './defs/archive-registry';
 const run = (cmd: Command | null) => (cmd ? exec(cmd, '正在保存…') : Promise.resolve(false));
 
 export const SETTLE_TITLES: Record<SettleRef['kind'], string> = { city: '城市档案', road: '道路', landmark: '地标档案', point: '自定义点' };
-
-// 一段长字：停下一秒、离开框时提交；换了一样之前没提交的写进原来那一样
-function LongText({ id, value, placeholder, rows = 3, onCommit }: { id: string; value: string; placeholder?: string; rows?: number; onCommit: (text: string) => void }) {
-  const [text, setText] = useState(value);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latest = useRef({ text, value, onCommit });
-  latest.current = { text, value, onCommit };
-  useEffect(() => setText(value), [id, value]);
-  const flush = () => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    const l = latest.current;
-    if (l.text !== l.value) l.onCommit(l.text);
-  };
-  useEffect(() => () => (timer.current ? flush() : undefined), [id]);
-  return (
-    <textarea
-      class="arch-note-input"
-      rows={rows}
-      maxLength={2000}
-      placeholder={placeholder}
-      value={text}
-      onInput={(e) => {
-        setText((e.target as HTMLTextAreaElement).value);
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(flush, 1000);
-      }}
-      onBlur={flush}
-    />
-  );
-}
 
 function Head({ icon, name, orig, locate, remove, title }: { icon: ComponentChildren; name: string; orig?: string; locate: () => void; remove: () => void; title: string }) {
   return (

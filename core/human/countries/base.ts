@@ -34,6 +34,8 @@ export function clearCountries(world: World) {
   delete world.small.countries;
   delete world.small.nextCountry;
   delete world.small.blocs;
+  // 第八十五轮：国家的档案（统治者、备注、大事）
+  delete world.small.archive;
   if (world.small.human) delete world.small.human.countryRules;
 }
 

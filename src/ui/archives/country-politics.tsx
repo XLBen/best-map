@@ -1,11 +1,12 @@
-import { categoryName, worldCultureGroups, worldCultures } from '../../../core/human';
+import { categoryName, currentRuler, worldCultureGroups, worldCultures } from '../../../core/human';
 import type { CountryMeta, World } from '../../../core/world';
 import { library } from '../../library';
-import { governmentChoices, governmentCommand, rulerPatch, titlePreview } from '../domain/countries';
+import { governmentChoices, governmentCommand, titlePreview } from '../domain/countries';
+import { ARCHIVE_TEXT } from '../copy';
 import { firstLine } from '../domain/human';
 import { LibraryLink } from '../shell/TypePicker';
-import { patch, run } from '../country-archive';
-import { Line, TextField } from './fields';
+import { countryTab, patch, run } from '../country-archive';
+import { Line } from './fields';
 
 // 国家档案的“政治”一页（第七十轮从 CountryArchive.tsx 按页分出来；派系在 CountryFactions.tsx）
 
@@ -86,18 +87,16 @@ export function CultureSection({ w, m }: { w: World; m: CountryMeta }) {
   );
 }
 
-export function RulerSection({ m }: { m: CountryMeta }) {
-  const r = m.ruler;
-  const set = (name: string, orig: string, title: string) => void patch(m.id, rulerPatch(m, name, orig, title));
+// 统治者（第八十五轮起是一份名单，在“历史”页）：这里只写现在的那一位，点了去“历史”
+export function RulerSection({ w, m }: { w: World; m: CountryMeta }) {
+  const r = currentRuler(w.small, m.id);
   return (
     <section>
-      <h5>统治者</h5>
-      <Line label="称号">
-        <TextField value={r.title ?? ''} maxLength={16} placeholder="国王、可汗……" onCommit={(v) => set(r.name, r.orig ?? '', v)} />
-      </Line>
-      <Line label="名字">
-        <TextField value={r.name} onCommit={(v) => set(v, r.orig ?? '', r.title ?? '')} />
-        <TextField class="arch-orig" value={r.orig ?? ''} maxLength={80} placeholder="原文" onCommit={(v) => set(r.name, v, r.title ?? '')} />
+      <h5>{ARCHIVE_TEXT.rulers}</h5>
+      <Line label={ARCHIVE_TEXT.current}>
+        <button class="link grow ellipsis" onClick={() => (countryTab.value = 'history')} title={ARCHIVE_TEXT.rulersHint}>
+          {r ? `${r.title ?? ''}${r.name}` : '—'}
+        </button>
       </Line>
     </section>
   );

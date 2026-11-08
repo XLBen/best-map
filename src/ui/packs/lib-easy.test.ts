@@ -105,7 +105,7 @@ describe('底下的“改了 N 项 · 重新生成”', () => {
     const need = regenNeed(e.world.small, t.base(), BUILTIN)!;
     expect(need.scopes).toEqual(['provinces', 'countries']);
     expect(need.count).toBe(2);
-    expect(need.what).toBe('会重做省份、国家、人口、城市；锁定的不动');
+    expect(need.what).toBe('会重做省份、国家、人口、城市；锁定的不动；手写的档案留着');
     expect(need.warn).toBe('手改过的省份、国家会被换掉');
     const cmd = regenCommand(need, e.world.small, BUILTIN) as Extract<Command, { op: 'batch' }>;
     expect(cmd.op).toBe('batch');
@@ -130,7 +130,7 @@ describe('底下的“改了 N 项 · 重新生成”', () => {
     editIn(e, t, 'era', { countryKm2: (era.countryKm2 ?? 1.6e6) / 8 }, 2);
     const need = regenNeed(e.world.small, t.base(), BUILTIN)!;
     expect(need.scopes).toEqual(['human', 'countries']);
-    expect(need.what).toBe('会重做人口、文化、国家、城市；锁定的不动');
+    expect(need.what).toBe('会重做人口、文化、国家、城市；锁定的不动；手写的档案留着');
     const cmd = regenCommand(need, e.world.small, BUILTIN);
     e.exec(cmd);
     e.update();

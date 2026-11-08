@@ -647,7 +647,8 @@ describe('导出', () => {
       expect(exportPartAvailable(w, part.id)).toBe(true);
       const got = exportPart(w, part.id, { width: 256, height: 128 });
       expect(Object.keys(got)).toEqual([...part.files]);
-      for (const f of part.files) if (!f.endsWith('.bmp') && f !== 'features.csv') expect(strFromU8(got[f])).toBe(strFromU8(files[f]));
+      // 第八十五轮的维基（wiki.zip）不在整合包里
+      for (const f of part.files) if (!f.endsWith('.bmp') && f !== 'features.csv' && f !== 'wiki.zip') expect(strFromU8(got[f])).toBe(strFromU8(files[f]));
     }
   });
 

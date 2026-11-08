@@ -10,7 +10,7 @@ import { ERA_PACKS, VALUE_ERAS } from '../packs/eras';
 const govIds = (era: { id: string }) => ERA_PACKS.get(era.id)!.governments;
 const facIds = (era: { id: string }) => ERA_PACKS.get(era.id)!.factions;
 import type { World } from '../world';
-import { countryFactions, countryList, titleContext } from './index';
+import { countryFactions, countryList, currentRuler, titleContext } from './index';
 import { type Culture, cultureTendency, weightedList } from './era';
 import { FLAG_EMBLEMS, FLAG_LAYOUTS } from './flags';
 import { CATEGORY_NAMES, type Government, type TitleContext, type Title, factionSchema, govTitles, governmentById, governmentSchema, titled } from './government';
@@ -299,7 +299,7 @@ describe('内置的政体与派系：每个时代生成国家', () => {
         const t = govTitles(g, titleContext(w, m));
         // 联邦的成员邦（第二十六轮）是地名 + 成员的称号，名字锁定
         if (!m.nameLocked) expect(m.name).toBe(titled(m.base, t.title).zh);
-        expect(m.ruler.title).toBe(t.ruler?.zh);
+        expect(currentRuler(w.small, m.id)?.title).toBe(t.ruler?.zh);
         expect(m.founded).toBeGreaterThanOrEqual(era.years![0]);
         expect(m.founded).toBeLessThanOrEqual(era.years![1]);
         const fs = countryFactions(w, m.id);

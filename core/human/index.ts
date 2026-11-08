@@ -314,6 +314,10 @@ export {
 export { SMALL_GAP } from './claims';
 export { SUBJECT_KINDS, type SubjectKind, type TierWeights } from './era';
 export { autoCapital, countryCells, type CountryPatch } from './country-edit';
+// 第八十五轮：国家的档案（统治者、家族、备注、大事）
+export { EMPTY_LORE, currentRuler, eventsOf, loreOf } from './archive-store';
+export { type DynastyGroup, type RulerRow, eraNow, reignText, rulersByDynasty } from './rulers';
+export { type TimelineRow, countryTimeline } from './events';
 export {
   type CountryLabel,
   type CountryStats,

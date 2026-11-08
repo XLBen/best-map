@@ -1,0 +1,106 @@
+/* 国家档案的统治者与家族、大事年表（第八十五轮，archives/country-rulers.tsx、country-timeline.tsx）。
+   抽屉窄（--sheet-w），一行一项：名字、标题是没有边框的框（点了就能改），年份是小框，展开的在下面缩进 */
+
+input.year-box {
+  flex: none;
+  width: 4.6em;
+  min-height: 24px;
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.lore-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--h-sm);
+  font-size: var(--fs-sm);
+}
+/* 名字、标题：平时像字，悬停、改的时候才有框 */
+.lore-line input.lore-name {
+  min-width: 0;
+  min-height: 24px;
+  padding: 0 var(--sp-1);
+  background: transparent;
+  border-color: transparent;
+  font-size: var(--fs-sm);
+}
+.lore-line input.lore-name:hover {
+  border-color: var(--line);
+}
+.lore-line input.lore-name:focus {
+  background: var(--field);
+  border-color: var(--accent-line);
+}
+.lore-title {
+  flex: none;
+}
+button.lore-more {
+  flex: none;
+  width: 24px;
+  min-height: 24px;
+}
+button.lore-more svg {
+  transition: transform 0.15s;
+}
+button.lore-more.on svg {
+  transform: rotate(180deg);
+}
+.lore-edit {
+  margin: 2px 0 var(--sp-2) var(--sp-3);
+}
+.lore-edit textarea.arch-note-input {
+  margin: var(--sp-1) 0;
+}
+.lore-actions {
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+}
+.lore-dynasty + .lore-dynasty {
+  margin-top: var(--sp-2);
+}
+.lore-dyn-head input.lore-name {
+  font-weight: 600;
+}
+div.lore-dyn-head.hint {
+  padding-left: var(--sp-1);
+}
+
+/* 年表：左边一条竖线，每一项一个点（建国是实心的大点，即位是空心的小点，大事是实心的小点） */
+ol.lore-tl {
+  margin: 0;
+  padding: 0 0 0 14px;
+  list-style: none;
+  border-left: 2px solid var(--line);
+  margin-left: 5px;
+}
+.lore-tl-row {
+  position: relative;
+}
+.lore-dot {
+  position: absolute;
+  left: -20px;
+  top: 11px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.lore-tl-row.founded .lore-dot {
+  left: -21px;
+  top: 10px;
+  width: 10px;
+  height: 10px;
+}
+.lore-tl-row.accession .lore-dot {
+  background: var(--surface);
+  border: 2px solid var(--muted);
+}
+.lore-fixed {
+  padding: 0 var(--sp-1);
+  color: var(--muted);
+}
+.lore-sub {
+  margin: -4px 0 2px calc(4.6em + var(--sp-2));
+}

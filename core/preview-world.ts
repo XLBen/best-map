@@ -1,5 +1,5 @@
 import type { GeoFeature } from './features';
-import { postedSmall } from './small-copy';
+import { withoutContent } from './small-copy';
 import type { Causes, Conflict, Derived, SmallState, World } from './world';
 
 // 预览世界：引擎在副本上执行一条命令之后，副本与当前世界的差别。只带内容变了的数组（主线程在当前世界上
@@ -133,5 +133,5 @@ export function previewWorldOf(base: World, p: PreviewPatch): World {
 // 发给主线程的差别（第四十七轮）：这一步没换内容时不带（结构化克隆 300 KB 上下，预览每一笔都发）。
 // 主线程只在手上的世界与算预览的世界是同一个状态时才用（见 state.ts 的 r.preview.stateId），补上自己手上的那一份
 export function postedPatch(live: World, p: PreviewPatch): PreviewPatch {
-  return p.small.content !== undefined && p.small.content === live.small.content ? { ...p, small: postedSmall(p.small), sameContent: true } : p;
+  return p.small.content !== undefined && p.small.content === live.small.content ? { ...p, small: withoutContent(p.small), sameContent: true } : p;
 }

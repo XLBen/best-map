@@ -5,6 +5,7 @@ import { continents, engineFor, humanExec } from '../testing/fixtures';
 import { defaultsOf, eraOf } from '../testing/eras';
 import type { World } from '../world';
 import { countryFaith } from './country-layers';
+import { currentRuler } from './archive-store';
 import { countryList, cultureContext } from './countries';
 import { governmentSchema, govAllowed, governmentById } from './government';
 
@@ -51,7 +52,7 @@ describe('政体限谁用', () => {
     for (const m of list) {
       const g = governmentById(w.small, m.government)!;
       expect(govAllowed(g, cultureContext(w, m.primaryCulture, eraOf(era))), `${where}: ${m.name} ${m.government} ${m.primaryCulture}`).toBe(true);
-      if (m.name.includes('苏丹') || m.ruler.title === '苏丹') expect(MUSLIM.has(countryFaith(w, m.id)?.id ?? ''), `${where}: ${m.name}`).toBe(true);
+      if (m.name.includes('苏丹') || currentRuler(w.small, m.id)?.title === '苏丹') expect(MUSLIM.has(countryFaith(w, m.id)?.id ?? ''), `${where}: ${m.name}`).toBe(true);
     }
   };
 

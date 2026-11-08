@@ -1,8 +1,9 @@
 import type { ComponentChildren } from 'preact';
 import { memo } from 'preact/compat';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { CountryMeta } from '../../../core/world';
 import { shareText } from '../domain/human';
+import { parseYear } from '../domain/country-lore';
 
 // 国家档案的几样小部件（第七十轮从 CountryArchive.tsx 分出来）：一行、离开框才提交的字、占比的一行、名字和原文；城市、集团的档案也用
 
@@ -133,5 +134,70 @@ export function NamePair({ name, orig, onCommit, placeholder = '空着恢复自�
         <input class="grow" value={o} maxLength={80} placeholder="原文" onInput={(e) => setO((e.target as HTMLInputElement).value)} onKeyDown={onKey} />
       </Line>
     </div>
+  );
+}
+
+// 一段长字：停下一秒、离开框时提交；换了一样之前没提交的写进原来那一样（第八十五轮从 SettleArchive.tsx 搬来，国家的备注、大事的备注也用）
+export function LongText({ id, value, placeholder, rows = 3, maxLength = 2000, onCommit }: { id: string; value: string; placeholder?: string; rows?: number; maxLength?: number; onCommit: (text: string) => void }) {
+  const [text, setText] = useState(value);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useRef({ text, value, onCommit });
+  latest.current = { text, value, onCommit };
+  useEffect(() => setText(value), [id, value]);
+  const flush = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    const l = latest.current;
+    if (l.text !== l.value) l.onCommit(l.text);
+  };
+  useEffect(() => () => (timer.current ? flush() : undefined), [id]);
+  return (
+    <textarea
+      class="arch-note-input"
+      rows={rows}
+      maxLength={maxLength}
+      placeholder={placeholder}
+      value={text}
+      onInput={(e) => {
+        setText((e.target as HTMLTextAreaElement).value);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(flush, 1000);
+      }}
+      onBlur={flush}
+    />
+  );
+}
+
+
+// 一个年份的小框（第八十五轮：名单、年表里）：“-500”“前 500”都认，离开框、回车时提交；空着时 onCommit(null)（allowEmpty 时：至今）；Esc 回到原来的
+export function YearBox({ value, onCommit, allowEmpty, placeholder, title }: { value: number | null; onCommit: (year: number | null) => void; allowEmpty?: boolean; placeholder?: string; title?: string }) {
+  const shown = value === null ? '' : value < 0 ? `前${-value}` : String(value);
+  const [v, setV] = useState(shown);
+  useEffect(() => setV(shown), [shown]);
+  const commit = () => {
+    if (v === shown) return;
+    if (!v.trim() && allowEmpty) return onCommit(null);
+    const y = parseYear(v);
+    if (y === null) setV(shown);
+    else onCommit(y);
+  };
+  return (
+    <input
+      class="year-box"
+      value={v}
+      placeholder={placeholder}
+      title={title}
+      inputMode="numeric"
+      maxLength={8}
+      onInput={(e) => setV((e.target as HTMLInputElement).value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          setV(shown);
+        }
+      }}
+      onBlur={commit}
+    />
   );
 }

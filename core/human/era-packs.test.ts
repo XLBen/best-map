@@ -38,6 +38,7 @@ const BUILTIN_RESOURCES_IDS = () => GENERAL_RESOURCES.map((r) => r.id);
 // 国家、集团、城市、道路、地标、省名（省名按住着的文化）跟着变，现代的地物名也是；没有国家的 nature、medieval-pop 和宜居度、地形类别、资源一项没变。
 // 第七十五轮重录：奇幻（种族王国）、科幻（殖民据点）的国家有意改了，这两种设置里人文的几项跟着变；古典、中世纪、近现代、现代只重录 countries：
 // 档案多了格局里的角色（role），核对过不写 role 时这四个时代的 14 项与原来的值逐个相同。
+// 第八十五轮只重录 countries（13 项）：档案去掉了 ruler，统治者是 small.archive 里的一份名单；别的一项没变（见 docs/dev/history/第85轮.md）
 // R29_RECORD=1 npx vitest run core/human/era-packs.test.ts（只在有意改变结果时）
 // 第七十七轮：生成的命令不再写权重、“分裂 ↔ 统一”、格局，human 只记组的 id、countryRules 只有种子，组带着库里的比重，没有格局。只重录 13 项的 human（人口、国家、城市、地名……一个没变）；核对过两边的世界只差这几样（见 docs/dev/history/第77轮.md）
 const record = !!process.env.R29_RECORD;

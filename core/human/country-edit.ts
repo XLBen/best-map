@@ -10,6 +10,8 @@ import { type Government, eraGovernments, govAllowed, govRestricted, governmentB
 import { SLOTS } from './groups';
 import { bestCapital } from './countries/capitals';
 import { COAST, LAKE, RIVER } from './rules';
+import { putLore, tidyArchive } from './archive-store';
+import { generateLore } from './rulers';
 
 // 改国家（第二十三轮，命令见 commands.ts）：画领土、新建、合并、拆分、改档案、删除、挪首都；改地形之后的修补；
 // 每次改完的整理（tidyCountries：首都丢了换一个、指向没了的国家的外交去掉）。都只看原因，执行、重放一样
@@ -102,6 +104,8 @@ export function tidyCountries(world: World) {
   }
   // 集团（第二十六轮）：去掉没了的成员、盟主不在了换一个、空的去掉
   tidyBlocs(world);
+  // 档案（第八十五轮）：没了的国家的统治者、备注去掉，大事里去掉它
+  tidyArchive(world);
 }
 
 // 画领土：这些格（只画陆地，湖面也算）归 id，null 是无主。返回改了的格数
@@ -191,7 +195,6 @@ export function newCountry(world: World, opts: NewCountryOpts): number {
     acceptedGroups: [culture.group],
     allies: [],
     rivals: [],
-    ruler: { name: '' },
     founded: foundedYear(worldEra(small), mulberry32(mixSeed(seed, hashString('country:year'), id))),
     history: '',
   };
@@ -204,6 +207,8 @@ export function newCountry(world: World, opts: NewCountryOpts): number {
     meta.nameLocked = true;
   }
   meta.history = `${yearText(meta.founded)}，${culture.name}建立${meta.name}。`;
+  // 第八十五轮：统治者、家族同生成的一样
+  putLore(world, id, generateLore(world, meta, seed, worldEra(small)));
   paintCountry(world, cells, id);
   const cap = autoCapital(world, cells);
   if (cap !== undefined) meta.capitalCell = cap;
@@ -226,6 +231,8 @@ export function mergeCountries(world: World, a: number, b: number) {
   }
   if (ma.overlord === a) delete ma.overlord;
   for (const g of mb.acceptedGroups) if (!ma.acceptedGroups.includes(g)) ma.acceptedGroups.push(g);
+  // 第八十五轮：b 的大事归 a（b 的统治者、备注跟着 b 去掉）
+  tidyArchive(world, new Map([[b, a]]));
   // 集团里的 b 换成 a（之后 tidyCountries 整理）
   mergeBlocMembers(world, a, b);
 }
@@ -328,7 +335,6 @@ export interface CountryPatch {
   subject?: SubjectKind | null;
   allies?: number[];
   rivals?: number[];
-  ruler?: { name: string; orig?: string; title?: string };
   founded?: number;
   history?: string;
   locked?: boolean;
@@ -446,10 +452,6 @@ export function setCountry(world: World, id: number, p: CountryPatch): string[] 
   if (p.rivals !== undefined) {
     relink('rivals', p.rivals);
     what.push('敌对');
-  }
-  if (p.ruler !== undefined) {
-    m.ruler = { name: p.ruler.name, ...(p.ruler.orig ? { orig: p.ruler.orig } : {}), ...(p.ruler.title ? { title: p.ruler.title } : {}) };
-    what.push('统治者');
   }
   if (p.founded !== undefined) {
     m.founded = p.founded;

@@ -7,26 +7,32 @@ import type { SmallState } from './world';
 //
 // JSON 里 content 的位置上留一个占位（0）：解析出来键的先后不变，写回去的世界文件、摘要逐字节相同。
 // 第五十四轮：人口群体（small.popGroups）也一样。也是整个换掉的（GroupTable.commit、compactGroups），世界加了几个变量后有上万个群体，
-// 每条命令序列化一遍就是几十毫秒
+// 每条命令序列化一遍就是几十毫秒。
+// 第八十五轮：国家的档案（small.archive：统治者、家族、备注、大事）也一样，改档案的命令整个换掉它（human/archive-store.ts）
 export type Content = NonNullable<SmallState['content']>;
 type PopGroups = NonNullable<SmallState['popGroups']>;
+type Archive = NonNullable<SmallState['archive']>;
 
 export interface SmallCopy {
   small: string;
   content?: Content;
   popGroups?: PopGroups;
+  archive?: Archive;
 }
 
-// 不带内容的小数据：content 的位置上是占位（键的先后不变）。发给主线程的也是它（见 src/content-post.ts）
-export const postedSmall = (small: SmallState): SmallState => (small.content === undefined ? small : { ...small, content: 0 as unknown as Content });
+// 不带内容的小数据：content 的位置上是占位（键的先后不变）
+export const withoutContent = (small: SmallState): SmallState => (small.content === undefined ? small : { ...small, content: 0 as unknown as Content });
+// 内容、档案都没换时发给主线程的：两样的位置上都是占位（见 src/content-post.ts：档案按对象比，没换时不发）
+export const postedSmall = (small: SmallState): SmallState => (small.archive === undefined ? withoutContent(small) : { ...withoutContent(small), archive: 0 as unknown as Archive });
 
-// 副本里 JSON 的部分：content、popGroups 的位置上是占位
+// 副本里 JSON 的部分：content、popGroups、archive 的位置上是占位
 const shared = (small: SmallState): SmallState => (small.popGroups === undefined ? postedSmall(small) : { ...postedSmall(small), popGroups: 0 as unknown as PopGroups });
 
 export function copySmall(small: SmallState): SmallCopy {
   const out: SmallCopy = { small: JSON.stringify(shared(small)) };
   if (small.content !== undefined) out.content = small.content;
   if (small.popGroups !== undefined) out.popGroups = small.popGroups;
+  if (small.archive !== undefined) out.archive = small.archive;
   return out;
 }
 
@@ -35,13 +41,15 @@ export function restoreSmall(copy: SmallCopy): SmallState {
   // 赋给已有的键，位置不变
   if (copy.content !== undefined) out.content = copy.content;
   if (copy.popGroups !== undefined) out.popGroups = copy.popGroups;
+  if (copy.archive !== undefined) out.archive = copy.archive;
   return out;
 }
 
-// 结构化克隆，内容照旧共用（预览的副本）
+// 结构化克隆，内容、档案照旧共用（预览的副本）
 export function cloneSmall(small: SmallState): SmallState {
   const out = structuredClone(postedSmall(small));
   if (small.content !== undefined) out.content = small.content;
+  if (small.archive !== undefined) out.archive = small.archive;
   return out;
 }
 
@@ -60,4 +68,5 @@ function sameJson(a: unknown, b: unknown, depth: number): boolean {
 }
 
 // 与副本一字不差吗（等于比两段完整的 JSON）：内容按 种类 ▸ 项 逐层比，只序列化换过的项
-export const sameAsCopy = (small: SmallState, copy: SmallCopy): boolean => JSON.stringify(shared(small)) === copy.small && sameJson(small.content, copy.content, 2) && sameJson(small.popGroups, copy.popGroups, 1);
+export const sameAsCopy = (small: SmallState, copy: SmallCopy): boolean =>
+  JSON.stringify(shared(small)) === copy.small && sameJson(small.content, copy.content, 2) && sameJson(small.popGroups, copy.popGroups, 1) && sameJson(small.archive, copy.archive, 2);

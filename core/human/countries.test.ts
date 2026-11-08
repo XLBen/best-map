@@ -18,6 +18,7 @@ import {
   countryLabels,
   countryList,
   countryMapColors,
+  currentRuler,
   flagSchema,
   flagSvg,
   governmentById,
@@ -88,9 +89,10 @@ function countryDigest(w: World): Record<string, string> {
 // 第七十四轮重录：中世纪多了集权帝国、游牧汗国，长国家时按时代的民族主义（0.2）
 // 第七十五轮重录 countries：档案多了格局里的角色（role：神圣帝国的成员、集权帝国……）；领土 country 没变，去掉 role 时与第七十四轮的值相同
 // 第八十四轮重录（人口在国家之前、首都挪到人口的重心、国界顺着山河，见 docs/dev/history/第84轮.md）
+// 第八十五轮只重录 countries：档案去掉了 ruler（统治者是 small.archive 里的一份名单）；领土 country 没变，去掉 ruler 时与第八十四轮的值相同（见 docs/dev/history/第85轮.md）
 const RECORDED = {
-  region: { country: '228da22d29dff23c', countries: 'b28e0ef8059befbc' },
-  planet: { country: 'f68b1bb9dc7e0f12', countries: '3ca813b05dff1f39' },
+  region: { country: '228da22d29dff23c', countries: 'f4e929c14d88ee7a' },
+  planet: { country: 'f68b1bb9dc7e0f12', countries: '8cc2da071147f8d3' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;
@@ -144,7 +146,8 @@ describe('生成国家', () => {
       expect(governmentById(w.small, m.government)).toBeDefined();
       const c = w.small.content!.culture![m.primaryCulture] as { group: string };
       expect(m.acceptedGroups[0]).toBe(c.group);
-      expect(m.ruler.name.length).toBeGreaterThan(0);
+      // 第八十五轮：统治者是一份名单，现在的是最后一位
+      expect(currentRuler(w.small, m.id)!.name.length).toBeGreaterThan(0);
       expect(m.founded).toBeGreaterThanOrEqual(MEDIEVAL.years![0]);
       expect(m.founded).toBeLessThanOrEqual(MEDIEVAL.years![1]);
       expect(m.history).toContain(m.name);
@@ -161,7 +164,7 @@ describe('生成国家', () => {
       if (m.nameLocked) continue;
       expect(m.name, m.government).toBe(t!.zh.includes('{name}') ? t!.zh.replace('{name}', m.base.zh) : m.base.zh + t!.zh);
       if (m.base.orig && t!.orig) expect(m.orig).toBe(t!.orig.replace('{name}', m.base.orig));
-      expect(m.ruler.title).toBe(ruler?.zh);
+      expect(currentRuler(w.small, m.id)!.title).toBe(ruler?.zh);
     }
   });
 
@@ -538,13 +541,15 @@ describe('改国家', () => {
     expect(countryFactions(w, m.id)[0].influence).toBe(0.7);
     eng.exec({ op: 'set_country', id: m.id, patch: { factions: null } });
     expect(countryFactions(w, m.id)).toEqual(auto);
-    eng.exec({ op: 'set_country', id: m.id, patch: { flag: { layout: 'cross', colors: ['#ffffff', '#cc0000'] }, color: '#123456', history: '一段历史', founded: 1200, ruler: { name: '某某', title: '公爵' } } });
+    eng.exec({ op: 'set_country', id: m.id, patch: { flag: { layout: 'cross', colors: ['#ffffff', '#cc0000'] }, color: '#123456', history: '一段历史', founded: 1200 } });
+    const last = currentRuler(w.small, m.id)!;
+    eng.exec({ op: 'set_ruler', id: m.id, ruler: last.id, patch: { name: '某某', title: '公爵' } });
     const mm = w.small.countries![m.id];
     expect(mm.flag.layout).toBe('cross');
     expect(mm.color).toBe('#123456');
     expect(mm.history).toBe('一段历史');
     expect(mm.founded).toBe(1200);
-    expect(mm.ruler).toEqual({ name: '某某', title: '公爵' });
+    expect(currentRuler(w.small, m.id)).toMatchObject({ name: '某某', title: '公爵' });
     const doc = eng.toDoc();
     expect(countryDigest(Engine.fromDoc(doc, w.mesh).world)).toEqual(countryDigest(w));
   });

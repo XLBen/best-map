@@ -77,6 +77,26 @@ describe('快照里的内容', () => {
     expect(lost.unpack(post(tx.pack(changed)))).toBe(true);
   });
 
+  it('国家的档案（第八十五轮）：同一个对象时不带，补上手上那一个；换了对象（内容一样也算）整份带上', () => {
+    const tx = new ContentSender(1);
+    const rx = new ContentHolder();
+    const content = { culture: {} };
+    const a = { countries: { 1: { rulers: [{ id: 1, name: '甲', from: 1 }], dynasties: [] } }, events: {}, nextEvent: 1 };
+    const live = (archive: object) => ({ ...small(content), archive }) as unknown as SmallState;
+    const first = post(tx.pack(live(a)));
+    expect(rx.unpack(first)).toBe(true);
+    const held = first.small.archive;
+    const second = post(tx.pack(live(a)));
+    expect(second.small.archive).toBe(0);
+    expect(second.sameSmall).toContain('archive');
+    expect(rx.unpack(second)).toBe(true);
+    expect(second.small.archive).toBe(held);
+    expect(JSON.stringify(second.small)).toBe(JSON.stringify(live(a)));
+    const third = post(tx.pack(live({ ...a })));
+    expect(third.small.archive).toEqual(a);
+    expect(rx.unpack(third)).toBe(true);
+  });
+
   it('世界没有内容：没有占位，也不算补不上', () => {
     const tx = new ContentSender(1);
     const rx = new ContentHolder();
