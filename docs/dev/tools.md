@@ -3,6 +3,7 @@
 ## 命令行
 - `generate.ts` 批量生成并导出；`hash.ts` 各层的哈希（核对 Node 与浏览器逐值一致）
 - `terrain-stats.ts` 地形统计；`preview-terrain.ts` 地形预览图；`realism.ts` + `realism-report.ts` 和地球比（`realism.test.ts` 是慢测试）
+- `human-realism.ts` 人文像不像（第八十四轮）：几个种子 × 六个时代 × {地区、星球}，首都离人口重心、荒漠里的城市、国界顺着大河 / 山脊、不连成片的国家、宗教成片、港口与海路（旧的提交上也能跑）
 
 ## 测速与对照（见 [性能](performance.md)）
 - `bench.ts` 加工各步的耗时（`--globe`、`--long`、`--pack fantasy`、`--hash`、`--library`：带着一整个时代库的世界，另计不重算的几步，第四十七轮；`--no-water`：新世界不带现实的水系，第五十七轮，和同一个提交带着的对照；`overlay-ab`、`compose-ab` 加 `--plain` 画没有河湖类型的世界；`--kept`：再生成人文，另计改人口、改国家、存文件，第五十轮），每种都在最后另计 `classRelief`、`classHeight`、`classOnly`（第五十八轮：抬山同样的笔画涂类别，21 次的中位数）；`bench-median.mjs` 跑几次取中位数，`--against <提交>` 与旧提交对照（把现在的 `bench.ts` 复制过去，所以 `--library` 在旧提交上也能跑）；基准存在 `bench-baseline/`。第七十九轮：`--era <id>` 让 `--library`、`--kept` 用这个时代的库（六个时代），`--kept` 另计重新生成国家 `regenCountries`；`bench-median.mjs` 的 `--head <提交>` 新的一边也检出（量的时候可以接着改代码），`--script <文件>` 跑别的测速脚本（如 `bench-layers.ts`）
