@@ -11,13 +11,16 @@
 ## 地形
 - `generate.ts` 随机世界：地壳高度、板块、火山锥；裂开漂移的大陆块、三角形半岛、地峡（第三十五轮）。第八十三轮拆开（照旧全部导出）：`generate-model.ts` 设置、类型的参数与模型的类型，`generate-rifts.ts` 裂开的大陆块与地峡，`generate-sample.ts` 每格的取样（大陆场、板块边界）
 - `outline.ts` 大陆轮廓的式子与常数（切口、大陆架、洋中脊、地峡、半岛；地区与星球共用）
-- `relief.ts` 大格局（第三十二轮）：板块栅格与距离变换、基准面、高原、洼地
+- `relief.ts` 大格局（第三十二轮）：板块栅格与距离变换、基准面、高原、洼地；第八十六轮：大陆倾斜的衰减长度 0.35（`RELIEF_TUNING`）
 - `planet-gen.ts` 整个星球的生成器（球面板块、大陆块、热点岛链）；`planet-form.ts` 星球形态的格式。第八十三轮拆开：`planet-gen-model.ts`（布局坐标 `LAYOUT_R`、类型、向量小工具）、`planet-gen-rifts.ts`、`planet-gen-sample.ts`（每格的取样）、`planet-gen-crust.ts`（形态的地形脚本）
-- `terrain.ts` 组合地形（`resolveTerrain`）、空闲预热的分段采样，照旧导出下面几个（第八十三轮拆出）：`terrain-coast.ts` 海岸噪声、潟湖、填海块（`fillSeaPockets`）、小洼地的湖；`terrain-brush.ts` 画陆地 / 画海、打碎、抬升的画笔；`islands.ts` 放岛、碎岛；`island-chains.ts` 湖里的岛、岛链、`placeIsland`、`combineStamps`
+- `terrain.ts` 组合地形（`resolveTerrain`；第八十六轮：造山带的抬升往中间集中 `beltCore` / `BELT`）、空闲预热的分段采样，照旧导出下面几个（第八十三轮拆出）：`terrain-coast.ts` 海岸噪声、潟湖、填海块（`fillSeaPockets`）、小洼地的湖；`terrain-brush.ts` 画陆地 / 画海、打碎、抬升的画笔；`islands.ts` 放岛、碎岛；`island-chains.ts` 湖里的岛、岛链、`placeIsland`、`combineStamps`
 - `island-types.ts` 岛的种类与编号（`causes.islandType`、`LAGOON_BIT`）、省份按格分陆海（`provinceLand`、`landProvinceCells`、`landPixelCells`）
 - `elevation.ts` 高程的入口与按陆块的记忆（`fromMemo`）；第八十三轮拆开（照旧全部导出）：`elevation-solve.ts` 抬升-侵蚀稳态的求解、迎风坡、洼地，`seafloor.ts` / `seafloor-coast.ts` 海底（`seafloor`）与它用的岸边属性，`elevation-lakes.ts` 湖底（`lakeBedShape`）、画的湖、只挖河床（`carveBeds`）
 - `plains.ts` 冲积平原、冲积扇、三角洲平原（第三十三轮）
-- `glacial.ts` 冰川刻蚀与冰川湖群（第三十四轮）
+- `glacial.ts` 冰川刻蚀与冰川湖群（第三十四轮）；第八十六轮：冰盖按现在的纬度、冷暖笔刷、太阳（`iceStrength` → `derived.ice`，每格超过冰盖南界多少度），在流水线里按米挖（`scourTerrain`，求解之后、气候按没挖的地形）；`glacial-legacy.ts` 第八十五轮在求解里挖的写法（测试退回旧地形用）
+- `elevation-precip.ts` 求解用的降水代理（第八十六轮）：纬度带 × 顺着盛行风走过的陆路 × 雨影（按东西坐标顺风扫），流量按它加权（`wetWeights`），干的内陆多出平底的洼地；`precipOn` 测试用的开关
+- `sea-ice.ts` 海冰（第八十六轮）：按两个半年与全年的海面气温，冬天的范围与多年冰（`seaIceAt`，只是画法）
+- `reefs.ts` 珊瑚礁（第八十六轮）：暖、浅、离大河口远的海格的强度（`reefStrength`，写进岩性层的白沙，只是画法）
 - `routing.ts` 汇流路由（Priority-Flood + 最陡下降）；`heap.ts` 类型化数组的堆
 - `stats.ts` 地形统计量与和地球比（`tools/terrain-stats.ts`、`tools/realism-report.ts` 用）
 
@@ -62,7 +65,7 @@
 - `world.ts` 世界的数据（原因、推导、小数据 `SmallState`、各种 schema）；`world-token.ts` 一个世界全部数组的“这一批”编号（`arraysToken`，第八十轮：主线程上数组没变时相同；城市表、城市地标的列表、国家的统计按它当键）
 - `commands.ts` 命令的入口：`applyCommand`（校验、撤销记录、内容的增减）、`revert`、`runOp`；照旧导出 `Command`、`Dirty`……
 - `commands/` 第四十一轮从 commands.ts 拆出来：`schema.ts` 命令的格式（`baseCommands` 的先后不要调换）、`shared.ts` 共用的（`Dirty`、`UndoRecord`、`ApplyContext`、`RunResult`）、每类一个 `runXxxOp`：`terrain.ts`、`nature.ts`（生态、约束、画的河、河湖岛的种类、场）、`provinces.ts`、`features.ts`（地名、片区、内容、风格、画风）、`human.ts`、`settlements.ts`、`archive.ts`（第八十五轮：国家的备注、统治者、家族、大事）
-- `engine.ts` 历史、撤销缓存、预览、检查点、空闲预热（`warmSteps`）、`fixLakeProvinces`；第八十三轮拆出：`engine-recompute.ts` 按标记重算的流水线（`recomputeDerived`、`passStats`），`engine-types.ts` 世界文件、检查点、预览结果的类型，`engine-helpers.ts` 预览的差异、复制世界
+- `engine.ts` 历史、撤销缓存、预览、检查点、空闲预热（`warmSteps`）、`fixLakeProvinces`；第八十三轮拆出：`engine-recompute.ts` 按标记重算的流水线（`recomputeDerived`、`passStats`；第八十六轮：气候这一层更新冰盖 `derived.ice`，推导的高程 = 地形挖冰川（`elevation.ts` 的 `glacialTerrain`）再挖河床），`engine-types.ts` 世界文件、检查点、预览结果的类型，`engine-helpers.ts` 预览的差异、复制世界
 - `small-copy.ts` 小数据的副本（第四十七轮）：内容（`small.content`，不可变）按引用共用，别的是一段 JSON；撤销记录、比较、预览的克隆都用它第五十四轮：人口群体（`small.popGroups`）也按引用共用。第八十五轮：国家的档案（`small.archive`）也是，`postedSmall` 占位内容和档案，`withoutContent` 只占位内容（预览、快照里内容没换时）。
 - `preview-world.ts` 预览世界（只带变了的数组；`postedPatch`：内容没换时不发）；`doc-version.ts` 世界文件的版本（`DOC_VERSION`）与打开前的检查
 - `rng.ts` 随机数与噪声（按位置取，与格数无关）；`digest.ts` 64 位哈希；`errors.ts`、`type-id.ts`、`world-types.ts` 为避免循环引用拆出来的小文件
@@ -92,5 +95,6 @@
 
 ## 测试用
 - `testing/fixtures.ts` 共用的世界模板与 `snapshot(key, build)`（建一次，每个测试拿副本）；`withoutHeights`、`plainEngine`（第五十五轮之前的生态，比算法和旧代码相同的测试用）；第七十七轮去掉的参数换成库里的规则：`humanExec` / `generateHuman` 收带比重的组（`TestGroup`，比重写进世界里的组）和改时代的 `era`，`fragKm2`（以前的“分裂 ↔ 统一”换成时代的国家大小）、`OLD_LAYOUTS`（以前的四种格局）、`eraCommand` / `setEra`；第七十八轮：以前 generate_provinces 的规则换成改世界里的省份划分（`provinceRulesCommand` / `setProvinceRules`、先改再划分的 `divideProvinces`，以前的小 · 中 · 大是 `OLD_SIZES`）；`testing/eras.ts` 按时代查内置内容
+- `testing/round85.ts` 把生成的地形退回第八十五轮（`useRound85Terrain`：降水代理、山带集中、倾斜的长度、冰川的挖法几个开关，测试的新世界不加红树林；`withoutIce`），查工具、画河、求解这些逻辑、在旧地形上找好了地方的测试用（第八十六轮）
 - `testing/class-only.ts` 只改类别的一串命令的摘要（第五十八轮，和 f01e102 记下的 `human/class-only-digests.json` 对照；不要改它）
 - `golden-full.json`、`golden-hashes.json`、`r31-digests.json`、`human/r29-digests.json` 金标准与摘要：不要重录（见 [测试](tests.md)）
