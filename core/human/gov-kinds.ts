@@ -23,15 +23,15 @@ const ONLY_FIELDS: readonly FieldDesc[] = NAME_RULE_FIELDS.filter((f) => f.key !
 const GOV_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
-  { key: 'category', label: '类别', type: 'tags', ref: 'govCategory', hint: 'monarchy、republic、theocracy、tribal、empire……' },
+  { key: 'category', label: '类别', type: 'tags', ref: 'govCategory', hint: 'monarchy、republic……' },
   { key: 'factions', label: '有哪些派系', type: 'tags', optional: true, ref: 'faction', dep: 'auto', hint: '只选有哪些，比重在国家档案里' },
   { key: 'color', label: '颜色', type: 'color', optional: true },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'titles', label: '国家称号', type: 'title', keyRef: 'countryTier', dep: 'strip', hint: '按国家的等级（没写的等级用最近的一级）；只写一种时各等级都用它' },
+  { key: 'titles', label: '国家称号', type: 'title', keyRef: 'countryTier', dep: 'strip', hint: '按等级；没写的用最近的一级' },
   { key: 'rulers', label: '统治者称号', type: 'title', optional: true, keyRef: 'countryTier', dep: 'strip', hint: '写法同国家称号' },
-  { key: 'names', label: '换说法', type: 'list', optional: true, of: NAME_RULE_FIELDS, dep: 'strip', hint: '按文化组、宗教……换称号；第一条满足的起作用' },
-  { key: 'only', label: '限谁用', type: 'list', optional: true, of: ONLY_FIELDS, dep: 'gate', hint: '满足其中一条的国家才能用（伊克塔只给穆斯林）；不写时谁都能用' },
-  { key: 'weight', label: '多见', type: 'number', optional: true, min: 0, max: 100, step: 0.1, hint: '省略为 1' },
+  { key: 'names', label: '换说法', type: 'list', optional: true, of: NAME_RULE_FIELDS, dep: 'strip', hint: '按文化、宗教换；第一条起作用' },
+  { key: 'only', label: '限谁用', type: 'list', optional: true, of: ONLY_FIELDS, dep: 'gate', hint: '满足一条才能用；空着谁都能用' },
+  { key: 'weight', label: '多少', type: 'number', optional: true, min: 0, max: 100, step: 0.1, hint: '省略为 1' },
   { key: 'size', label: '国土', type: 'number', min: 0.05, max: 10, step: 0.05, hint: '1 是平均' },
   { key: 'expansion', label: '扩张性', type: 'number', min: 0, max: 1, step: 0.05, hint: '越大越多吞进异族的地方' },
   { key: 'coastal', label: '偏海岸', type: 'number', min: 0, max: 1, step: 0.05 },
@@ -44,8 +44,8 @@ const GOV_FIELDS: readonly FieldDesc[] = [
 ];
 
 const DRIVER_FIELDS: readonly FieldDesc[] = [
-  { key: 'weight', label: '权重', type: 'number', min: -10, max: 10, step: 0.1, hint: '这部分人的比例乘以它' },
-  { key: 'dimension', label: '维度', type: 'text', optional: true, ref: 'dimension' },
+  { key: 'weight', label: '倍数', type: 'number', min: -10, max: 10, step: 0.1, hint: '这部分人的比例乘以它' },
+  { key: 'dimension', label: '变量', type: 'text', optional: true, ref: 'dimension' },
   { key: 'value', label: '取值', type: 'text', optional: true, ref: 'popValue' },
   { key: 'culture', label: '文化', type: 'text', optional: true, ref: 'culture' },
   { key: 'cultureGroup', label: '文化组', type: 'text', optional: true, ref: 'cultureGroup' },
@@ -71,7 +71,7 @@ const FACTION_FIELDS: readonly FieldDesc[] = [
   { key: 'name', label: '名字', type: 'text' },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'amount', label: '基础分量', type: 'number', min: 0, max: 10, step: 0.05, hint: '不算人口时有多大，和别的派系比' },
+  { key: 'amount', label: '多少', type: 'number', min: 0, max: 10, step: 0.05, hint: '不算人口时占多少' },
   { key: 'drivers', label: '来自人口', type: 'list', optional: true, of: DRIVER_FIELDS, dep: 'strip', hint: '这部分人越多，影响力越大' },
 ];
 

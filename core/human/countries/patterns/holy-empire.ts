@@ -22,7 +22,7 @@ export const holyEmpire: PatternModule = {
   amountHint: '几片；小数是再多一片的可能',
   tip: '像中世纪的神圣罗马帝国：一片地方诸侯林立，名义上是一个帝国',
   roles: { 'holy-empire': '神圣帝国的成员' },
-  params: [...MEMBER_PARAMS(6, 14), { key: 'memberShare', label: '占国家的几成', min: 0, max: 1, step: 0.05, default: 0.3, hint: '诸侯的个数大约是国家总数的几成（再按上面两项夹住）' }],
+  params: [...MEMBER_PARAMS(6, 14), { key: 'memberShare', label: '占国家的几成', min: 0, max: 1, step: 0.05, default: 0.3, hint: '诸侯约占国家总数的几成' }],
 
   // 圈出那一片、放诸侯的起点；占用总个数里的几个
   reserve(g, use) {

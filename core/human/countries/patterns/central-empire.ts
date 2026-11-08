@@ -20,8 +20,8 @@ export const centralEmpire: PatternModule = {
   tip: '像中世纪的中国、拜占庭：一个文化的腹地里一个没有诸侯的大国',
   roles: { 'central-empire': '集权帝国' },
   params: [
-    { key: 'size', label: '多大', min: 0.5, max: 20, step: 0.5, default: 6, hint: '面积预算是几个平均的国家（不超过能住人的地方的三成；至少比别的国家大两成五）' },
-    { key: 'pace', label: '长得多快', min: 0, max: 1, step: 0.05, default: 0.4, hint: '往外长时每一步的代价少几成（集权的大国推进得快）' },
+    { key: 'size', label: '多大', min: 0.5, max: 20, step: 0.5, default: 6, hint: '是几个平均的国家大' },
+    { key: 'pace', label: '长得多快', min: 0, max: 1, step: 0.05, default: 0.4, hint: '往外长时代价少几成' },
   ],
 
   reserve(g, use) {

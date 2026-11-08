@@ -26,7 +26,7 @@ export const nationState: PatternModule = {
   params: [
     { key: 'unify', label: '并成一国', min: 0, max: 1, step: 0.05, default: 0.3, hint: '一个文化组并成一国的可能' },
     { key: 'split', label: '一族一国', min: 0, max: 1, step: 0.05, default: 0.35, hint: '一个文化组按文化分成一族一国的可能' },
-    { key: 'maxSize', label: '并成的国最大', min: 1, max: 40, step: 1, default: 12, hint: '并成的一国最多几个平均的国家大；更大的一片照旧' },
+    { key: 'maxSize', label: '并成的国最大', min: 1, max: 40, step: 1, default: 12, hint: '并成的一国最多几倍大' },
   ],
 
   after(g, use) {

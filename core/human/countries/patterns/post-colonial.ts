@@ -15,7 +15,7 @@ export const postColonial: PatternModule = {
   amountHint: '几块陆地（从大到小）；小数是再多一块的可能',
   tip: '现代：殖民者在地图上画的直线国界，一国里住着好几个民族',
   roles: { 'post-colonial': '前殖民地国家' },
-  params: [{ key: 'homes', label: '几块本土', min: 1, max: 2, step: 1, default: 1, hint: '能住人的分量最大的一块或两块陆地是本土（第二块不到第一块的三成时只算一块），不画直线' }],
+  params: [{ key: 'homes', label: '几块本土', min: 1, max: 2, step: 1, default: 1, hint: '最大的一两块陆地是本土' }],
 
   after(g, use) {
     if (!(use.amount > 0)) return;

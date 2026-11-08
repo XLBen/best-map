@@ -114,8 +114,8 @@ export const outposts: PatternModule = {
   roles: { [OUTPOSTS]: '殖民据点' },
   params: [
     { key: 'spot', label: '每个多大', min: 0.05, max: 2, step: 0.05, default: 0.2, hint: '一个据点是几个平均的国家大' },
-    { key: 'powers', label: '几个宗主', min: 1, max: 8, step: 1, default: 3, hint: '本族（能住人的地方最多的文化组）里最大的几国分据点' },
-    { key: 'company', label: '公司的几成', min: 0, max: 1, step: 0.05, default: 0.6, hint: '据点有几成是公司领地；别的是殖民政府的据点' },
+    { key: 'powers', label: '几个宗主', min: 1, max: 8, step: 1, default: 3, hint: '本族最大的几国分据点' },
+    { key: 'company', label: '公司的几成', min: 0, max: 1, step: 0.05, default: 0.6, hint: '据点几成是公司领地' },
   ],
 
   reserve(g, use) {

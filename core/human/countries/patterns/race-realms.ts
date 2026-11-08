@@ -304,11 +304,11 @@ export const raceRealms: PatternModule = {
   roles: { [ROLE_FOREST]: '古林王国', [ROLE_HOLD]: '山中要塞同盟的成员', [ROLE_HORDE]: '荒原部落联盟的成员' },
   params: [
     ...MEMBER_PARAMS(3, 6),
-    { key: 'memberShare', label: '占国家的几成', min: 0, max: 1, step: 0.05, default: 0.15, hint: '一片里小国的个数大约是国家总数的几成（再按上面两项夹住）' },
+    { key: 'memberShare', label: '占国家的几成', min: 0, max: 1, step: 0.05, default: 0.15, hint: '小国约占国家总数的几成' },
     { key: 'memberSize', label: '每国多大', min: 0.1, max: 3, step: 0.05, default: 0.25, hint: '要塞、部落每个是几个平均的国家大' },
-    { key: 'forest', label: '守着古林', min: 0, max: 1, step: 0.05, default: 0.6, hint: '古林里的种族的国家出了森林走多远：0 和别的国家一样，1 只占森林' },
-    { key: 'plains', label: '守着平原', min: 0, max: 1, step: 0.05, default: 0.5, hint: '平原上的种族的国家进别的种族喜欢的地方（精灵的森林、矮人的山、兽人的荒原）多难、在平原和海岸上长得多快；0 和别的国家一样' },
-    { key: 'strong', label: '偏爱多强才算', min: 1, max: 5, step: 0.1, default: 1.8, hint: '种族“喜欢的地方”的倍数到这么大，才按它喜欢的地方立国；小的照平原上的王国' },
+    { key: 'forest', label: '守着古林', min: 0, max: 1, step: 0.05, default: 0.6, hint: '1 只占森林；0 不管' },
+    { key: 'plains', label: '守着平原', min: 0, max: 1, step: 0.05, default: 0.5, hint: '越大越守着平原；0 不管' },
+    { key: 'strong', label: '偏爱多强才算', min: 1, max: 5, step: 0.1, default: 1.8, hint: '偏爱到这么强才按它立国' },
   ],
 
   reserve(g, use) {

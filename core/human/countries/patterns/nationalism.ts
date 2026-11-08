@@ -13,8 +13,8 @@ export const nationalism: PatternModule = {
   tip: '时代没列也起作用；强弱看时代的“文化的倒向”，这里调谁在乎、在乎多少',
   fallback: 1,
   params: [
-    { key: 'sameGroup', label: '同组文化的阻力', min: 0, max: 10, step: 0.1, default: 0.8, hint: '进同一个文化组里别的文化的地方，代价 ×（1 + 这个数 × 民族主义）' },
-    { key: 'otherGroup', label: '别组文化的阻力', min: 0, max: 20, step: 0.1, default: 3, hint: '进别的文化组的地方，代价 ×（1 + 这个数 × 民族主义）' },
+    { key: 'sameGroup', label: '同组文化的阻力', min: 0, max: 10, step: 0.1, default: 0.8, hint: '进同组别的文化的代价' },
+    { key: 'otherGroup', label: '别组文化的阻力', min: 0, max: 20, step: 0.1, default: 3, hint: '进别的文化组的代价' },
     { key: 'care', label: '在乎的几成', min: 0, max: 1, step: 0.05, default: 0.7, hint: '每个国家在乎民族的可能' },
   ],
 

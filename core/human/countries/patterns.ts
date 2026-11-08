@@ -32,7 +32,7 @@ export interface PatternParam {
 
 // 几个成员的两个滑块（神圣帝国、城邦群共用这两个键，范围要一样；默认各自的）
 export const MEMBER_PARAMS = (min: number, max: number): PatternParam[] => [
-  { key: 'minMembers', label: '最少几个', min: 2, max: 30, step: 1, default: min, hint: '一片里最少撒几个国家（地方或国家不够时整片不要）' },
+  { key: 'minMembers', label: '最少几个', min: 2, max: 30, step: 1, default: min, hint: '不够时整片不要' },
   { key: 'maxMembers', label: '最多几个', min: 2, max: 30, step: 1, default: max, hint: '一片里最多撒几个国家' },
 ];
 

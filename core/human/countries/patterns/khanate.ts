@@ -27,8 +27,8 @@ export const khanate: PatternModule = {
   tip: '像中世纪的蒙古：草原、荒漠上一个很大的游牧国家',
   roles: { 'khanate': '游牧汗国' },
   params: [
-    { key: 'size', label: '多大', min: 0.5, max: 20, step: 0.5, default: 5, hint: '面积预算是几个平均的国家（不超过能住人的地方的两成）' },
-    { key: 'steppe', label: '守着草原', min: 0, max: 1, step: 0.05, default: 0.7, hint: '进草原、荒漠多容易、进别处多难；0 和别的国家一样' },
+    { key: 'size', label: '多大', min: 0.5, max: 20, step: 0.5, default: 5, hint: '是几个平均的国家大' },
+    { key: 'steppe', label: '守着草原', min: 0, max: 1, step: 0.05, default: 0.7, hint: '越大越守着草原；0 不管' },
   ],
 
   reserve(g, use) {

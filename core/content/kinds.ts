@@ -6,7 +6,7 @@ import { type NameStyle, nameStyleSchema, sampleNames, styleInUse, styleNotes, s
 import { type PlanetForm, planetFormSchema } from '../planet-form';
 import { DEFAULT_LOOK, type MapStyle, mapStyleSchema, worldMapStyles } from '../map-style';
 import { RIVER_STYLES, RIVER_STYLE_LABEL, type RiverType, riverTypeSchema, riverTypesOf } from '../river-types';
-import { HEIGHT_MARGIN, HEIGHT_MAX, PATTERNS, PATTERN_LABEL, type Species, elevationAsHeight, speciesSchema } from '../species';
+import { HEIGHT_MAX, PATTERNS, PATTERN_LABEL, type Species, elevationAsHeight, speciesSchema } from '../species';
 import { type LakeWhenKey, LAKE_WHEN_KEYS, WHEN_KEYS, WHEN_RANGE } from '../water-types';
 import { CommandError } from '../errors';
 import { BIOME_TERRAINS } from '../export-terrain';
@@ -79,7 +79,7 @@ const WATER_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
   { key: 'color', label: '颜色', type: 'color' },
-  { key: 'atlasColor', label: '另一种颜色', type: 'color', optional: true, hint: '画风选了“另一种颜色”时用（地图册）；空着时同颜色' },
+  { key: 'atlasColor', label: '另一种颜色', type: 'color', optional: true, hint: '地图册画风用；空着同颜色' },
   { key: 'natural', label: '自然生成', type: 'bool', optional: true, default: true },
   { key: 'biomes', label: '只在这些生态里', type: 'tags', optional: true, ref: 'biome', dep: 'auto' },
   whenField(WHEN_KEYS),
@@ -136,11 +136,11 @@ registerKind<Species>({
     { key: 'color', label: '颜色', type: 'color' },
     // 第七十一轮：以前叫“地形类别”，和地形类别那一层（平原、丘陵……）撞名；选项写中文，存的是 id
     { key: 'terrain', label: '导出用的地形', type: 'enum', options: BIOME_TERRAINS.map((t) => ({ value: t.id, label: t.label })), hint: '导出的地形图按它着色' },
-    { key: 'competition', label: '强势程度', type: 'number', min: 0, max: 100, step: 0.5 },
+    { key: 'competition', label: '强弱', type: 'number', min: 0, max: 100, step: 0.5, hint: '都能长时强的占上风' },
     { key: 'natural', label: '自然生成', type: 'bool', optional: true, default: true },
     { key: 'habitability', label: '宜居度', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '0–1；空着时按气候估' },
-    { key: 'movement', label: '通行难度', type: 'number', optional: true, min: 0.1, max: 20, step: 0.05, hint: '乘在地形类别的起伏上；平地的草原为 1，空着时按生态估' },
-    { key: 'height', label: '高度范围', type: 'range', optional: true, min: 0, max: HEIGHT_MAX, step: 100, hint: `海拔，米；超出后 ${HEIGHT_MARGIN} m 内慢慢长不了。空着时不看高度` },
+    { key: 'movement', label: '通行难度', type: 'number', optional: true, min: 0.1, max: 20, step: 0.05, hint: '草原为 1；空着时按生态估' },
+    { key: 'height', label: '高度范围', type: 'range', optional: true, min: 0, max: HEIGHT_MAX, step: 100, unit: 'm', hint: '海拔；空着时不看高度' },
     { key: 'plainRiver', label: '允许普通河', type: 'bool', optional: true },
     { key: 'plainLake', label: '允许普通湖', type: 'bool', optional: true },
     {
@@ -148,7 +148,7 @@ registerKind<Species>({
       label: '水系不允许时',
       type: 'enum',
       optional: true,
-      hint: '断流：河在这里消失，下游的河可能变小或消失',
+      hint: '断流：河在这里消失',
       options: [
         { value: 'swap', label: '换类型' },
         { value: 'stop', label: '断流' },
@@ -158,7 +158,7 @@ registerKind<Species>({
       key: 'tolerances',
       label: '更精细的条件',
       type: 'list',
-      hint: '最适合的范围在“偏低”到“偏高”之间，到“最低”“最高”降到 0',
+      hint: '偏低到偏高最好，到两头降到 0',
       of: [
         { key: 'field', label: '条件', type: 'text', ref: 'tolerance' },
         { key: 'min', label: '最低', type: 'number' },
@@ -336,7 +336,7 @@ registerKind<IslandType>({
     { key: 'name', label: '名字', type: 'text' },
     { key: 'shape', label: '形状', type: 'enum', options: ISLAND_SHAPES.map((s) => ({ value: s, label: s })) },
     { key: 'height', label: '高低', type: 'enum', options: ISLAND_HEIGHTS.map((s) => ({ value: s, label: s })) },
-    { key: 'color', label: '颜色', type: 'text', optional: true, hint: `#rrggbb 或 ${ISLAND_LOOKS.join('、')}` },
+    { key: 'color', label: '颜色', type: 'text', optional: true, hint: `#rrggbb、${ISLAND_LOOKS.join('、')}` },
     { key: 'rock', label: '岩石', type: 'number', optional: true },
     { key: 'province', label: '归哪种省', type: 'enum', options: [{ value: 'land', label: '陆地' }, { value: 'sea', label: '海省' }] },
     NAMES_FIELD,
@@ -453,8 +453,8 @@ const PATTERN_FIELDS: readonly FieldDesc[] = [
   { key: 'w', label: '权重', type: 'number', optional: true, min: 0.01 },
 ];
 const PHONETIC_PATTERN_FIELDS: readonly FieldDesc[] = [
-  { key: 'p', label: '原文', type: 'text', hint: '{root} 是词根，{表名} 换成词表里的一项' },
-  { key: 'zh', label: '中文', type: 'text', optional: true, hint: '{name} 是整个原文的音译；省略时整个音译' },
+  { key: 'p', label: '外文写法', type: 'text', hint: '{root} 是词根，{表名} 换成词' },
+  { key: 'zh', label: '中文', type: 'text', optional: true, hint: '{name} 是音译；空着整个音译' },
   { key: 'w', label: '权重', type: 'number', optional: true, min: 0.01 },
 ];
 
@@ -570,7 +570,7 @@ registerHumanKinds();
 
 const TIERS = { key: 'sea', is: 'tiers' } as const;
 const TINTED = { key: 'landShade', is: 'tinted' } as const;
-const STYLE_HINT = '#rrggbb，或 rgb(r, g, b)、rgba(r, g, b, a)';
+const STYLE_HINT = '#rrggbb、rgb()、rgba()';
 const withDefaults = (fields: FieldDesc[]): FieldDesc[] => fields.map((f) => (f.key in DEFAULT_LOOK ? { ...f, default: DEFAULT_LOOK[f.key as keyof typeof DEFAULT_LOOK] } : f));
 
 registerKind<MapStyle>({
@@ -600,10 +600,10 @@ registerKind<MapStyle>({
         { value: 'plain', label: '平常' },
         { value: 'tinted', label: '着色' },
       ],
-      hint: '平常：按“晕渲”明暗；着色：暗处、亮处各乘一种颜色',
+      hint: '着色：暗处、亮处各乘一种颜色',
     },
     { key: 'shadeDark', label: '山影的暗色', type: 'color', when: TINTED },
-    { key: 'shadeLight', label: '山影的亮色', type: 'color', when: TINTED, hint: '可以超过 255（rgb 里写，最多 510），亮处更亮' },
+    { key: 'shadeLight', label: '山影的亮色', type: 'color', when: TINTED, hint: 'rgb 里可写到 510，亮处更亮' },
     {
       key: 'sea',
       label: '海',

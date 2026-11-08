@@ -19,10 +19,10 @@ const CLASS_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
   { key: 'color', label: '颜色', type: 'color' },
-  { key: 'exportColor', label: '导出的颜色', type: 'color', optional: true, hint: 'terrain_class.bmp 用；省略时同颜色' },
+  { key: 'exportColor', label: '导出的颜色', type: 'color', optional: true, hint: '导出的类别图用；空着同颜色' },
   { key: 'terrain', label: '游戏里的地形', type: 'text', optional: true, hint: '导出给游戏时对应的地形名' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'height', label: '典型高度', type: 'number', optional: true, min: 0, max: 9000, step: 50, unit: ' m', hint: 'm；涂这一类时地面升降到它，空着只改类别' },
+  { key: 'height', label: '典型高度', type: 'number', optional: true, min: 0, max: 9000, step: 50, unit: 'm', hint: '涂它时地面升降到这里' },
   { key: 'priority', label: '优先级', type: 'number', min: -1000, max: 1000, step: 1, hint: '几种都满足时大的优先' },
   { key: 'rules', label: '自动规则', type: 'list', of: RULE_FIELDS, dep: 'gate', hint: '满足任何一条就是这一类' },
   { key: 'fallback', label: '兜底', type: 'bool', optional: true, hint: '别的规则都不满足时用它' },
@@ -40,9 +40,9 @@ const RESOURCE_FIELDS: readonly FieldDesc[] = [
   { key: 'category', label: '类别', type: 'enum', options: RESOURCE_CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABEL[c] })) },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'rules', label: '长在哪里', type: 'list', of: RESOURCE_RULE_FIELDS, dep: 'gate', hint: '满足任何一条就能长' },
-  { key: 'rarity', label: '稀有度', type: 'number', min: 0, max: 1, step: 0.01, hint: '能长的地方约多少比例有它' },
-  { key: 'weight', label: '权重', type: 'number', min: 0, max: 100, step: 0.1, hint: '几种都能长时越大越容易占上' },
-  { key: 'cluster', label: '成片大小', type: 'number', min: 10, max: 5000, step: 10, hint: 'km' },
+  { key: 'rarity', label: '比例', type: 'number', min: 0, max: 1, step: 0.01, unit: '%', hint: '能长的地方几成有它' },
+  { key: 'weight', label: '多少', type: 'number', min: 0, max: 100, step: 0.1, hint: '几种都能长时谁占上' },
+  { key: 'cluster', label: '成片大小', type: 'number', min: 10, max: 5000, step: 10, unit: 'km', hint: '一片约多宽' },
 ];
 
 // 由 content/kinds.ts 在地名风格之后调用（登记的先后就是仓库里的先后）

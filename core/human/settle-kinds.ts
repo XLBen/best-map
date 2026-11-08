@@ -12,7 +12,7 @@ const renamed = (name: string, id: string, from: string) => `${name} ${id.slice(
 const RANK_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
-  { key: 'icon', label: '图标', type: 'text', hint: 'star、double-ring、circle、dot……' },
+  { key: 'icon', label: '图标', type: 'text', hint: 'star、circle、dot……' },
   { key: 'color', label: '颜色', type: 'color', optional: true },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'capital', label: '首都用', type: 'bool', optional: true },
@@ -56,7 +56,7 @@ const LANDMARK_FIELDS: readonly FieldDesc[] = [
   },
   { key: 'count', label: '个数', type: 'number', min: 0, max: 100, step: 0.1 },
   { key: 'chance', label: '可能', type: 'number', min: 0, max: 1, step: 0.05 },
-  { key: 'label', label: '名字的写法', type: 'title', keyRef: ['culture', 'cultureGroup'], dep: 'strip', hint: '“{city}神庙”；可以按文化、文化组换说法' },
+  { key: 'label', label: '名字的写法', type: 'title', keyRef: ['culture', 'cultureGroup'], dep: 'strip', hint: '“{city}神庙”；可按文化换' },
   { key: 'manual', label: '不自动放', type: 'bool', optional: true },
 ];
 

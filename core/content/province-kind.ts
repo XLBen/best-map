@@ -13,7 +13,7 @@ const FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'size', label: '大小', type: 'number', min: 8, max: 200, step: 1, hint: '一个陆地省大约几格（按 4 万格的一块地区算，格数不同时等比缩放；整个星球按面积）。默认 40' },
+  { key: 'size', label: '大小', type: 'number', min: 8, max: 200, step: 1, unit: '格', hint: '一个陆地省约几格；默认 40' },
   { key: 'varied', label: '按地形调整大小', type: 'bool', hint: '平原、河谷、海岸的省小，山地、荒漠的大' },
   { key: 'wasteland', label: '无人区', type: 'bool', hint: '冰原、深漠、高山连成大片时划成无人区' },
   {
