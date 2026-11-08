@@ -38,14 +38,19 @@ export const DEFAULT_SPECIES: Species[] = [
   make(B.alpineMeadow, '高山草甸', '#9cc08f', 'highlands', 3.5, { t0: -9, t1: -1, m0: 0.4, m1: 50 }, { habitability: 0.2, movement: 1.5, height: { low: 1000, high: TOP } }),
   make(B.alpineTundra, '高山苔原', '#b4aca8', 'arctic', 4, { t0: -17, t1: -6, m0: 0, m1: 50 }, { habitability: 0.04, movement: 2, group: 'tundra', height: { low: 1000, high: TOP } }),
   make(B.desert, '荒漠', '#efd8a8', 'desert', 1, { t0: -6, t1: 40, m0: 0, m1: 0.15 }, { habitability: 0.042, movement: 1.5, group: 'desert', height: { low: 0, high: TOP } }),
-  // 第八十六轮：红树林——热带（年均 20 °C 以上）、低平（12 m 以下、平地）、紧挨海（大陆度 0.06 以下才满）的海岸与河口，湿；
-  // 竞争力比沼泽强，在热带低平的海岸上占上风
+  // 第八十六轮：红树林——热带（年均 20 °C 以上）、低平（12 m 以下、平地）、紧挨海的海岸与河口，湿；竞争力比沼泽强，在热带低平的海岸上占上风。
+  // 第八十九轮：紧挨海换成有遮蔽的海岸（海湾、河口），海拔另有一条硬的（热带群岛从约 15% 的陆地降到 1–2%）
   mangrove(),
 ];
 
 function mangrove(): Species {
   const sp = make(B.mangrove, '红树林', '#36603a', 'marsh', 7, { t0: 20, t1: 40, m0: 0.6, m1: 50 }, { habitability: 0.12, movement: 2.2, group: 'wetland', height: { low: 0, high: 12 } }, ['flat']);
-  return { ...sp, tolerances: [...sp.tolerances, { field: 'continentality', min: 0, optLow: 0, optHigh: 0.06, max: 0.14 }] };
+  // 第八十九轮：有遮蔽的海岸（vegetation.ts 的 shelterGetter：三圈以内陆地 55% 以上才有、68% 以上才满，河口另加），
+  // 海拔另有一条硬的（10 m 以下满、35 m 以上没有：高度范围外面留的 300 m 过渡太宽，岛上几十米高的岸也长满了）
+  return {
+    ...sp,
+    tolerances: [...sp.tolerances, { field: 'shelter', min: 0.55, optLow: 0.68, optHigh: 1, max: 1 }, { field: 'elevation', min: -1, optLow: -1, optHigh: 10, max: 35 }],
+  };
 }
 
 // 内置生态里属于某一大类的 id（按上面的先后）。“森林类都算”这样的规则（奇幻的侵占、资源）用它，不再手写一串 id

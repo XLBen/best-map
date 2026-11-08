@@ -28,9 +28,10 @@ const autoDigest = (w: World) => ({ classes: digest(w.derived.terrainClassAuto),
 // 第五十五轮：生态跟高度走，只有资源变了（类别、山峰不变）
 // 第五十七轮：毛皮多一种生态（高山苔原），只有地区的资源变了
 // 第八十六轮重录：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林），宜居度、人文往后都变了（见 docs/dev/history/第86轮.md）
+// 第八十九轮：红树林收紧到有遮蔽的海岸（海湾、河口）、35 m 以下，有意改变生态：只有跟着主导生态变的几项重录（地形、气候、水一项没变，见 docs/dev/history/第89轮.md）
 const RECORDED = {
-  region: { classes: '6aa129e4f0d8f357', resources: 'd61be64deb7bb11b', peaks: '48fd9342289d38de' },
-  planet: { classes: 'b848dd57c68f353b', resources: '228bb47508db03b6', peaks: '400a04905beb4a6f' },
+  region: { classes: '6aa129e4f0d8f357', resources: 'c3b3dddaa4b572ef', peaks: '48fd9342289d38de' },
+  planet: { classes: 'b848dd57c68f353b', resources: '36d882baa6e0cb51', peaks: '400a04905beb4a6f' },
 };
 
 const planet = () => {

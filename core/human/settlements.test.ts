@@ -54,9 +54,10 @@ const cityIds = (w: World) => Object.keys(w.small.cities ?? {}).map(Number);
 // 第七十四轮重录：国家有意改了（中世纪的集权帝国、游牧汗国、民族主义），城市跟着国家、人口走
 // 第八十四轮重录（城市按人口、港口与海路，国家、人口也变了，见 docs/dev/history/第84轮.md）
 // 第八十六轮重录：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林），宜居度、人文往后都变了（见 docs/dev/history/第86轮.md）
+// 第八十九轮：红树林收紧到有遮蔽的海岸（海湾、河口）、35 m 以下，有意改变生态：只有跟着主导生态变的几项重录（地形、气候、水一项没变，见 docs/dev/history/第89轮.md）
 const RECORDED = {
-  region: { cities: '354137ed02376b2a', roads: '97c85347743cba13', landmarks: '237d439f81d5fe09' },
-  planet: { cities: '850fcc20b8648a4c', roads: 'ba70ff7adc3aadf7', landmarks: 'af5059e9a1b3a918' },
+  region: { cities: '7d93fb498c5a11f2', roads: 'a4223ab711a72eb7', landmarks: '734c7da04f232761' },
+  planet: { cities: 'dedcce1d0798f523', roads: '1ce9f88441e98653', landmarks: '625acd24804b3608' },
 };
 const genDigest = (w: World) => ({ cities: digest(w.small.cities), roads: digest(w.small.roads), landmarks: digest(w.small.landmarks) });
 

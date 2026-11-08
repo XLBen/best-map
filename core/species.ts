@@ -31,6 +31,8 @@ export const BUILTIN_FIELDS: FieldInfo[] = [
   { id: 'discharge', label: '河流流量', unit: 'm³/s', lo: 0, hi: 20000, correctable: null },
   { id: 'wetness', label: '地形湿度', unit: '', lo: 0, hi: 30, correctable: null },
   { id: 'continentality', label: '离海远近', unit: '', lo: 0, hi: 1, correctable: null },
+  // 第八十九轮（红树林）：有遮蔽的海岸，见 vegetation.ts 的 shelterGetter
+  { id: 'shelter', label: '海湾、河口（有遮蔽的海岸）', unit: '', lo: 0, hi: 1, correctable: null },
   { id: 'lat', label: '纬度（绝对值）', unit: '°', lo: 0, hi: 90, correctable: null },
 ];
 

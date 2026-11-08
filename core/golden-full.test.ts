@@ -16,6 +16,7 @@ import golden from './golden-full.json';
 // 第七十七轮：去掉了格局（countryLayout），新世界的小数据里没有内置的四种格局，只重录 small 两项；核对过旧的提交上新世界的内容去掉格局时得到同样的值（见 docs/dev/history/第77轮.md）
 // 第七十八轮：省份划分的规则成了世界里的内容（新世界多一份内置的“省份划分”和它的来源，small.provinceRules 换成 provinceSeed，版本 18），只重录 small 两项；核对过：同样的操作在 82e28a7 上与这一轮上，去掉这几个键以后每一次摘要逐个相同（见 docs/dev/history/第78轮.md）
 // 第八十六轮：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林、推导多了冰盖 derived.ice），重录（网格、陆海、landness、landDelta 没变）
+// 第八十九轮：红树林收紧到有遮蔽的海岸（海湾、河口）、35 m 以下，有意改变生态：只有跟着主导生态变的几项重录（地形、气候、水一项没变，见 docs/dev/history/第89轮.md）
 describe('整个世界逐值不变（加长的操作序列）', () => {
   it('一块地区', () => {
     expect(extendedHashes('region')).toEqual(golden.region);

@@ -56,11 +56,118 @@ export function fieldGetter(world: World, d: Derived, field: string): FieldGette
       return (i) => d.wetness[i];
     case 'continentality':
       return (i) => d.continentality[i];
+    case 'shelter':
+      return shelterGetter(world, d);
     case 'lat':
       return (i) => Math.abs(worldLatitude(world, world.mesh.y[i]));
     default:
       return () => 0;
   }
+}
+
+// 有遮蔽的海岸（第八十九轮，红树林用）：不挨着海的格（陆地、湖）是 0；挨着海的陆地格是它往外 SHELTER_RINGS 圈以内的格里陆地（湖算陆地）的比例——
+// 平直的海岸约一半，海湾、河口里深处的岸多于一半，岬角、小岛上少于一半——入海的河大时再加一点（河口：流量 300 → 3000 m³/s 加 0 → 0.25），最多 1。
+// 只在问到的格上算（逐格往外走几圈）。陆地的比例按网格记着（shelterMemo）：陆海没变的格接着用，陆海变了的格往外三圈以内的作废重算
+//（与每次都重算逐值相同，见 core/mangrove.test.ts）
+export const SHELTER_RINGS = 3;
+interface ShelterMemo {
+  mesh: World['mesh'];
+  land: Uint8Array;
+  // 陆地的比例；NaN 是还没算
+  frac: Float64Array;
+  mark: Int32Array;
+  queue: Int32Array;
+  stamp: number;
+  ver: number;
+}
+let shelterMemo: ShelterMemo | null = null;
+// 测试用：扔掉记着的比例（下一次从头算）
+export function clearShelterMemo() {
+  shelterMemo = null;
+}
+// 往外走 SHELTER_RINGS 圈（含自己）：每一格调 visit；返回走到的格数（不含自己）
+function rings(m: ShelterMemo, starts: ArrayLike<number>, visit: (b: number) => void): number {
+  const { off, adj } = m.mesh;
+  if (++m.stamp >= 0x7fffffff) {
+    m.mark.fill(0);
+    m.stamp = 1;
+  }
+  const st = m.stamp;
+  const queue = m.queue;
+  let tail = 0;
+  for (let k = 0; k < starts.length; k++) {
+    const i = starts[k];
+    if (m.mark[i] === st) continue;
+    m.mark[i] = st;
+    queue[tail++] = i;
+  }
+  const first = tail;
+  let head = 0;
+  for (let r = 0; r < SHELTER_RINGS; r++) {
+    const end = tail;
+    for (; head < end; head++) {
+      const a = queue[head];
+      for (let e = off[a]; e < off[a + 1]; e++) {
+        const b = adj[e];
+        if (m.mark[b] === st) continue;
+        m.mark[b] = st;
+        queue[tail++] = b;
+        visit(b);
+      }
+    }
+  }
+  return tail - first;
+}
+// 记着的比例对上这一份陆海：网格变了重开；陆海变了的格往外三圈以内作废。每对上一份不同的陆海 ver 加一
+function shelterSync(mesh: World['mesh'], land: Uint8Array): ShelterMemo {
+  let m = shelterMemo;
+  if (!m || m.mesh !== mesh) {
+    m = shelterMemo = { mesh, land: land.slice(), frac: new Float64Array(mesh.n).fill(Number.NaN), mark: new Int32Array(mesh.n), queue: new Int32Array(mesh.n), stamp: 0, ver: 0 };
+    return m;
+  }
+  const changed: number[] = [];
+  for (let i = 0; i < mesh.n; i++) if (m.land[i] !== land[i]) changed.push(i);
+  if (!changed.length) return m;
+  const frac = m.frac;
+  if (changed.length > mesh.n / 8) frac.fill(Number.NaN);
+  else {
+    for (const i of changed) frac[i] = Number.NaN;
+    rings(m, changed, (b) => (frac[b] = Number.NaN));
+  }
+  m.land.set(land);
+  m.ver++;
+  return m;
+}
+export function shelterGetter(world: World, d: Derived): FieldGetter {
+  const { mesh } = world;
+  const { off, adj } = mesh;
+  const land = world.causes.land;
+  const q = d.discharge;
+  let memo = shelterSync(mesh, land);
+  let ver = memo.ver;
+  const one = [0];
+  return (i) => {
+    if (land[i] !== 1) return 0;
+    let coast = false;
+    for (let e = off[i]; e < off[i + 1] && !coast; e++) if (land[adj[e]] === 0) coast = true;
+    if (!coast) return 0;
+    // 中间别的世界（同一个网格）对过另一份陆海：再对一次自己的
+    if (memo !== shelterMemo || memo.ver !== ver) {
+      memo = shelterSync(mesh, land);
+      ver = memo.ver;
+    }
+    let f = memo.frac[i];
+    if (Number.isNaN(f)) {
+      let dry = 0;
+      one[0] = i;
+      const total = rings(memo, one, (b) => {
+        if (land[b] === 1) dry++;
+      });
+      f = memo.frac[i] = total ? dry / total : 0;
+    }
+    const t = Math.max(0, Math.min(1, (q[i] - 300) / 2700));
+    return Math.min(1, f + 0.25 * t * t * (3 - 2 * t));
+  };
 }
 
 // ---------- 第十二轮：长在哪里、自然生成 ----------

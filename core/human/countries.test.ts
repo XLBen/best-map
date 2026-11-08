@@ -91,9 +91,10 @@ function countryDigest(w: World): Record<string, string> {
 // 第八十四轮重录（人口在国家之前、首都挪到人口的重心、国界顺着山河，见 docs/dev/history/第84轮.md）
 // 第八十五轮只重录 countries：档案去掉了 ruler（统治者是 small.archive 里的一份名单）；领土 country 没变，去掉 ruler 时与第八十四轮的值相同（见 docs/dev/history/第85轮.md）
 // 第八十六轮重录：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林），宜居度、人文往后都变了（见 docs/dev/history/第86轮.md）
+// 第八十九轮：红树林收紧到有遮蔽的海岸（海湾、河口）、35 m 以下，有意改变生态：只有跟着主导生态变的几项重录（地形、气候、水一项没变，见 docs/dev/history/第89轮.md）
 const RECORDED = {
   region: { country: '91eb612e162172d3', countries: '8c156bebcd578699' },
-  planet: { country: '75e0562c61eb40b9', countries: '30ad41d7b417e9a6' },
+  planet: { country: 'eac3f26476d546b5', countries: 'd988757cd8a7f8d1' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;

@@ -75,9 +75,10 @@ const peopledCells = (w: World) => [...Array(w.mesh.n).keys()].filter((i) => w.c
 // 第七十七轮：human 只记组的 id、countryRules 只有种子，只重录两项 human（人口、群体一个没变）；核对过两边的世界只差这几样（见 docs/dev/history/第77轮.md）
 // 第八十四轮重录（资源进宜居度、宗教按发源地传播、首都一带的人在国家之后加，见 docs/dev/history/第84轮.md）
 // 第八十六轮重录：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林），宜居度、人文往后都变了（见 docs/dev/history/第86轮.md）
+// 第八十九轮：红树林收紧到有遮蔽的海岸（海湾、河口）、35 m 以下，有意改变生态：只有跟着主导生态变的几项重录（地形、气候、水一项没变，见 docs/dev/history/第89轮.md）
 const RECORDED = {
-  region: { popTotal: '701cea2dc3375646', popGroup: '25645eeaeccf23ec', popShare: '1a4f9741d2d2216e', human: '8c274ab7ca7d1fc8' },
-  planet: { popTotal: 'f081651382d65b38', popGroup: '635cddce9eb51a0e', popShare: 'db3b2cddc60a824f', human: '594c7e91c76a3fec' },
+  region: { popTotal: 'bee478fa56997d89', popGroup: '333414ecc7e2411b', popShare: 'd5bec1e4efb1b997', human: '8e6c23235456c586' },
+  planet: { popTotal: '210040fff390d662', popGroup: '0569adc7b98d63b3', popShare: '8143ae1fdde617dd', human: 'f4ddd49423b2bfb6' },
 };
 const genDigest = (w: World) => ({ popTotal: digest(w.causes.popTotal!), popGroup: digest(w.causes.popGroup!), popShare: digest(w.causes.popShare!), human: digest(w.small.human!) });
 

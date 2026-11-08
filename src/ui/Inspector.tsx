@@ -64,6 +64,7 @@ const WORDS: Record<string, [string, string]> = {
   discharge: ['离大河太远', '河水太大'],
   wetness: ['离水太远，不够潮湿', '太潮湿'],
   continentality: ['离海太近', '离海太远'],
+  shelter: ['不在海湾、河口的岸边', '海湾太深'],
   lat: ['纬度太低', '纬度太高'],
 };
 
