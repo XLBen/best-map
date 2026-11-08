@@ -72,17 +72,19 @@ describe('手绘画风的符号', () => {
     expect(b).toEqual(a);
     const byKind = [0, 0, 0, 0, 0];
     for (const s of a) byKind[s[3]]++;
+    // 第八十八轮：第八十七轮合并到第八十六轮之上（b21240f）时这里没跟着新的地形重录，b21240f 上就不过；按第八十六轮的地形改记
+    // （b21240f 与第八十八轮放出来的逐值相同，第八十八轮的提速不改它）
     expect({ n: a.length, byKind, digest: digestOf(a) }).toMatchInlineSnapshot(`
       {
         "byKind": [
-          97,
-          347,
-          45,
-          100,
+          96,
+          357,
+          51,
+          103,
           0,
         ],
-        "digest": "d60145a3",
-        "n": 589,
+        "digest": "4ea7c526",
+        "n": 607,
       }
     `);
   });
