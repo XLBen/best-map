@@ -22,7 +22,7 @@ Preact + signals。工具、参数、底图都是声明（`defs/`），顶栏、
 - `HereCard.tsx` 右下角“这里”（`Inspector.tsx`、格的档案 `ArchiveBox.tsx`）；`Ruler.tsx` 尺子；`MapLegend.tsx` 图例（开着风向、洋流时另有一张，带风的季节，与底图的图例叠着放）；`Sheet.tsx` 右边的抽屉（按登记的档案画）；`keys.ts` 键盘；`escape.ts` Esc 的栈（`pushEscape`、`useEscape`、先后 `ESC_RANK`，捕获与冒泡两个阶段）
 
 ## 面板 `panels/`
-- `ActionsPanel.tsx`（世界：新建、保存、打开、资源包、导出；更多：历史、偏好、上手说明）、`AdjustPanel.tsx`、`LayersPanel.tsx`（第七十二轮：和生态有关的底图只留地貌、生态分区，别的挪到生态编辑器；第八十二轮：生成过人文时最上面是“地图模式”，“人文”一组只剩宜居度）、`BiomePanel.tsx`（生态色板，“编辑生态类型…”开到资源库）、`ToolLibrary.tsx`（“⋯”）
+- `ActionsPanel.tsx`（世界：新建、保存、打开、资源包、导出（第八十七轮：整张地图的边框、罗盘、标题、图例四个开关，按画风记）；更多：历史、偏好、上手说明）、`AdjustPanel.tsx`、`LayersPanel.tsx`（第七十二轮：和生态有关的底图只留地貌、生态分区，别的挪到生态编辑器；第八十二轮：生成过人文时最上面是“地图模式”，“人文”一组只剩宜居度）、`BiomePanel.tsx`（生态色板，“编辑生态类型…”开到资源库）、`ToolLibrary.tsx`（“⋯”）
 - `rivers.tsx`、`riverTypes.tsx`、`lakes.tsx`、`waterTypes.tsx`（河湖共用的类型编辑器；逻辑在 `water-types.ts`；第七十二轮：出现在哪些生态只写一行，`domain/water-biomes.ts`，“去总表改”）、`islandTypes.tsx`（逻辑在 `island-types.ts`）、`names.tsx`、`nature-bar.tsx`（自然一类底部条的部件、“自然 ⋯”）
 - `human.tsx`（地形类别、资源）、`culture.tsx`（文化一类、`HumanChoices`（第七十七轮：只选库、文化组）、`CountryChoice`、第五十四轮的“加一个变量” `DimensionAdd`）、`countries.tsx`（国家一类、列表、`Flag`）、`settlements.tsx`（城市一类、列表、`CityGlyph`）
 
@@ -30,13 +30,13 @@ Preact + signals。工具、参数、底图都是声明（`defs/`），顶栏、
 - `App.tsx` 整体布局；`MapView.tsx` 地图视图（只做连接）；`camera.ts` 镜头
 - `map/input.ts` 指针、拖动、滚轮、捏合、空格键（预览键 `moveKey` 没变的移动不重画）；`map/highlights.ts` 按声明多画的高亮与叠放顺序
 - `map/modes.ts` 地图模式的表；`map/political.ts` 片区名（屏幕与导出共用，几何与字分开缓存）；`map/settle.ts` 城市等给叠加层的几项。第八十轮：国家的统计 `statsOf`、列表 `countryRows`、城市地标的列表 `settleLists`、首都的星 `capitalShapes` 按用到的几项缓存（只改了国名、颜色、旗时照用），见 `docs/dev/history/第80轮.md`
-- `map/export.ts` 导出当前画面、整张地图；`map/debug.ts` window 上的钩子、开发测速
+- `map/export.ts` 导出当前画面、整张地图（第八十七轮：`decorInfo` 装饰的标题与图例、画风有网页字体时先等字载入、手绘时块与边距取 64 的倍数）；`map/debug.ts` window 上的钩子、开发测速
 - 第七十轮从 `MapView.tsx` 分出来：`map/color-cache.ts` 着色的缓存（底子、模式的那一层，`lruGet`）；`map/labels.ts` 省名标签放在哪、选中的东西自己的地名先不标；`map/preview-merge.ts` 几份预览叠在一起（`mergeProvinces`、`mergeGhosts`、`withQueued`）；`map/reference.ts` 参考图的样式；`map/corner-lift.ts` 比例尺要抬多高；`map/settle.ts` 加上最醒目的点（`settleStrongMarks`）
 
 ## 工具
 - `tools/` 按类分文件，`tools.ts` 一起导出（`bind.ts` 把每个工具做什么登记进工具表）：`api.ts` 工具的约定（`ToolHandler`、确切预览）、`public.ts` 面板能用的几样（第七十轮：涂的是哪一种、选中、删掉选中的）、`brush.ts`、`gestures.ts`（圈一片、拖出大小、湖里的岛）、`terrain.ts`、`climate.ts`、`nature.ts`、`water.ts`、`names.ts`、`provinces.ts`、`human.ts`、`culture.ts`、`countries.ts`、`settlements.ts`、`pointer.ts`（指针）、`erasers.ts`（橡皮擦）、`measure.ts`（量距离）
 - `river/` 画河、选河、改河、删河：`model.ts` 走向与命令、`query.ts` 认河、`shapes.ts` 画法、`bar.ts` 底部条的预览、`tool.ts` 画河工具、`course-view.ts` 画河时的说明与图形、`actions.ts` 选河加河（`selectRiver`、`execAndSelect`）、`unwater.ts` 删除河湖；`index.ts` 一起导出（第七十轮以前是 `ui/riverCourse.ts`）
-- `domain/` 领域逻辑（第七十轮从 `ui/` 根下搬来，不碰界面的部件和工具）：`exact.ts` 停一下的确切预览（`Exact`、`Settle`、`slowTail`）；`edits.ts` 我改过的地方；`skipped.ts` 跳过的步骤；`lakeInfo.ts` 点中的湖；`features-at.ts` 每格属于哪些地物；`legend.ts` 按格着色的图例（第七十二轮地貌也有；`flowLegend`：开着的那一层，风的三档、暖流寒流；第七十九轮格数按数组缓存、内容按对象比，地图上的 `shownLegend` 要重数时空闲再数）；`countries.ts`、`blocs.ts`、`settlements.ts`（`cityLook`）、`human.ts`、`archive.ts`（格的档案的命令）、`forms.ts`、`packChoice.ts`、`wizardTerrain.ts`
+- `domain/` 领域逻辑（第七十轮从 `ui/` 根下搬来，不碰界面的部件和工具）：`exact.ts` 停一下的确切预览（`Exact`、`Settle`、`slowTail`）；`edits.ts` 我改过的地方；`skipped.ts` 跳过的步骤；`lakeInfo.ts` 点中的湖；`features-at.ts` 每格属于哪些地物；`legend.ts` 按格着色的图例（第七十二轮地貌也有；`flowLegend`：开着的那一层，风的三档、暖流寒流；第七十九轮格数按数组缓存、内容按对象比，地图上的 `shownLegend` 要重数时空闲再数）；`countries.ts`、`blocs.ts`、`settlements.ts`（`cityLook`）、`human.ts`、`archive.ts`（格的档案的命令）、`forms.ts`、`packChoice.ts`、`wizardTerrain.ts`；第八十七轮 `map-styles.ts`（“图层 → 画风”的选择：世界里的加上世界用的库里“手绘画风”的，点了从库里加进来并选上）
 - `pending.ts` 排队中的编辑
 - `barPreview.ts` 底部条按钮悬停的预览；`provincePreview.ts`；`provincePanel.tsx` 省份的底部条与“⋯”里的划分省份、换一种划分（第七十八轮：规则在资源库的“省份划分”里，`packs/open-province.ts` 打开它；`province-panel.ts` 多选能做什么）；`panels.tsx` 没涂成的地方、历史；`unmetLocate.ts`（`showIgnored`）
 - 生态范围外怎么说在 `src/biome-range.ts`

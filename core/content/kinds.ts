@@ -4,7 +4,7 @@ import { LAKE_STYLES, LAKE_STYLE_LABEL, type LakeType, lakeTypeSchema, lakeTypes
 import { FEATURE_INFO, type FeatureType } from '../features';
 import { type NameStyle, nameStyleSchema, sampleNames, styleInUse, styleNotes, styleProblems, worldStyles } from '../name-styles';
 import { type PlanetForm, planetFormSchema } from '../planet-form';
-import { DEFAULT_LOOK, type MapStyle, mapStyleSchema, worldMapStyles } from '../map-style';
+import { DEFAULT_LOOK, HAND_OFF, type MapStyle, mapStyleSchema, worldMapStyles } from '../map-style';
 import { RIVER_STYLES, RIVER_STYLE_LABEL, type RiverType, riverTypeSchema, riverTypesOf } from '../river-types';
 import { HEIGHT_MAX, PATTERNS, PATTERN_LABEL, type Species, elevationAsHeight, speciesSchema } from '../species';
 import { type LakeWhenKey, LAKE_WHEN_KEYS, WHEN_KEYS, WHEN_RANGE } from '../water-types';
@@ -646,6 +646,17 @@ registerKind<MapStyle>({
         { value: 'atlasColor', label: '另一种颜色' },
       ],
     },
+    // 第八十七轮：手绘的几项（可以不写；不写时都关着）
+    { key: 'paper', label: '纸的纹理', type: 'number', min: 0, max: 1, step: 0.05, optional: true, default: HAND_OFF.paper, hint: '纸的纹理与四周的暗角（0 不画）' },
+    { key: 'paperColor', label: '纸的颜色', type: 'color', optional: true, default: HAND_OFF.paperColor },
+    { key: 'wash', label: '水彩的晕染', type: 'number', min: 0, max: 1, step: 0.05, optional: true, default: HAND_OFF.wash, hint: '陆地上一片片深浅不匀的颜色（0 不画）' },
+    { key: 'ripples', label: '岸外的水纹', type: 'number', min: 0, max: 4, step: 1, optional: true, default: HAND_OFF.ripples, hint: '海岸外几道细线（0 不画）' },
+    { key: 'rippleColor', label: '水纹的颜色', type: 'color', optional: true, default: HAND_OFF.rippleColor },
+    { key: 'mountains', label: '山画成符号', type: 'bool', optional: true, default: HAND_OFF.mountains, hint: '山与丘陵画成小山头（一块地区）' },
+    { key: 'forests', label: '森林画成符号', type: 'bool', optional: true, default: HAND_OFF.forests, hint: '森林画成一丛丛小树（一块地区）' },
+    { key: 'ink', label: '符号的墨色', type: 'color', optional: true, default: HAND_OFF.ink },
+    { key: 'labelFont', label: '地名的字体', type: 'text', optional: true, hint: 'CSS 的字体名；不写时照旧' },
+    { key: 'exportDecor', label: '导出时加装饰', type: 'bool', optional: true, default: HAND_OFF.exportDecor, hint: '导出时默认加罗盘、标题、边框、图例' },
   ]),
   pack: {
     key: 'mapStyles',

@@ -114,6 +114,23 @@ export const mapStyleSchema = z.object({
   quietRoadMinor: color().default(D.quietRoadMinor),
   countryLabel: color().default(D.countryLabel),
   typeColors: z.enum(['color', 'atlasColor']).default(D.typeColors),
+  // ---------- 手绘（第八十七轮）：都可以不写、没有默认值 ----------
+  // 写实、地图册不写这几项：库里、世界里的这两种与以前逐字节相同（内容的摘要不变），读的时候按 HAND_OFF 补上（handLook）
+  // 纸：纹理与四周暗角的浓淡（0 不画）、纸的颜色；陆地上水彩的晕染
+  paper: amount.optional(),
+  paperColor: color().optional(),
+  wash: amount.optional(),
+  // 岸外几道细的水纹（0 不画）与颜色
+  ripples: z.number().int().min(0).max(4).optional(),
+  rippleColor: color().optional(),
+  // 山、丘陵、森林画成小符号（叠加层，src/render/overlay-symbols.ts）；符号的墨色
+  mountains: z.boolean().optional(),
+  forests: z.boolean().optional(),
+  ink: color().optional(),
+  // 地名、城市名、国名的字体（CSS 的 font-family）；不写时照旧
+  labelFont: z.string().min(1).max(160).optional(),
+  // 导出整张地图时默认加上罗盘、标题、边框、图例
+  exportDecor: z.boolean().optional(),
 });
 
 export type MapStyle = z.infer<typeof mapStyleSchema>;
@@ -148,13 +165,41 @@ export function typeColor(t: { color: string; atlasColor?: string }, style: Pick
   return style.typeColors === 'atlasColor' ? (t.atlasColor ?? t.color) : t.color;
 }
 
+// 手绘的几项不写时的值（第八十七轮）：都关着，画出来与没有这几项时逐像素相同
+export const HAND_OFF = {
+  paper: 0,
+  paperColor: 'rgb(238, 226, 196)',
+  wash: 0,
+  ripples: 0,
+  rippleColor: 'rgb(70, 92, 104)',
+  mountains: false,
+  forests: false,
+  ink: 'rgb(62, 48, 36)',
+  exportDecor: false,
+};
+export type HandLook = typeof HAND_OFF & { labelFont: string | null };
+const handLooks = new WeakMap<object, HandLook>();
+// 画风里手绘的几项（没写的按 HAND_OFF）；按画风对象记住
+export function handLook(style: MapStyle): HandLook {
+  let h = handLooks.get(style);
+  if (!h) {
+    h = { labelFont: style.labelFont ?? null } as HandLook;
+    for (const k of Object.keys(HAND_OFF) as (keyof typeof HAND_OFF)[]) (h as Record<string, unknown>)[k] = style[k] ?? HAND_OFF[k];
+    handLooks.set(style, h);
+  }
+  return h;
+}
+// 画风有没有画符号（山、森林）
+export const hasSymbols = (style: MapStyle) => !!(style.mountains || style.forests);
+
 // 画风的签名（缓存的键）：画出来有关的各项。按对象记住，每帧不重算
 const sigs = new WeakMap<object, string>();
 export function mapStyleKey(style: MapStyle): string {
   let s = sigs.get(style);
   if (s === undefined) {
     const { id: _id, name: _name, description: _d, ...look } = style;
-    s = JSON.stringify(Object.keys(DEFAULT_LOOK).map((k) => look[k as keyof typeof look]));
+    // 第八十七轮：手绘的几项（没写的是 null）跟在后面
+    s = JSON.stringify([...Object.keys(DEFAULT_LOOK), ...Object.keys(HAND_OFF), 'labelFont'].map((k) => look[k as keyof typeof look] ?? null));
     sigs.set(style, s);
   }
   return s;

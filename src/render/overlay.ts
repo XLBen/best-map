@@ -7,6 +7,7 @@ import { projectedParts } from './overlay-proj';
 import { drawRivers } from './overlay-river-layer';
 import { riverScale, riverStroke, samePathsKey } from './overlay-rivers';
 import { drawShape, resetPen } from './overlay-shapes';
+import { drawSymbols, drawVignette, symbolsKey, symbolsOn } from './overlay-symbols';
 import { sameShapes, staticKey } from './overlay-static';
 import type { Proj } from './projection';
 import type { Camera } from './renderer';
@@ -42,6 +43,8 @@ function drawBack(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContex
   const ks = sphere ? copiesFor(cam, cw) : [0];
   const setT = (k: number) => ctx.setTransform(z, 0, 0, z, (cw / 2 - (cam.x - 2 * k) * cam.zoom) * dev, (ch / 2 - cam.y * cam.zoom) * dev);
   const px = 1 / z;
+  // 手绘画风的山、森林（第八十七轮，overlay-symbols.ts）：在河、标记下面
+  if (symbolsOn(world, st)) drawSymbols(ctx, world, cam, st.style, cw, ch, dev);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   if (st.rivers) {
@@ -82,7 +85,7 @@ function drawBack(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContex
 
 // 底层的键（镜头另比）：画出来的路径、湖标记、选项、河流类型的画法
 function backKey(world: World, paths: OverlayPaths, st: OverlayState): unknown[] {
-  return [paths, world.small.lakes, world.mesh, st.rivers, st.markers, mapStyleKey(st.style), world.small.riverTypes, world.small.planet.riverThreshold];
+  return [paths, world.small.lakes, world.mesh, st.rivers, st.markers, mapStyleKey(st.style), world.small.riverTypes, world.small.planet.riverThreshold, symbolsKey(world, st)];
 }
 
 // 把底层贴到叠加层上（ctx 已清空、变换是单位矩阵）
@@ -90,7 +93,7 @@ function pasteBack(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPa
   const canvas = ctx.canvas;
   const { cw, ch, dpr } = frameOf(ctx, st);
   const key = backKey(world, paths, st);
-  if (!st.rivers && !st.markers) return;
+  if (!st.rivers && !st.markers && !symbolsOn(world, st)) return;
   // 导出整张地图：直接画，不碰缓存
   if (st.frame) {
     drawBack(ctx, world, paths, cam, st, cw, ch, dpr);
@@ -200,7 +203,9 @@ export function overlayParts(world: World, paths: OverlayPaths, cam: Camera, st:
   const river = { scale, color: riverStroke(st.style) };
   return {
     under(ctx) {
-      // 河、河道标记、湖标记（缓存着的底层）
+      // 手绘画风的纸的暗角（第八十七轮）：最底下
+      if (st.style.paper) drawVignette(ctx, st.style, f);
+      // 河、河道标记、湖标记（缓存着的底层；手绘画风的山、森林也在这一层）
       pasteBack(ctx, world, paths, cam, st);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';

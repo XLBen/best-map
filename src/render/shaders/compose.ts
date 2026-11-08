@@ -1,6 +1,7 @@
 import { COUNTRY_ALPHA, FEDERATION_GROUP, ISLET_FLAT, SEA_CLAIM_ALPHA } from '../colors';
 import { NEAR_MAX } from '../near';
 import { FX_BEGIN, FX_END, glsl, NOISE_GLSL, PATTERN_GLSL, SPECK_MARK, TEX_W } from './common';
+import { HAND_CALL, HAND_GLSL, HAND_UNIFORMS } from './hand';
 import { FOCUS_GLSL, PROV_CELL } from './plane';
 
 // 合成着色器（平面；星球、投影由 sphere.ts 按它替换出来）（第四十一轮从 renderer.ts 原样搬来）
@@ -57,7 +58,7 @@ uniform float uGlowGain;
 uniform vec4 uCoastLine;
 uniform vec3 uProvLine;
 uniform vec3 uCountryLine;
-// 海面也是数据（海水温度底图）：分层的画风也不把海涂平
+${HAND_UNIFORMS}// 海面也是数据（海水温度底图）：分层的画风也不把海涂平
 uniform int uSeaData;
 uniform int uHasFlat;
 uniform int uHasGroup;
@@ -162,7 +163,7 @@ bool nearSkip(int h, float rA, float rW) {
   int hw = h >> 4;
   return ha > 0 && rA < uNearRho[min(ha, ${NEAR_MAX})] && rW < uNearRho[min(hw, ${NEAR_MAX})];
 }
-${FX_BEGIN}${PATTERN_GLSL}${FX_END}
+${FX_BEGIN}${PATTERN_GLSL}${FX_END}${HAND_GLSL}
 void main() {
   vec2 sUv = vUv * uSceneXf.xy + uSceneXf.zw;
   // 颜色按像素所在的那个场景像素取（与陆海判定的高度层同一个像素）：移动中场景挪了不到一个像素时，
@@ -315,7 +316,7 @@ void main() {
 
   // 海岸线：地形层画好的抗锯齿细线
   col = mix(col, uCoastLine.rgb, base.a * uCoastLine.a / sqrt(max(uScenePx, 1.0)));
-
+${HAND_CALL}
   // 分组边界（省份）：扭曲坐标下相邻像素的分组不同。淡出为 0、离省界远的像素不取相邻像素（第三十九轮）
   if (provLines && pc >= 0 && !nearSkip(nearH.r, nearA + 1.5 * nearPx(), nearW + 1.5 * nearPx())) {
     vec2 dx = vec2(uTexel.x * 1.5, 0.0);

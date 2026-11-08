@@ -51,3 +51,55 @@ const ATLAS: MapStyle = {
 };
 
 export const BUILTIN_MAP_STYLES: readonly MapStyle[] = [REALISTIC, ATLAS];
+
+// 手绘（第八十七轮）：老式的手绘奇幻地图——纸的纹理与暗角、淡淡的水彩陆地与浅色的海、墨线的海岸与岸外几道水纹、
+// 画成小符号的山、丘陵与森林、楷体的地名，导出时加罗盘、标题、边框、图例。放在每个库单独的小包“手绘画风”里
+// （builtin-tree.ts 的 drawn）：新建世界不带它（新世界与以前逐字节相同），在“图层 → 画风”里点“手绘”时从库里加进世界
+export const HAND_STYLE_ID = 'hand';
+export const HAND_LABEL_FONT = '"LXGW WenKai", "Kaiti SC", "STKaiti", KaiTi, serif';
+const HAND: MapStyle = {
+  id: HAND_STYLE_ID,
+  name: '手绘',
+  description: '老式的手绘地图：纸的纹理、水彩的颜色、画成小符号的山与森林、楷体的地名',
+  landTint: 'rgb(238, 228, 198)',
+  landTintAmount: 0.6,
+  landShade: 'tinted',
+  shadeDark: 'rgb(196, 180, 156)',
+  shadeLight: 'rgb(262, 258, 248)',
+  sea: 'tiers',
+  seaShade: 0.14,
+  tier1: 'rgb(210, 226, 224)',
+  tier2: 'rgb(196, 216, 218)',
+  tier3: 'rgb(184, 206, 212)',
+  tier4: 'rgb(172, 196, 206)',
+  depth2: 200,
+  depth3: 1000,
+  depth4: 3000,
+  isobath: 'rgb(120, 146, 152)',
+  isobathAmount: 0.12,
+  tierShade: 0.03,
+  glow: 0.15,
+  coastLine: 'rgb(56, 42, 30)',
+  coastAmount: 0.9,
+  provinceLine: 'rgb(122, 76, 54)',
+  countryLine: 'rgb(112, 42, 30)',
+  river: 'rgba(64, 98, 130, 0.9)',
+  riverBank: 'rgba(48, 58, 70, 0.5)',
+  road: 'rgba(118, 44, 28, 0.9)',
+  roadMinor: 'rgba(106, 44, 28, 0.78)',
+  quietRoad: 'rgba(96, 58, 40, 0.5)',
+  quietRoadMinor: 'rgba(96, 58, 40, 0.34)',
+  countryLabel: 'rgba(92, 40, 26, 0.85)',
+  typeColors: 'atlasColor',
+  paper: 1,
+  paperColor: 'rgb(238, 226, 196)',
+  wash: 0.6,
+  ripples: 3,
+  rippleColor: 'rgb(72, 96, 108)',
+  mountains: true,
+  forests: true,
+  ink: 'rgb(64, 48, 34)',
+  labelFont: HAND_LABEL_FONT,
+  exportDecor: true,
+};
+export const DRAWN_MAP_STYLES: readonly MapStyle[] = [HAND];

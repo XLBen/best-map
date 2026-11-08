@@ -1,5 +1,5 @@
 // 画风的 uniform（第八十三轮从 src/render/renderer.ts 原样搬出）
-import { styleRgba, type MapStyle } from '../../core/map-style';
+import { handLook, styleRgba, type MapStyle } from '../../core/map-style';
 
 // 画风（第三十八轮）在合成着色器里的 uniform：颜色按 r / 255 上传（float32 与第三十七轮写在着色器里的常数逐位相同，测试查）。
 // 按画风对象记住，每帧只上传
@@ -18,6 +18,11 @@ export interface StyleUniforms {
   coastLine: Float32Array;
   provLine: Float32Array;
   countryLine: Float32Array;
+  // 手绘（第八十七轮，shaders/hand.ts）：有纸、水彩或水纹时 1（写实、地图册是 0，那一段不走）；纸的颜色与浓淡、水彩、水纹的颜色与道数
+  hand: number;
+  paper: Float32Array;
+  wash: number;
+  ripple: Float32Array;
 }
 const styleUniformCache = new WeakMap<object, StyleUniforms>();
 const unitRgb = (c: string): number[] => {
@@ -44,8 +49,19 @@ export function styleUniforms(style: MapStyle): StyleUniforms {
       coastLine: new Float32Array([...unitRgb(style.coastLine), style.coastAmount]),
       provLine: new Float32Array(unitRgb(style.provinceLine)),
       countryLine: new Float32Array(unitRgb(style.countryLine)),
+      ...handUniforms(style),
     };
     styleUniformCache.set(style, u);
   }
   return u;
+}
+
+function handUniforms(style: MapStyle): Pick<StyleUniforms, 'hand' | 'paper' | 'wash' | 'ripple'> {
+  const h = handLook(style);
+  return {
+    hand: h.paper > 0 || h.wash > 0 || h.ripples > 0 ? 1 : 0,
+    paper: new Float32Array([...unitRgb(h.paperColor), h.paper]),
+    wash: h.wash,
+    ripple: new Float32Array([...unitRgb(h.rippleColor), h.ripples]),
+  };
 }

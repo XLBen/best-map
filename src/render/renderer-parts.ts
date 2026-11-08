@@ -245,6 +245,8 @@ export interface SceneTarget {
   id: WebGLTexture;
   seam: WebGLTexture;
   depth: WebGLRenderbuffer;
+  // 场景颜色现在按 mipmap 过滤（第八十七轮，手绘画风）
+  mip?: boolean;
 }
 
 // 镜头停下多久以后按停稳的画法（全分辨率）补画一帧（毫秒）：触控板平移中间的小停顿不算停下

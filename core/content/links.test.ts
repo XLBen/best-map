@@ -230,6 +230,7 @@ describe('覆盖：引用表管到了所有种类和字段', () => {
       'landmarkType:governments.#': '政体的类别（标签）',
       'pointType:KEY actsAsCity': 'capital 是开关',
       'pointType:icon': '图标名',
+      'mapStyle:KEY ': 'mountains、forests 是开关（第八十七轮，手绘画风），碰巧有地形类别也叫它',
     };
     const table = linkTable(packScope(...builtinPacks()));
     const ids = new Set([...table.nodes.values()].map((n) => n.id));

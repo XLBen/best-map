@@ -8,6 +8,7 @@ import { nameText } from '../../core/name-display';
 import { cellName, peakMarks } from '../../core/human';
 import type { World } from '../../core/world';
 import { arraysToken } from '../../core/world-token';
+import { askGlyphs } from './label-font';
 
 // 地名、山峰、城市与地标的排版与画法（第四十一轮从 overlay.ts 原样搬来）
 
@@ -19,6 +20,8 @@ export const hasLabels = (st: OverlayState) => !!(st.features || st.peaks?.lengt
 // 键的前缀：这些框不给点击命中（城市、地标的工具按地图上的距离认）
 export const SETTLE_KEY = 'settle:';
 export const SETTLE_FONT = 'system-ui, "PingFang SC", sans-serif';
+// 地名、城市名的字体：画风写了字体时用它（第八十七轮，手绘的楷体），否则照旧
+export const labelFamily = (style: { labelFont?: string } | undefined) => style?.labelFont ?? SETTLE_FONT;
 
 // 排城市、地标、点（国名之后，按给的先后：首都、大城市在前）：一格在屏幕上够大才画；图标与已画的图标挤在一起时不画（首都、陪都照画），
 // 名字在图标的右、左、上、下找一处不和别的字、图标重叠的地方，找不到时不写。放好的框别的地名避让
@@ -37,6 +40,7 @@ export function placeSettlements(
   const size = st.cellSize ?? 0;
   const icons = new BoxIndex();
   const names = st.settleNames !== false;
+  const family = labelFamily(st.style);
   for (const m of marks) {
     const cellPx = size * zoomAt(m.x, m.y);
     if (cellPx < m.iconPx) continue;
@@ -58,7 +62,7 @@ export function placeSettlements(
       const anchor: Anchor | undefined = view.anchors ? [m.x + 2 * k, m.y, sx, sy] : undefined;
       placed.push({ key: m.key, chars: [], widths: [], spacing: 0, total: 0, font: '', color: '', x: sx, y: sy, angle: 0, mark: m, markScale: scale, ...(m.scale !== undefined ? { fullScale: full } : {}), ...(anchor ? { anchor } : {}) });
       if (!names || !m.name || cellPx < m.namePx) continue;
-      const font = `${m.bold ? 600 : 500} ${m.fontPx}px ${SETTLE_FONT}`;
+      const font = `${m.bold ? 600 : 500} ${m.fontPx}px ${family}`;
       const chars = [...m.name];
       if (chars.some((c) => !glyphs.has(`${font}|${c}`))) ctx.font = font;
       const widths = chars.map((c) => glyphWidth(ctx, font, c));
@@ -112,7 +116,7 @@ export function worldAt(cam: Camera, cw: number, ch: number, sx: number, sy: num
 // 第四十轮：悬停的地名只在排版用得上它时进键（layoutHover）；proj 为 false 时不带投影的朝向（转球的一次手势里沿用排好的版面时比它）
 export function labelBase(cw: number, chh: number, st: OverlayState, cam: Camera, proj = true): string {
   const p = cam.proj;
-  return `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${layoutHover(st)}|${st.nameMode ?? 'zh'}|${st.settleNames === false ? 0 : 1}|${st.cellSize ?? 0}${st.countryFit ? `|${countryFitKey(st.countryFit)}` : ''}${p ? `|${p.kind}${proj ? `|${p.lon0}|${p.lat0}` : ''}` : ''}`;
+  return `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${layoutHover(st)}|${st.nameMode ?? 'zh'}|${st.settleNames === false ? 0 : 1}|${st.cellSize ?? 0}${st.countryFit ? `|${countryFitKey(st.countryFit)}` : ''}${p ? `|${p.kind}${proj ? `|${p.lon0}|${p.lat0}` : ''}` : ''}${st.style?.labelFont ? `|${st.style.labelFont}` : ''}`;
 }
 
 // 悬停、选中的地名在排版里的作用（placeLabels：它算“用户自己的”，最先放、一定标，删掉的也标）：只有它是一个地名或山峰、
@@ -129,6 +133,17 @@ export function layoutHover(st: OverlayState): string {
   return out;
 }
 
+// 要写的字（地名、山峰、城市、国名）：载入网页字体用
+export function* labelTexts(st: Pick<OverlayState, 'features' | 'peaks' | 'settlements' | 'countries'>): Generator<string> {
+  for (const list of [st.features, st.peaks])
+    for (const f of list ?? []) {
+      if (f.name) yield f.name;
+      if (f.orig) yield f.orig;
+    }
+  for (const m of st.settlements ?? []) if (m.name) yield m.name;
+  for (const c of st.countries ?? []) yield* c.lines;
+}
+
 // 哪些地名标出来、放在哪里（按布局缓存；导出给测试用）
 export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): { placed: PlacedLabel[]; boxes: LabelBox[]; marks: [number, number][] } {
   const { cw, ch: chh } = frameOf(ctx, st);
@@ -138,6 +153,8 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   const peaks = st.peaks ?? null;
   if (!exporting && layout && layout.key === key && layout.features === st.features && layout.peaks === peaks && layout.countries === (st.countries ?? null) && layout.settlements === (st.settlements ?? null)) return layout;
   const t0 = perf ? performance.now() : 0;
+  // 画风写了网页字体（第八十七轮，手绘的楷体）：请浏览器载入要写的字（载入好了静态那一层重画）
+  if (st.style?.labelFont && !exporting) askGlyphs(st.style.labelFont, labelTexts(st));
   // 等面积、球形投影：地名的中心按投影算（球的背面不标），大小按那里的比例
   const proj = cam.proj;
   const toScreen = proj
@@ -165,6 +182,7 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
     features.push(...pseudo);
   }
   const named = new Set<GeoFeature>();
+  const family = labelFamily(st.style);
   for (const f of features) {
     const isPeak = pseudo.has(f);
     if (!f.name || (!isPeak && st.labelTypes && !st.labelTypes.has(f.type))) continue;
@@ -194,7 +212,7 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
     const base = f.type === 'continent' || f.type === 'ocean' ? 15 : f.type === 'river' || f.type === 'peak' ? 10.5 : 11;
     const grow = minPx > 0 ? Math.max(0, Math.log2(Math.max(1, sizePx / minPx))) * 2.6 : 0;
     const fontPx = Math.round(Math.min(f.type === 'continent' || f.type === 'ocean' ? 30 : 20, base + grow));
-    const font = `${style.italic ? 'italic ' : ''}${f.type === 'continent' || f.type === 'ocean' ? 600 : 500} ${fontPx}px system-ui, "PingFang SC", sans-serif`;
+    const font = `${style.italic ? 'italic ' : ''}${f.type === 'continent' || f.type === 'ocean' ? 600 : 500} ${fontPx}px ${family}`;
     const label = nameText(f.name, f.orig, st.nameMode);
     const text = f.type === 'peak' ? `▲ ${label}` : f.type === 'spot' ? `• ${label}` : label;
     const chars = [...text];
