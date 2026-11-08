@@ -13,6 +13,9 @@ import { openLibrary } from '../packs/panel-store';
 import { fileNameOf } from '../../maps';
 import { beforeLeave, currentMap, exportCurrent, mapStatus, openFile, openMaps, saveMap, saveMapAs } from '../maps/store';
 import { exportPartRows, hasAnySettle } from '../domain/settlements';
+import { Toggle } from '../components/Toggle';
+import { worldMapStyle } from '../../../core/map-style';
+import { DECOR_KEYS, DECOR_LABELS, type DecorOptions, defaultDecor } from '../../render/export-decor';
 
 // “世界”：新建、我的地图、保存、打开文件、资源包、导出（世界文件、游戏文件包、图片都在这里）；“更多”：历史、偏好、上手说明
 
@@ -133,6 +136,10 @@ const SEAM_TITLES: Record<SeamMode, string> = {
 type PngProj = 'current' | 'equirect';
 const pngChoice: { width: number; labels: LabelSize; seamMode: SeamMode; seamLon: number; proj: PngProj } = { width: 4096, labels: 'medium', seamMode: 'auto', seamLon: 180, proj: 'current' };
 
+// 整张地图的装饰（第八十七轮）：罗盘、标题、边框、图例。按画风记（手绘默认全开，别的默认全关）；改过的这个面板记着
+const decorChoice = new Map<string, DecorOptions>();
+const DECOR_TITLES: Record<keyof DecorOptions, string> = { frame: '四周一道双线的边框', compass: '右上角的罗盘', title: '上面写世界的名字', legend: '右下角：地图模式的颜色与符号' };
+
 // 分界线的经度滑块（−180–180，每格 1°）
 const LON = linear(-180, 180, 1);
 
@@ -240,6 +247,7 @@ function ExportSection() {
   const w = world.value;
   const [width, setWidth] = useState(4096);
   const [png, setPng] = useState({ ...pngChoice });
+  const [, setDecorTick] = useState(0);
   // 自动的分界线：按陆海算一次（世界的陆海变了才重算）
   const autoX = useMemo(() => (w && w.mesh.kind === 'sphere' ? autoSeam(w.mesh.x, w.causes.land, w.mesh.y) : 0), [w?.mesh, w?.causes.land]);
   if (!w) return null;
@@ -260,9 +268,16 @@ function ExportSection() {
   // 现在在等面积、球形投影里看：可以按这个投影导出
   const viewProj = sphere && prefs.value.projection !== 'equirect' ? prefs.value.projection : null;
   const projected = !!viewProj && png.proj === 'current';
+  const style = worldMapStyle(w.small);
+  const decor = decorChoice.get(style.id) ?? defaultDecor(style);
+  const setDecor = (k: keyof DecorOptions, on: boolean) => {
+    decorChoice.set(style.id, { ...decor, [k]: on });
+    setDecorTick((t) => t + 1);
+  };
   const saveFullPng = async () => {
     // 画面中心按点按钮这一刻的画面
-    const b = await exportFullMap({ width: png.width, labels: png.labels, ...(projected ? { projected: true } : sphere ? { seam: seamOf(png.seamMode) } : {}) });
+    const title = currentMap.value?.name ?? '';
+    const b = await exportFullMap({ width: png.width, labels: png.labels, decor, title, ...(projected ? { projected: true } : sphere ? { seam: seamOf(png.seamMode) } : {}) });
     if (b) download(pngName(), b, 'image/png');
   };
   // 整张图的高：一块地区按长宽比，整个星球是 2:1；等面积约 2.05:1，球形是正方形
@@ -314,6 +329,13 @@ function ExportSection() {
         <div class="row between">
           <span>地名字号</span>
           <Seg value={png.labels} options={LABEL_SIZES} onChange={(v) => choosePng({ labels: v })} />
+        </div>
+        <div class="row wrap decor-row">
+          {DECOR_KEYS.map((k) => (
+            <Toggle on={decor[k]} title={DECOR_TITLES[k]} onChange={(on) => setDecor(k, on)}>
+              {DECOR_LABELS[k]}
+            </Toggle>
+          ))}
         </div>
         {viewProj && (
           <div class="row between">

@@ -123,11 +123,15 @@ export interface CountryMetrics {
   w1: number[];
   second: string[] | null;
   w2: number[];
+  // 按哪种字体量的（第八十七轮：画风可以换字体）
+  family: string;
 }
 export const metricsCache = new WeakMap<CountryLabelDraw, CountryMetrics>();
-export function countryMetrics(ctx: CanvasRenderingContext2D, c: CountryLabelDraw): CountryMetrics {
+// 国名的字体：画风写了字体时用它（第八十七轮，手绘的楷体），否则照旧是宋体
+export const countryFamily = (style: { labelFont?: string } | undefined) => style?.labelFont ?? COUNTRY_FONT;
+export function countryMetrics(ctx: CanvasRenderingContext2D, c: CountryLabelDraw, family = COUNTRY_FONT): CountryMetrics {
   let m = metricsCache.get(c);
-  if (m) return m;
+  if (m && m.family === family) return m;
   // 展开跨接缝的中线（星球：相邻两点的 x 差不超过 1）
   const base: [number, number][] = [];
   for (const [x, y] of c.path) {
@@ -138,14 +142,14 @@ export function countryMetrics(ctx: CanvasRenderingContext2D, c: CountryLabelDra
   for (let k = 1; k < base.length; k++) lenU += Math.hypot(base[k][0] - base[k - 1][0], base[k][1] - base[k - 1][1]);
   const lines = countryLineText(c.lines);
   const measure = (text: string, weight: number) => {
-    const font = `${weight} 100px ${COUNTRY_FONT}`;
+    const font = `${weight} 100px ${family}`;
     const chars = [...text];
     if (chars.some((ch) => !glyphs.has(`${font}|${ch}`))) ctx.font = font;
     return { chars, w: chars.map((ch) => glyphWidth(ctx, font, ch) / 100) };
   };
   const a = measure(lines[0], 600);
   const b = lines[1] ? measure(lines[1], 500) : null;
-  m = { curve: smoothPath(base), lenU, first: a.chars, w1: a.w, second: b?.chars ?? null, w2: b?.w ?? [] };
+  m = { curve: smoothPath(base), lenU, first: a.chars, w1: a.w, second: b?.chars ?? null, w2: b?.w ?? [], family };
   metricsCache.set(c, m);
   return m;
 }
@@ -165,8 +169,9 @@ export function placeCountries(
   const color = st.style.countryLabel;
   const fitBy = st.countryFit ?? COUNTRY_FIT;
   const maxPx = Number.isFinite(fitBy.screen) ? Math.min(fitBy.maxPx, fitBy.screen * Math.min(view.cw, view.ch)) : fitBy.maxPx;
+  const family = countryFamily(st.style);
   for (const c of list) {
-    const { curve, lenU, first, w1, second, w2 } = countryMetrics(ctx, c);
+    const { curve, lenU, first, w1, second, w2 } = countryMetrics(ctx, c, family);
     if (!(lenU > 0)) continue;
     for (const k of ks) {
       const pts: [number, number][] = [];
@@ -195,13 +200,13 @@ export function placeCountries(
       // 两行时第一行往上挪半行
       const l1 = layoutAlong(first, w1, offsetLine(pts, second ? -(px2 * 0.55 + 1) : 0), fontPx, fontPx * 1.8, fitBy.span);
       if (!l1) continue;
-      const font1 = `600 ${fontPx}px ${COUNTRY_FONT}`;
+      const font1 = `600 ${fontPx}px ${family}`;
       const items: PlacedLabel[] = [
         { key: c.key, chars: first, widths: w1.map((x) => x * fontPx), spacing: 0, total: l1.total, font: font1, color, x: 0, y: 0, angle: 0, glyphs: l1.glyphs, halo: COUNTRY_HALO, haloWidth: Math.max(2, fontPx * 0.12) },
       ];
       const marks = l1.glyphs.map((g) => ({ x: g.x, y: g.y, r: fontPx * 0.55 }));
       if (second) {
-        const font2 = `500 ${px2}px ${COUNTRY_FONT}`;
+        const font2 = `500 ${px2}px ${family}`;
         const l2 = layoutAlong(second, w2, offsetLine(pts, fontPx * 0.55 + 1), px2, px2 * 1.2, fitBy.span);
         if (l2) {
           items.push({ key: c.key, chars: second, widths: w2.map((x) => x * px2), spacing: 0, total: l2.total, font: font2, color, x: 0, y: 0, angle: 0, glyphs: l2.glyphs, halo: COUNTRY_HALO, haloWidth: 2 });

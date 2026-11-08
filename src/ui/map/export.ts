@@ -7,13 +7,20 @@ import type { Renderer } from '../../render/renderer';
 import { modeDef, modeFeatures, modeOf } from './modes';
 import { regionDraws } from './political';
 import { settleOverlay } from './settle';
-import { exportProgress, flowSeason, imageExportCancel, labelGroups, nameMode, overlays, showToast, world } from '../../state';
-import { worldMapStyle } from '../../../core/map-style';
+import { exportProgress, flowSeason, imageExportCancel, labelGroups, mode as viewMode, nameMode, overlays, showToast, world } from '../../state';
+import { type MapStyle, handLook, styleRgba, worldMapStyle } from '../../../core/map-style';
+import { styleUniforms } from '../../render/style-uniforms';
+import { type DecorInfo, type DecorOptions, type LegendRow, anyDecor, drawExportDecor } from '../../render/export-decor';
+import { loadGlyphs } from '../../render/label-font';
+import { labelTexts } from '../../render/overlay-labels';
+import { symbolsOn } from '../../render/overlay-symbols';
+import { legendFor } from '../domain/legend';
 
 // 导出图片：当前画面（snapshotCanvas）与整张地图（exportFullMap）。都是干净的画面：只有地图本身，
 // 不带高亮、闪烁、工具的图形和预览、鼠标旁的话
 
-export type ExportImageOptions = { width: number; labels: LabelSize; tile?: number; overlay?: boolean; seam?: number; projected?: boolean };
+// decor（第八十七轮）：罗盘、标题、边框、图例（省略为都不加）；title：标题写什么（世界的名字）
+export type ExportImageOptions = { width: number; labels: LabelSize; tile?: number; overlay?: boolean; seam?: number; projected?: boolean; decor?: DecorOptions; title?: string };
 type ExportImage = (o: ExportImageOptions, progress: (p: number) => void, cancelled: () => boolean) => Promise<HTMLCanvasElement | null>;
 
 // 干净的画面的叠加层（与屏幕上 draw(true) 的一样：图层里打开的河、地名、省名、比例尺、纬度刻度，开着的风向、洋流；不看开着的是哪类工具）
@@ -50,6 +57,40 @@ export function cleanOverlay(w: World, frame: Frame, provinceLabels: ProvinceLab
   };
 }
 
+// 导出的装饰要画的（第八十七轮）：标题、地图模式的图例（最多 8 行）与画了的符号（山、丘陵、森林、城市、道路）
+const LEGEND_ROWS = 8;
+export function decorInfo(w: World, st: OverlayState, title: string): DecorInfo {
+  const data = legendFor(w, viewMode.value);
+  const legend: LegendRow[] = (data?.items ?? []).filter((it) => it.color !== 'transparent' && !it.line).slice(0, LEGEND_ROWS).map((it) => ({ color: muted(it.color, st.style), label: it.label }));
+  const h = handLook(st.style);
+  if (symbolsOn(w, st)) {
+    if (h.mountains) legend.push({ symbol: 'mountain', label: '山脉' }, { symbol: 'hill', label: '丘陵' });
+    if (h.forests) legend.push({ symbol: 'forest', label: '森林' });
+  }
+  if (st.settlements?.some((m) => m.kind === 'city')) legend.push({ symbol: 'city', label: '城市' });
+  if (st.roads && (st.roads.major.length || st.roads.minor.length)) legend.push({ symbol: 'road', label: '道路' });
+  return { title, style: st.style, legendTitle: data?.title ?? '图例', legend };
+}
+
+// 图例的色块混上画风的陆地底色（地图上的颜色混过它，见合成着色器）
+function muted(c: string, style: MapStyle): string {
+  const v = styleRgba(c);
+  const t = styleRgba(style.landTint);
+  const k = style.landTintAmount;
+  if (!v || !t || !k) return c;
+  const m = (a: number, b: number) => Math.round(a + (b - a) * k);
+  return `rgb(${m(v[0], t[0])}, ${m(v[1], t[1])}, ${m(v[2], t[2])})`;
+}
+
+// 叠加层与装饰：画风写了网页字体时先等要写的字载入好（最多几秒），再画叠加层，最后画装饰
+async function finishImage(ctx: CanvasRenderingContext2D, w: World, paths: OverlayPaths, cam: Parameters<typeof drawOverlay>[3], st: OverlayState, o: ExportImageOptions, W: number, H: number) {
+  const font = st.style.labelFont;
+  const decor = o.decor && anyDecor(o.decor) ? o.decor : null;
+  if (font && (o.overlay !== false || decor)) await loadGlyphs(font, [...labelTexts(st), o.title ?? '', '北图例山脉丘陵森林城市道路', decorInfo(w, st, '').legendTitle]);
+  if (o.overlay !== false) drawOverlay(ctx, w, paths, cam, st);
+  if (decor) drawExportDecor(ctx, W, H, decor, decorInfo(w, st, o.title ?? ''));
+}
+
 // 地图视图交给导出的：渲染器、现在的河的路径、换成干净画面的渲染器状态（当前世界的着色、存着的花纹，
 // 不带高亮、省份预览、幽灵海岸）、图层里打开的省名、导完了（屏幕重画）
 export interface ExportHost {
@@ -82,8 +123,12 @@ export function mapExporter(host: ExportHost) {
     const octx = out.getContext('2d');
     if (!octx) throw new Error('浏览器开不了这么大的画布');
     const cellPx = mesh.spacing * fr.cam.zoom * fr.dpr;
-    const m = tileMargin(cellPx);
-    const T = tileSize(renderer.exportLimit(), m, o.tile);
+    // 手绘（第八十七轮）：岸外的水纹按场景颜色的 mipmap 量离岸多远——四周多留一圈（够最外一道水纹），块与边距都取 64 的倍数，
+    // 各块的 mipmap 方格对齐整张图，拼起来没有接缝
+    const hand = styleUniforms(worldMapStyle(w.small)).hand === 1;
+    const m = hand ? Math.ceil((tileMargin(cellPx) + 48) / 64) * 64 : tileMargin(cellPx);
+    const T0 = tileSize(renderer.exportLimit(), m, o.tile);
+    const T = hand ? T0 - (T0 % 64) : T0;
     if (T < 64) throw new Error('显卡支持的画布太小，导不出这么大的图');
     const tiles = planTiles(fr.width, fr.height, T);
     state.busy = true;
@@ -105,7 +150,8 @@ export function mapExporter(host: ExportHost) {
         await new Promise((r) => setTimeout(r, 0));
       }
       if (cancelled()) return null;
-      if (o.overlay !== false) drawOverlay(octx as CanvasRenderingContext2D, w, paths, fr.cam, cleanOverlay(w, { cw: fr.cw, ch: fr.ch, dpr: fr.dpr }, host.provinceLabels()));
+      await finishImage(octx as CanvasRenderingContext2D, w, paths, fr.cam, cleanOverlay(w, { cw: fr.cw, ch: fr.ch, dpr: fr.dpr }, host.provinceLabels()), o, fr.width, fr.height);
+      if (cancelled()) return null;
       progress(0.9);
       return out;
     } finally {
@@ -153,7 +199,8 @@ export function mapExporter(host: ExportHost) {
         await new Promise((r) => setTimeout(r, 0));
       }
       if (cancelled()) return null;
-      if (o.overlay !== false) drawOverlay(octx as CanvasRenderingContext2D, w, paths, cam, cleanOverlay(w, { cw: W / dpr, ch: H / dpr, dpr }, host.provinceLabels()));
+      await finishImage(octx as CanvasRenderingContext2D, w, paths, cam, cleanOverlay(w, { cw: W / dpr, ch: H / dpr, dpr }, host.provinceLabels()), o, W, H);
+      if (cancelled()) return null;
       progress(0.9);
       return out;
     } finally {
@@ -175,7 +222,7 @@ export function snapshotCanvas(): HTMLCanvasElement | null {
 
 // 导出整张地图（.png）：进度显示在顶部的提示条上（与游戏文件包共用，可以取消），得到 PNG 的 Blob；取消、出错时为 null
 // projected：整个星球按现在的等面积、球形投影导出（不给时是等距圆柱的 2:1）
-export async function exportFullMap(o: { width: number; labels: LabelSize; seam?: number; projected?: boolean }): Promise<Blob | null> {
+export async function exportFullMap(o: { width: number; labels: LabelSize; seam?: number; projected?: boolean; decor?: DecorOptions; title?: string }): Promise<Blob | null> {
   const hook = (window as unknown as { __map2?: { exportImage: ExportImage } }).__map2;
   if (!hook || exportProgress.value !== null) return null;
   let stop = false;

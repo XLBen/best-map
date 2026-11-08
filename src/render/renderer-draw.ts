@@ -380,6 +380,13 @@ export abstract class RendererDraw extends RendererLayers {
     }
     if (pp) gl.uniform1f(this.loc(pc, 'uNoiseK'), 1 / (Math.PI * mesh.spacing));
     this.bindTex(pc, 'uSceneColor', t.color, 0);
+    // 手绘（第八十七轮）：场景颜色生成 mipmap（海岸线按它模糊，量离岸多远，见 shaders/hand.ts）；换回别的画风时只放回原来的过滤
+    const hand = styleUniforms(this.style).hand === 1;
+    if (hand || t.mip) {
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, hand ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+      if (hand) gl.generateMipmap(gl.TEXTURE_2D);
+      t.mip = hand;
+    }
     this.bindTex(pc, 'uSceneHeight', t.height, 1);
     this.bindTex(pc, 'uIdTex', t.id, 2);
     this.bindTex(pc, 'uFlat', this.tex.flat, 3);
@@ -418,6 +425,11 @@ export abstract class RendererDraw extends RendererLayers {
     gl.uniform4fv(this.loc(pc, 'uCoastLine'), su.coastLine);
     gl.uniform3fv(this.loc(pc, 'uProvLine'), su.provLine);
     gl.uniform3fv(this.loc(pc, 'uCountryLine'), su.countryLine);
+    // 手绘（第八十七轮）：写实、地图册只传 0（那一段不走），别的几项照样传
+    gl.uniform1i(this.loc(pc, 'uHand'), su.hand);
+    gl.uniform4fv(this.loc(pc, 'uPaper'), su.paper);
+    gl.uniform1f(this.loc(pc, 'uWash'), su.wash);
+    gl.uniform4fv(this.loc(pc, 'uRipple'), su.ripple);
     gl.uniform1i(this.loc(pc, 'uSeaData'), this.seaData ? 1 : 0);
     gl.uniform1i(this.loc(pc, 'uHasFlat'), this.hasFlat ? 1 : 0);
     gl.uniform1i(this.loc(pc, 'uHasGroup'), this.hasGroup ? 1 : 0);

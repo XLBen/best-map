@@ -14,7 +14,7 @@ import { FANTASY_FORMS } from './fantasy-forms';
 import { FANTASY_LAKE_TYPES } from './fantasy-lakes';
 import { FANTASY_RIVER_TYPES } from './fantasy-rivers';
 import { FANTASY_NEW_RIVER_TYPES } from './fantasy-water';
-import { BUILTIN_MAP_STYLES } from './map-styles';
+import { BUILTIN_MAP_STYLES, DRAWN_MAP_STYLES } from './map-styles';
 import { BUILTIN_COUNTRY_PATTERNS, BUILTIN_COUNTRY_TIERS } from './countries';
 import { BUILTIN_FACTIONS, BUILTIN_GOVERNMENTS, GOV_ERAS } from './governments';
 import { BUILTIN_STYLES } from './names';
@@ -50,6 +50,7 @@ import { DEFAULT_PROVINCE_RULES } from '../province-rules';
 //     names ▸ <地区>    别的地名风格按地区分（地区表见 STYLE_REGIONS，没列的放“其他”）
 //     forms             星球形态：以前向导里写死的六种星球（packs/planet-forms.ts），奇幻的另有几种
 //     styles            画风（第三十八轮）：写实、地图册（packs/map-styles.ts）
+//     drawn             手绘画风（第八十七轮）：手绘。新建世界不带（新世界与以前一样），在“图层 → 画风”里点它时从库里加
 //     tiers             国家等级（第四十二轮）：五档等级（packs/countries/tiers.json；第七十七轮去掉了四种格局：各级占多少只写在时代里）
 //     water             水系（第五十七轮）：七种现实的河、七种现实的湖（packs/water.ts）
 //
@@ -61,13 +62,15 @@ export const DEFAULT_LIBRARY = 'medieval';
 export const BASE_PATH: readonly string[] = [DEFAULT_LIBRARY, 'base'];
 // 画风的小包（第三十八轮）
 export const STYLES_PATH: readonly string[] = [DEFAULT_LIBRARY, 'styles'];
+// 手绘画风的小包（第八十七轮）
+export const DRAWN_PACK = 'drawn';
 // 国家等级的小包（第四十二轮）
 export const TIERS_PATH: readonly string[] = [DEFAULT_LIBRARY, 'tiers'];
 // 星球形态的小包
 export const FORMS_PATH: readonly string[] = [DEFAULT_LIBRARY, 'forms'];
 // 每个库里世界的底子（小包的 id）：把时代包整个加进世界时不带这几个（生成人文不用它们，自己移出的基础内容也不该被加回来），
 // 新建世界时在生成之前单独加（worldPartsOf）
-export const LIBRARY_BASE_PACKS: ReadonlySet<string> = new Set(['base', 'nature', 'names', 'forms', 'styles', 'tiers', 'water']);
+export const LIBRARY_BASE_PACKS: ReadonlySet<string> = new Set(['base', 'nature', 'names', 'forms', 'styles', DRAWN_PACK, 'tiers', 'water']);
 // 一个库新建世界时加的小包（第三十轮起默认这几个：基础、自然、中文地名、画风、国家等级；第五十七轮加上现实的水系）
 // 奇幻库另带奇幻的生态、河、湖（第五十七轮）：第五十二轮以后向导不能勾小包，不带就选不到。放在水系前面：类型的先后是前面的说了算，奇幻的河先定
 // 第五十九轮：看小包在不在，不看键：奇幻库复制成我的库（键变了）以后照样带（root：这个库；省略时按内置的库找）
@@ -208,7 +211,7 @@ const FICTION_ERAS: ReadonlySet<string> = new Set(['fantasy', 'scifi']);
 const EU4_GROUPS: readonly string[] = CULTURE_REGIONS.flatMap((r) => r.groups);
 
 // 世界的底子（见文件开头）：六个库共用同一份小包，奇幻的星球形态多几种
-function baseNodes(): { base: PackNode; nature: PackNode; names: PackNode; forms: PackNode; styles: PackNode; tiers: PackNode; water: PackNode } {
+function baseNodes(): { base: PackNode; nature: PackNode; names: PackNode; forms: PackNode; styles: PackNode; drawn: PackNode; tiers: PackNode; water: PackNode } {
   const regionOf = new Map(STYLE_REGIONS.flatMap((r) => r.styles.map((s) => [s, r.id])));
   const styles = BUILTIN_STYLES.filter((s) => s.id !== DEFAULT_STYLE);
   const regions: PackNode[] = [
@@ -234,6 +237,7 @@ function baseNodes(): { base: PackNode; nature: PackNode; names: PackNode; forms
     names: { id: 'names', name: '地名', packs: regions },
     forms: { id: 'forms', name: '星球形态', description: '新建整个星球时选：像地球、一块超大陆、破碎大陆……', planetForms: asItems(BUILTIN_PLANET_FORMS) },
     styles: { id: 'styles', name: '画风', description: '地图怎么画：写实、地图册。新建世界时默认带上；在“图层 → 画风”里换', mapStyles: asItems(BUILTIN_MAP_STYLES) },
+    drawn: { id: DRAWN_PACK, name: '手绘画风', description: '老式的手绘地图：画成小符号的山与森林、楷体的地名。在“图层 → 画风”里点“手绘”时加进世界', mapStyles: asItems(DRAWN_MAP_STYLES) },
     tiers: {
       id: 'tiers',
       name: '国家等级',
@@ -290,7 +294,7 @@ function build(): ResourcePack[] {
       );
     }
     const forms = era.id === 'fantasy' ? { ...shared.forms, planetForms: asItems([...BUILTIN_PLANET_FORMS, ...FANTASY_FORMS]) } : shared.forms;
-    packs.push(shared.base, shared.nature, shared.names, forms, shared.styles, shared.tiers, shared.water);
+    packs.push(shared.base, shared.nature, shared.names, forms, shared.styles, shared.drawn, shared.tiers, shared.water);
     return top(era.id, era.name, era.description ?? `${era.name}的时代、取值、政体、派系与文化`, packs);
   });
 }

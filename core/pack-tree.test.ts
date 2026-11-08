@@ -96,12 +96,12 @@ describe('内置资源包的树', () => {
     expect(ownItems<{ id: string }>(findPack(top('antiquity'), ['religion'])!, 'valueGroups').map((g) => g.id)).toContain('ancient');
     // 奇幻另有生态、河、湖、资源、星球形态
     expect(subPacks(top('fantasy')).map((x) => x.id)).toEqual(expect.arrayContaining(['biomes', 'rivers', 'lakes', 'resources', 'forms']));
-    // 第五十一轮：每个库都有世界的底子（基础、自然、地名、星球形态、画风、国家等级），是同一份对象
+    // 第五十一轮：每个库都有世界的底子（基础、自然、地名、星球形态、画风、国家等级），是同一份对象。第八十七轮：画风后面多了“手绘画风”
     for (const era of BUILTIN_ERAS) {
       const ids = subPacks(top(era.id)).map((x) => x.id);
-      expect(ids.slice(-7)).toEqual(['base', 'nature', 'names', 'forms', 'styles', 'tiers', 'water']);
+      expect(ids.slice(-8)).toEqual(['base', 'nature', 'names', 'forms', 'styles', 'drawn', 'tiers', 'water']);
       expect(ids).toContain('cultures');
-      for (const id of ['base', 'nature', 'names', 'styles', 'tiers', 'water']) expect(findPack(top(era.id), [id])).toBe(findPack(top('medieval'), [id]));
+      for (const id of ['base', 'nature', 'names', 'styles', 'drawn', 'tiers', 'water']) expect(findPack(top(era.id), [id])).toBe(findPack(top('medieval'), [id]));
     }
     const lib = top('medieval');
     expect(packItems(findPack(lib, ['nature'])!, 'biomes')).toEqual(DEFAULT_SPECIES);

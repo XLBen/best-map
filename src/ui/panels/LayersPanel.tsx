@@ -1,7 +1,9 @@
 import { useRef, useState } from 'preact/hooks';
 import type { World } from '../../../core/world';
 import { NAME_MODES } from '../../../core/name-display';
-import { worldMapStyleId, worldMapStyles } from '../../../core/map-style';
+import { worldMapStyleId } from '../../../core/map-style';
+import { library } from '../../library';
+import { mapStyleChoices, mapStyleCommand } from '../domain/map-styles';
 import { type ProjectionPref, type ViewMode, exec, labelGroups, mode, nameMode, overlays, prefs, reference, season, setNameMode, setPrefs, setReference, showToast, world } from '../../state';
 import { Seg } from '../common';
 import { Slider, linear } from '../components/Slider';
@@ -30,24 +32,33 @@ const PROJECTION_HINTS: Record<ProjectionPref, string> = {
 };
 
 // 画风（第三十八轮）：世界里的画风（每个库的“画风”里的，可以复制了改），选了记在世界里（可以撤销、跟着世界存盘）。
-// 四种以内用分段按钮，多了用下拉
+// 第八十七轮：世界用的库里“手绘画风”的手绘也列着，点它时从库里加进世界并选上。四种以内用分段按钮，多了用下拉
 function MapStyleSection({ w }: { w: World }) {
-  const styles = Object.values(worldMapStyles(w.small));
+  const lib = library.value;
+  const choices = mapStyleChoices(w.small, lib);
   const cur = worldMapStyleId(w.small);
   const pick = (id: string) => {
-    if (id && id !== cur) void exec({ op: 'set_map_style', id }, '正在换画风…');
+    const c = choices.find((x) => x.style.id === id);
+    const cmd = c && mapStyleCommand(w, c, lib);
+    if (cmd) void exec(cmd, '正在换画风…');
   };
+  const inWorld = choices.filter((c) => !c.path).length;
   return (
     <section>
       <h5>画风</h5>
-      {!styles.length ? (
-        <p class="hint">世界里没有画风，按写实画。在资源库里任何一个库的“画风”里添加</p>
-      ) : styles.length <= 4 ? (
-        <Seg value={cur} options={styles.map((s): [string, string] => [s.id, s.name])} titles={Object.fromEntries(styles.map((s) => [s.id, s.description ?? s.name]))} onChange={pick} wide />
+      {!inWorld && <p class="hint">世界里没有画风，按写实画。在资源库里任何一个库的“画风”里添加</p>}
+      {!choices.length ? null : choices.length <= 4 ? (
+        <Seg
+          value={cur}
+          options={choices.map((c): [string, string] => [c.style.id, c.style.name])}
+          titles={Object.fromEntries(choices.map((c) => [c.style.id, `${c.style.description ?? c.style.name}${c.path ? '（点了从资源库加进世界）' : ''}`]))}
+          onChange={pick}
+          wide
+        />
       ) : (
         <select value={cur} onChange={(e) => pick((e.target as HTMLSelectElement).value)}>
-          {styles.map((s) => (
-            <option value={s.id}>{s.name}</option>
+          {choices.map((c) => (
+            <option value={c.style.id}>{c.style.name}</option>
           ))}
         </select>
       )}
