@@ -45,7 +45,7 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 | 新命令、改命令 | 格式在 `core/commands/schema.ts` 的 `baseCommands`（先后不要调换），执行在对应类别的 `core/commands/<类>.ts` 的 `runXxxOp`；改人文数组的在 `core/commands.ts` 的 `touchedArrays` 登记 |
 | 生成的各步 | 流水线 `core/engine-recompute.ts`（历史、预览在 `core/engine.ts`）；地形 `generate.ts` / `planet-gen.ts` / `relief.ts` / `outline.ts` / `terrain.ts`；高程 `elevation.ts`；气候 `climate.ts` / `planet-climate.ts`；水 `hydrology.ts`、`rivers.ts`；生态 `vegetation.ts`；人文 `core/human/generate.ts` |
 | 着色器 | `src/render/shaders/*.ts`；CPU 的同一套式子在 `core/subcell.ts`、`core/display.ts`、`core/coast-style.ts`（测试把 GLSL 照字面换成 JS 对照）；有意改源码后 `RECORD_SHADERS=1 npx vitest run src/render/shader-sources.test.ts` |
-| 地名、国名、片区名的排版 | `src/render/overlay-labels.ts`、`overlay-country-labels.ts`、`src/ui/map/political.ts`；叠加层新选项要进 `overlay-base.ts` 的 `OverlayState` 与 `overlay-static.ts` 的 `FIELD_KIND` |
+| 地名、国名、片区名的排版 | `src/render/overlay-labels.ts`（候选位置、字号分档在 `label-place.ts`，沿水的线在 `label-lines.ts`，摘要 `RECORD_LABELS=1` 重录）、`overlay-country-labels.ts`、`src/ui/map/political.ts`；叠加层新选项要进 `overlay-base.ts` 的 `OverlayState` 与 `overlay-static.ts` 的 `FIELD_KIND` |
 | 工具 | 声明在 `src/ui/defs/tools/<类>.ts`（`index.ts` 合起来），行为在 `src/ui/tools/<类>.ts`（约定见 `src/ui/tools/api.ts`），河在 `src/ui/river/` |
 | 面板、底部条、顶栏 | `src/ui/panels/*.tsx`、`src/ui/shell/*.tsx`；控件只用 `src/ui/components/`；写法见 `docs/dev/ui-design.md` |
 | 地图模式、底图 | `src/ui/map/modes.ts`、`src/ui/defs/layers.ts`、`src/render/colors.ts` |
