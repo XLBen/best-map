@@ -9,7 +9,7 @@ import { iceStrength, sameIce } from './glacial';
 import { glacialLegacy } from './glacial-legacy';
 import { assignNames, detectFeatures, guideFeatures, prepareFeatures, regionFeatures } from './features';
 import { computeEffects } from './effects';
-import { computeHydrology, shapeLakeBeds } from './hydrology';
+import { computeHydrology, shapeLakeBeds, warmHydrology } from './hydrology';
 import { typeLakes } from './lake-types';
 import { stopCells, typeRivers } from './river-types';
 import { waterPlan } from './water-types';
@@ -157,6 +157,8 @@ export function* recomputeDerived(e: RecomputeState): Generator<void, Derived> {
   d.corrP.fill(0);
   for (const k of Object.keys(d.corrF)) delete d.corrF[k];
   pass(null);
+  // 水文的缓存（路由、坡度、冰盖）已经是这一份地形的了：空闲预热不用再做（warmWater）
+  warmedWater = { terrain, ice: d.ice };
   lap('hydrology');
   yield;
   // 生态、河对周围的影响（第三批）：按第一遍的结果算一次，之后的求解和最后一遍都在加了影响的气候上算
@@ -202,4 +204,21 @@ export function* recomputeDerived(e: RecomputeState): Generator<void, Derived> {
   e.lastTimings = timings;
   e.dirty = Dirty.None;
   return d;
+}
+
+// 空闲预热（第八十八轮，见 engine.ts 的 warmSteps）：冰盖（南界的噪声按格算一次）、挖过冰川的地形，按水文读到的高程（流水线里同样的两步）
+// 把路由（按陆块）、坡度记下来。新网格上打开以后的第一笔只重算改到的陆块、格。只放进缓存，推导不动
+// 返回做了没有（同一份地形、冰盖已经预热过时什么都不做）
+let warmedWater: { terrain: Float32Array; ice: Float64Array } | null = null;
+export function warmWater(w: World, terrain: Float32Array): boolean {
+  const d = w.derived;
+  // 冰盖按内容比：重算完以后推导里与上一步相同的数组会换成上一步的那一个（Engine.shareSame）
+  if (warmedWater && warmedWater.terrain === terrain && sameIce(warmedWater.ice, d.ice)) return false;
+  warmedWater = { terrain, ice: d.ice };
+  iceStrength(w, glacialLegacy.on);
+  if (d.ice.length !== w.mesh.n) return true;
+  const elevation = Float32Array.from(glacialLegacy.on ? terrain : glacialTerrain(w, terrain, d.ice));
+  carveBeds(w, elevation);
+  warmHydrology(w, elevation);
+  return true;
 }

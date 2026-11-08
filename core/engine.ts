@@ -19,7 +19,7 @@ import { applyPopFix, moveCells, populationFix } from './human/population';
 import { computePopLayers } from './human/layers';
 import { type Derived, type Settings, type World, createWorld, kmPerUnit, settingsSchema } from './world';
 import type { WorldDoc, Timings, EngineBase, DerivedState, DoneStep, Checkpoint, UndoneStep, DocTail, PreviewResult, ProvincesPreview } from './engine-types';
-import { type RecomputeState, recomputeDerived } from './engine-recompute';
+import { type RecomputeState, recomputeDerived, warmWater } from './engine-recompute';
 export { passStats } from './engine-recompute';
 import { onlyRestyled, drain, landAndFailing, provinceOnly, diffWorlds, undoDepth, UNDO_BYTES, keptBytes, sameContent, privatize, cloneWorld } from './engine-helpers';
 export type { WorldDoc, Timings, EngineBase, Checkpoint, DocTail, PreviewExtras, PreviewResult, ProvincesPreview } from './engine-types';
@@ -504,6 +504,8 @@ export class Engine {
     if (terrain) {
       if (w.mesh.kind === 'sphere') yield* warmClimateSphereSteps(w, terrain);
       else if (prepareClimatePlane(w)) yield;
+      // 冰盖、挖过冰川的地形、水文的路由与坡度（第八十八轮）
+      if (this.dirty === Dirty.None && warmWater(w, terrain)) yield;
     }
     if (this.features && terrain && this.dirty === Dirty.None) {
       if (prepareFeatures(w)) yield;

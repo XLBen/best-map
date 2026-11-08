@@ -77,6 +77,9 @@ interface SweepGeo {
   east: Float64Array;
   rain: Float64Array;
   we: Float64Array;
+  // 第八十八轮：每条边的长度（km）与挡着的山随它衰减的倍数 exp(−L / SHADOW_KM)（与在扫的时候现算的逐值相同）
+  len: Float64Array;
+  decay: Float64Array;
 }
 const geoCache = new WeakMap<Mesh, SweepGeo>();
 function sortByX(x: Float64Array, n: number): Int32Array {
@@ -132,19 +135,26 @@ function sweepGeo(world: World): SweepGeo {
     rain[i] = latRain(lat);
     we[i] = windEastAt(lat);
   }
-  g = { key, order, east, rain, we };
+  const len = new Float64Array(mesh.adj.length);
+  const decay = new Float64Array(mesh.adj.length);
+  for (let e = 0; e < mesh.adj.length; e++) {
+    const L = mesh.dist[e] * kmPerUnit;
+    len[e] = L;
+    decay[e] = Math.exp(-L / PRECIP.SHADOW_KM);
+  }
+  g = { key, order, east, rain, we, len, decay };
   geoCache.set(mesh, g);
   return g;
 }
 
 // 一格从上风的邻格接过走过的陆路与挡着的山（dir = 1：风往东吹，上风在西边）
-function sweepCell(i: number, dir: number, off: Int32Array, adj: Int32Array, dist: Float64Array, km: number, east: Float64Array, land: Uint8Array, todo: Uint8Array, road: Float64Array, sh: Float64Array, hgt: Float64Array) {
+function sweepCell(i: number, dir: number, off: Int32Array, adj: Int32Array, len: Float64Array, decay: Float64Array, east: Float64Array, land: Uint8Array, todo: Uint8Array, road: Float64Array, sh: Float64Array, hgt: Float64Array) {
   let best = Infinity;
   let bestSh = 0;
   for (let e = off[i]; e < off[i + 1]; e++) {
     if (east[e] * dir >= 0) continue;
     const j = adj[e];
-    const L = dist[e] * km;
+    const L = len[e];
     if (land[j] !== 1) {
       if (L * 0.5 < best) {
         best = L * 0.5;
@@ -155,7 +165,7 @@ function sweepCell(i: number, dir: number, off: Int32Array, adj: Int32Array, dis
       if (r < best) {
         best = r;
         const m = sh[j] > hgt[j] ? sh[j] : hgt[j];
-        bestSh = m > 0 ? m * Math.exp(-L / PRECIP.SHADOW_KM) : 0;
+        bestSh = m > 0 ? m * decay[e] : 0;
       }
     }
   }
@@ -195,8 +205,7 @@ function todoList(order: Int32Array, todo: Uint8Array, list: Int32Array): number
 function proxyOn(world: World, g: SweepGeo, todo: Uint8Array, list: Int32Array, m: number, hgt: Float64Array, coastKm: Float64Array, road: Float64Array, sh: Float64Array, out: Float64Array): void {
   const { mesh, causes } = world;
   const land = causes.land;
-  const { off, adj, dist } = mesh;
-  const km = world.kmPerUnit;
+  const { off, adj } = mesh;
   const east = g.east;
   for (let k = 0; k < m; k++) {
     const i = list[k];
@@ -208,11 +217,11 @@ function proxyOn(world: World, g: SweepGeo, todo: Uint8Array, list: Int32Array, 
   for (let p = 0; p < passes; p++) {
     for (let k = 0; k < m; k++) {
       const i = list[k];
-      if (we[i] >= 0) sweepCell(i, 1, off, adj, dist, km, east, land, todo, road, sh, hgt);
+      if (we[i] >= 0) sweepCell(i, 1, off, adj, g.len, g.decay, east, land, todo, road, sh, hgt);
     }
     for (let k = m - 1; k >= 0; k--) {
       const i = list[k];
-      if (we[i] < 0) sweepCell(i, -1, off, adj, dist, km, east, land, todo, road, sh, hgt);
+      if (we[i] < 0) sweepCell(i, -1, off, adj, g.len, g.decay, east, land, todo, road, sh, hgt);
     }
   }
   const floor = PRECIP.MARINE_FLOOR;

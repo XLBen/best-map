@@ -431,13 +431,20 @@ function composeBase(world: World, cache: BaseCache, p: ComposeParams, outL: Flo
   const { coneB, coneU } = conesFor(world, cache, coneCount);
   const seaLevel = seaLevelFor(world, cache, p.landFraction, p.rough);
   const mountains = p.mountains;
-  for (let i = 0; i < world.mesh.n; i++) {
-    outL[i] = comp.b0[i] - seaLevel + mountains * comp.mountB[i] + coneB[i];
-    outU[i] = clamp(mountains * (0.95 * beltCore(comp.mountU[i]) + comp.hillU[i]) + coneU[i], 0, 1.6);
-  }
+  composeCells(world.mesh.n, comp.b0, comp.mountB, comp.mountU, comp.hillU, coneB, coneU, seaLevel, mountains, BELT.M0, outL, outU);
   // 基准面：“山多高”只缩放高原
   if (outT) for (let i = 0; i < world.mesh.n; i++) outT[i] = comp.T[i] + mountains * comp.Tp[i];
   return seaLevel;
+}
+
+// 第八十八轮（提速）：composeBase 逐格的那一段放进模块里的小函数，beltCore 的算式写在循环里（M0 取一次；与调用 beltCore 逐值相同）
+function composeCells(n: number, b0: Float32Array, mountB: Float32Array, mountU: Float32Array, hillU: Float32Array, coneB: Float32Array, coneU: Float32Array, seaLevel: number, mountains: number, M0: number, outL: Float32Array, outU: Float32Array): void {
+  for (let i = 0; i < n; i++) {
+    outL[i] = b0[i] - seaLevel + mountains * mountB[i] + coneB[i];
+    const m = mountU[i];
+    const belt = M0 === 0 ? m : m <= 0 ? 0 : (m * m * (1 + M0)) / (m + M0);
+    outU[i] = clamp(mountains * (0.95 * belt + hillU[i]) + coneU[i], 0, 1.6);
+  }
 }
 
 // 由基础场与用户编辑得到最终的 landness、抬升、岩性与陆海掩码（写回 causes 的同名数组）
