@@ -75,14 +75,14 @@ describe('手绘画风的符号', () => {
     expect({ n: a.length, byKind, digest: digestOf(a) }).toMatchInlineSnapshot(`
       {
         "byKind": [
-          97,
-          347,
-          45,
-          100,
+          96,
+          357,
+          51,
+          103,
           0,
         ],
-        "digest": "d60145a3",
-        "n": 589,
+        "digest": "4ea7c526",
+        "n": 607,
       }
     `);
   });
