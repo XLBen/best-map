@@ -30,13 +30,23 @@ function regnal(base: { zh: string; orig?: string }, k: number): { zh: string; o
   return { zh: `${base.zh}${ORD[k] ?? k}世`, ...(base.orig ? { orig: `${base.orig} ${ROMAN[k] ?? k}` } : {}) };
 }
 
+// 一次生成里共用的：文化 → 地名风格，（政体、主流文化、等级）→ 统治者的称号（称号要看主流文化最典型的取值，每国现算要几十微秒）
+export interface LoreMemo {
+  style: Map<string, ReturnType<typeof styleOf>>;
+  title: Map<string, string | undefined>;
+}
+export const loreMemo = (): LoreMemo => ({ style: new Map(), title: new Map() });
+
 // 一国生成的统治者与家族。seed 是国家的种子（countryRules.seed），era 是生成用的时代
-export function generateLore(world: World, m: CountryMeta, seed: number, era: Era | undefined): CountryLore {
+export function generateLore(world: World, m: CountryMeta, seed: number, era: Era | undefined, memo: LoreMemo = loreMemo()): CountryLore {
   const small = world.small;
-  const style = styleOf(world, cultureById(small, m.primaryCulture));
+  let style = memo.style.get(m.primaryCulture);
+  if (!style) memo.style.set(m.primaryCulture, (style = styleOf(world, cultureById(small, m.primaryCulture))));
   const s = countrySeed(seed, m.id);
   const rand = mulberry32(mixSeed(seed, hashString('rulers'), m.id));
-  const title = rulerTitleOf(world, m, era);
+  const tkey = `${m.government}|${m.primaryCulture}|${m.tier ?? ''}`;
+  if (!memo.title.has(tkey)) memo.title.set(tkey, rulerTitleOf(world, m, era));
+  const title = memo.title.get(tkey);
   const now = Math.max(eraNow(era), m.founded);
   const span = now - m.founded;
   const k = Math.max(3, Math.min(8, Math.round(2 + span / 40 + rand() * 2)));
@@ -91,9 +101,11 @@ export function generateLore(world: World, m: CountryMeta, seed: number, era: Er
     const linked = prev && prev.dynasty === dyn && to[i - 1] === from[i];
     const parent = linked ? (prev.parent !== undefined && rand() < 0.25 ? prev.parent : prev.id) : undefined;
     // 最后一位的名字同以前的 ruler（同一个种子）；别的按位置派生。有父母时两成沿用父母的名字
-    const fresh = personName(style, i === k - 1 ? mixSeed(s, 0x7e1) : mixSeed(s, 0x7e1, k - 1 - i));
     const p = parent !== undefined ? rulers[parent - 1] : undefined;
-    const base = i < k - 1 && p && rand() < 0.2 ? { zh: p.name.replace(/[二三四五六七八九十]+世$/, ''), ...(p.orig ? { orig: p.orig.replace(/ [IVX]+$/, '') } : {}) } : fresh;
+    const base =
+      i < k - 1 && p && rand() < 0.2
+        ? { zh: p.name.replace(/[二三四五六七八九十]+世$/, ''), ...(p.orig ? { orig: p.orig.replace(/ [IVX]+$/, '') } : {}) }
+        : personName(style, i === k - 1 ? mixSeed(s, 0x7e1) : mixSeed(s, 0x7e1, k - 1 - i));
     const n = (uses.get(base.zh) ?? 0) + 1;
     uses.set(base.zh, n);
     const name = regnal(base, n);

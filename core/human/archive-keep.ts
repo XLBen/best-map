@@ -1,7 +1,7 @@
 import type { ArchiveState, CountryLore, CountryMeta, HistoryEvent, World } from '../world';
 import type { Era } from './era';
 import { generateEvents } from './events';
-import { generateLore } from './rulers';
+import { generateLore, loreMemo } from './rulers';
 
 // 生成、重新生成国家时档案里留什么（第八十五轮）。重新长国家（generateHuman 的 countryMode 是 generate：生成人文、生成国家、
 // 重新生成国家、重新生成人文和国家）的最后一步：
@@ -30,6 +30,7 @@ export function writeArchive(world: World, before: ArchiveBefore, seed: number, 
   for (const m of Object.values(metas)) if (before.metas[m.id] === m) kept.add(m.id);
   const countries: Record<string, CountryLore> = {};
   const fresh: CountryMeta[] = [];
+  const memo = loreMemo();
   for (const m of Object.values(metas).sort((a, b) => a.id - b.id)) {
     const was = old?.countries[m.id];
     if (kept.has(m.id)) {
@@ -37,7 +38,7 @@ export function writeArchive(world: World, before: ArchiveBefore, seed: number, 
       continue;
     }
     fresh.push(m);
-    const gen = generateLore(world, m, seed, era);
+    const gen = generateLore(world, m, seed, era, memo);
     const lore: CountryLore = was?.edited ? { rulers: was.rulers, dynasties: was.dynasties, edited: true } : gen;
     if (was?.note !== undefined && before.metas[m.id]) lore.note = was.note;
     countries[m.id] = lore;
