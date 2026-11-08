@@ -38,7 +38,7 @@
 
 ## 城市、道路、地标、点（第二十四轮）
 - `settle-types.ts` 城市等级（第四十二轮多了地图上的浓淡、大小）、地标类型、点的类型的格式与等级规则；`settle-content.ts` 世界里的列表；`settle-kinds.ts` 登记进登记表
-- `settlements.ts` 城市（生成、表与档案、命令、整理、修补）
+- `settlements.ts` 城市的生成，照旧导出下面几个（第八十三轮拆出）：`city-table.ts` 现算的表（等级、人口、所属、名字），`city-edit.ts` 编辑与修补，`city-archive.ts` 档案
 - `roads.ts` 道路（代价、A* 与最近的路网、生成、改走向、修补）
 - `landmarks.ts` 地标（自然的检测器、人造的放法、名字、命令）；`points.ts` 自定义点
 - `settle-gen.ts` 一起生成（生成人文的最后一步与命令共用）

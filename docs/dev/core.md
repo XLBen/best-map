@@ -9,13 +9,13 @@
 - `geo.ts` 整个星球的几何：经度绕回、球面距离、大圆、球面上的圆
 
 ## 地形
-- `generate.ts` 随机世界：地壳高度、板块、火山锥；裂开漂移的大陆块、三角形半岛、地峡（第三十五轮）
+- `generate.ts` 随机世界：地壳高度、板块、火山锥；裂开漂移的大陆块、三角形半岛、地峡（第三十五轮）。第八十三轮拆开（照旧全部导出）：`generate-model.ts` 设置、类型的参数与模型的类型，`generate-rifts.ts` 裂开的大陆块与地峡，`generate-sample.ts` 每格的取样（大陆场、板块边界）
 - `outline.ts` 大陆轮廓的式子与常数（切口、大陆架、洋中脊、地峡、半岛；地区与星球共用）
 - `relief.ts` 大格局（第三十二轮）：板块栅格与距离变换、基准面、高原、洼地
-- `planet-gen.ts` 整个星球的生成器（球面板块、大陆块、热点岛链）；`planet-form.ts` 星球形态的格式
-- `terrain.ts` 组合地形（`resolveTerrain`）、画笔、放岛、岛链、湖里的岛（`placeIsland`、`lakeIslandStamp`）、填海块（`fillSeaPockets`）、空闲预热的分段采样
+- `planet-gen.ts` 整个星球的生成器（球面板块、大陆块、热点岛链）；`planet-form.ts` 星球形态的格式。第八十三轮拆开：`planet-gen-model.ts`（布局坐标 `LAYOUT_R`、类型、向量小工具）、`planet-gen-rifts.ts`、`planet-gen-sample.ts`（每格的取样）、`planet-gen-crust.ts`（形态的地形脚本）
+- `terrain.ts` 组合地形（`resolveTerrain`）、空闲预热的分段采样，照旧导出下面几个（第八十三轮拆出）：`terrain-coast.ts` 海岸噪声、潟湖、填海块（`fillSeaPockets`）、小洼地的湖；`terrain-brush.ts` 画陆地 / 画海、打碎、抬升的画笔；`islands.ts` 放岛、碎岛；`island-chains.ts` 湖里的岛、岛链、`placeIsland`、`combineStamps`
 - `island-types.ts` 岛的种类与编号（`causes.islandType`、`LAGOON_BIT`）、省份按格分陆海（`provinceLand`、`landProvinceCells`、`landPixelCells`）
-- `elevation.ts` 抬升-侵蚀稳态、海底（`seafloor`）、湖底（`lakeBedShape`）、湖里的岛的高度；按陆块的记忆（`fromMemo`）
+- `elevation.ts` 高程的入口与按陆块的记忆（`fromMemo`）；第八十三轮拆开（照旧全部导出）：`elevation-solve.ts` 抬升-侵蚀稳态的求解、迎风坡、洼地，`seafloor.ts` / `seafloor-coast.ts` 海底（`seafloor`）与它用的岸边属性，`elevation-lakes.ts` 湖底（`lakeBedShape`）、画的湖、只挖河床（`carveBeds`）
 - `plains.ts` 冲积平原、冲积扇、三角洲平原（第三十三轮）
 - `glacial.ts` 冰川刻蚀与冰川湖群（第三十四轮）
 - `routing.ts` 汇流路由（Priority-Flood + 最陡下降）；`heap.ts` 类型化数组的堆
@@ -27,15 +27,15 @@
 - `climate-flow.ts` 平面的输运图：网格的邻接反查与扫描顺序、入流表 `buildFlow`、拓扑序 `kahnOrder`
 - `wind-deflect.ts` 山挡风（平面与球面共用）
 - `content-memo.ts` 按内容做键的缓存 `ContentMemo`
-- `planet-climate.ts` 整个星球的气候（`sphereStatic` / `sphereLand` 分层缓存）；`sphere-flow.ts` 球面上的输送
+- `planet-climate.ts` 整个星球的气候（`sphereStatic` / `sphereLand` 分层缓存）；第八十三轮拆出 `planet-land-fraction.ts`（陆地比例的模糊）、`planet-climate-steps.ts`（气温、水汽扫掠、海风、季风等小步）；`sphere-flow.ts` 球面上的输送
 - `ocean.ts` 简化洋流与海面温度（整个星球）
 - `ocean-plane.ts` 一块地区的洋流（第四十六轮）：粗栅格（像素约 3 格、长边 ≤ 128）上的风生环流、上涌、海温输送、带上陆地；按像素上取到的海陆、温度、风缓存；`ocean-raster.ts` 它用的只看像素的小算子（挡流陆地、海岸距离、平滑、倒角距离）
 - `hydrology.ts` 填洼汇流、湖、径流（`cut`：断流的格）、湖底修深（`shapeLakeBeds`）、坡度缓存（`slopeMemo`）
-- `rivers.ts` 河流折线与河画出来的带子（`riverRibbon`）、河口（`normalMouth`、`tidyMouths`）、三角洲分汊（`withBranches`）
+- `rivers.ts` 描河（`traceRivers`），照旧导出下面几个（第八十三轮拆出）：`rivers-line.ts` 折线的类型、平滑与曲流、编码、画的河的导线、几何小工具；`rivers-shore.ts` 对画面上岸线的查询；`rivers-mouth.ts` 河口（`normalMouth`、`tidyMouths`）；`rivers-branch.ts` 三角洲分汊（`withBranches`）；`rivers-ribbon.ts` 河画出来的带子（`riverRibbon`）
 - `delta.ts` 三角洲的河口与亚格子海岸凸出（`deltaBulge`）
 - `coast-memo.ts` 描河时按画面海岸场的查询跨几次描河记下来
 - `coast-style.ts` 海岸类型（峡湾、沙坝、溺谷、小湖群的权重）与着色器海岸值纹理 b、a 的打包；`LOOK`、`SKERRY_REACH`
-- `fjords.ts` 峡湾（第三十六轮）：谷网 `buildFjordNet`（按块）、`fjordLayer`、着色器的峡湾纹理、`FJ` 常数
+- `fjords.ts` 峡湾（第三十六轮）：谷网 `buildFjordNet`（按块）；第八十三轮拆出（照旧导出）：`fjord-base.ts` `FJ` 常数、谷网的类型、候选的谷段、画法的场，`fjord-layer.ts` `fjordLayer`（着色器的峡湾纹理）
 - `river-pack.ts` 地图上的河在计算 Worker 里描好打包（`worldRivers`），主线程 `seedRivers` 拆开直接用；`riverDraw`；第八十轮：`riversId` 这一份的编号（没变时快照不带河，主线程 `reseedRivers` 用手上拆好的）
 - `river-edit.ts` 改一条河（拖控制点、加删弯点、重画一笔）
 - `water-types.ts` 河流类型、湖泊类型共用的部分：声明式条件（`when`）、一遍要做什么（`waterPlan`）、允许表编译成查表（`waterRules`）；`river-types.ts` 河流类型（每格哪种河、河网 `riverNet`、断流的格 `stopCells`、河岸场）；`river-segments.ts` 短段并进相邻的段；`lake-types.ts` 湖泊类型；`water-table.ts` 允许表的读写（生态页、河湖页共用）。第五十七轮：湖的条件多大小（`LAKE_WHEN_KEYS`）；`river-pack.ts` 的带子按线缓存（`memoDraws`）；`rivers.ts` 断流的尾巴（`RiverLine.tail`）；`vegetation.ts` 的 `baseBiomes` 只算河格和湖岸（`waterCells`）；`biome-scripts.ts` 的记录按遍分开（`SLOT_*`），同一遍里比较快照的结果复用（`newScriptPass`）；`waterPlan` 的 `reuseFirstBase`：奇幻库第二遍的类型读第一遍的生态
@@ -52,17 +52,17 @@
 - `script.ts` 脚本的运行环境（编译、中英文变量表、辅助函数、安全模式、给看门狗报平安；冻结的 Math 副本）
 
 ## 地名、画风、省份
-- `features.ts` 地理要素识别（陆块、海、山脉、群岛……；用户圈的地名区块；前后地物配对留名字）
+- `features.ts` 地理要素识别的入口（`detectFeatures`、画的河、用户圈的地名区块）；第八十三轮拆开（照旧导出）：`features-base.ts` 种类与格图工具，`features-terrain.ts` 从地形认的（群岛、海、湖、河、山……，跨几次的记忆），`features-nature.ts` 生态区与物种的地名，`features-names.ts` 起名、前后地物配对留名字
 - `names.ts` 模板式起名；`name-styles.ts` 地名风格（模板式、音译式，`styleFor`）；`name-display.ts` 中文 / 原文 / 两者
 - `map-style.ts` 画风的格式（`DEFAULT_LOOK` 就是写实）、`styleRgba`、`worldMapStyle`、签名 `mapStyleKey`
-- `provinces.ts` 省份的划分、局部重划、修补（海、陆、湖三类）、湖与陆地的整理（`lakeProvinceFix`）；`province-rules.ts` 划分的规则（第七十八轮起是资源库里的内容“省份划分”：格式、默认的一份、世界的那一份 `worldProvinceRules`，种子在 `small.provinceSeed`）
-- `select.ts` 画笔、拖动扩张、画河的路线、圈一片、剪刀沿线切省；`seams.ts` 剪刀的切线
+- `provinces.ts` 省份的划分、局部重划、修补（海、陆、湖三类）、湖与陆地的整理（`lakeProvinceFix`）；`province-kinds.ts` 种类、目标大小、起名、统计（第八十三轮拆出）；`province-rules.ts` 划分的规则（第七十八轮起是资源库里的内容“省份划分”：格式、默认的一份、世界的那一份 `worldProvinceRules`，种子在 `small.provinceSeed`）
+- `select.ts` 画笔、拖动扩张、画河的路线、圈一片、剪刀沿线切省；画的河照着线走（第八十三轮拆出，照旧导出）：`course-base.ts` 计划的类型，`course-plan.ts` 描线与汇合，`course-overlap.ts` 重叠分析，`course-edit.ts` 并入、延长、改道、提醒；`seams.ts` 剪刀的切线
 
 ## 引擎与命令
 - `world.ts` 世界的数据（原因、推导、小数据 `SmallState`、各种 schema）；`world-token.ts` 一个世界全部数组的“这一批”编号（`arraysToken`，第八十轮：主线程上数组没变时相同；城市表、城市地标的列表、国家的统计按它当键）
 - `commands.ts` 命令的入口：`applyCommand`（校验、撤销记录、内容的增减）、`revert`、`runOp`；照旧导出 `Command`、`Dirty`……
 - `commands/` 第四十一轮从 commands.ts 拆出来：`schema.ts` 命令的格式（`baseCommands` 的先后不要调换）、`shared.ts` 共用的（`Dirty`、`UndoRecord`、`ApplyContext`、`RunResult`）、每类一个 `runXxxOp`：`terrain.ts`、`nature.ts`（生态、约束、画的河、河湖岛的种类、场）、`provinces.ts`、`features.ts`（地名、片区、内容、风格、画风）、`human.ts`、`settlements.ts`
-- `engine.ts` 流水线、历史、撤销缓存、预览、检查点、空闲预热（`warmSteps`）、`fixLakeProvinces`
+- `engine.ts` 历史、撤销缓存、预览、检查点、空闲预热（`warmSteps`）、`fixLakeProvinces`；第八十三轮拆出：`engine-recompute.ts` 按标记重算的流水线（`recomputeDerived`、`passStats`），`engine-types.ts` 世界文件、检查点、预览结果的类型，`engine-helpers.ts` 预览的差异、复制世界
 - `small-copy.ts` 小数据的副本（第四十七轮）：内容（`small.content`，不可变）按引用共用，别的是一段 JSON；撤销记录、比较、预览的克隆都用它第五十四轮：人口群体（`small.popGroups`）也按引用共用。
 - `preview-world.ts` 预览世界（只带变了的数组；`postedPatch`：内容没换时不发）；`doc-version.ts` 世界文件的版本（`DOC_VERSION`）与打开前的检查
 - `rng.ts` 随机数与噪声（按位置取，与格数无关）；`digest.ts` 64 位哈希；`errors.ts`、`type-id.ts`、`world-types.ts` 为避免循环引用拆出来的小文件
@@ -86,7 +86,7 @@
 - `compact.ts` 压缩世界文件（第五十轮：只去掉“加了又删”）；`tidy.ts` 整理本世界的计划（在副本上试，地图不变才移出）
 
 ## 输出
-- `subcell.ts` 格以下的细节（破碎度、海岸值 `coastValues` / `shownCoastValues`、栅格化），屏幕与导出共用，着色器里同一套式子
+- `subcell.ts` 格以下的细节、栅格化（`rasterizeWorld`），屏幕与导出共用，着色器里同一套式子；第八十三轮拆开（照旧导出）：`subcell-noise.ts` 与 GLSL 逐位一致的哈希与噪声，`subcell-coast.ts` 海岸值（`coastValues` / `shownCoastValues`）、破碎度、海岸类型，`subcell-locate.ts` 点在哪个三角形
 - `display.ts` 画面上的一点画的是哪一格、画面上的海岸场（`displayCoast`、`displayCellAt`、`shoreCrossing`）
 - `export.ts` 导出；`export-terrain.ts` 导出用的地形（id、中文名、地形图的颜色；生态的 `terrain` 选它）；`thumbnail.ts` 向导缩略图；`presets.ts` 世界大小、纬度带、星球格数（`planetCells`）
 

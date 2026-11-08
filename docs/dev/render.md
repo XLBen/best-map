@@ -3,14 +3,14 @@
 WebGL2 底图 + 2D 画布的矢量叠加。屏幕与导出共用同一套画法；改了画法要跑 `node tools/compose-ab.mjs` / `node tools/overlay-ab.mjs` 逐字节对照（见 [性能](performance.md)）。设计见 history/ [第37轮](history/第37轮.md)（描格）、[第38轮](history/第38轮.md)（画风）、[第39轮](history/第39轮.md)（图层提速）、[第40轮](history/第40轮.md)（叠加层提速）。
 
 ## WebGL
-- `renderer.ts` 渲染器 `Renderer`：编号层、地形层、切线层、合成四遍；镜头、场景（`planScene`）、移动中的半分辨率、停稳补全（`SETTLE_MS`）、描格（`setFocus`、`FOCUS_REACH`）、画风的 uniform（`styleUniforms`）、`packElevation` / `packCoast`
+- `renderer.ts` 渲染器 `Renderer`：编号层、地形层、切线层、合成四遍；每一帧（停稳、移动中的半分辨率、投影）、停稳补全（`SETTLE_MS`）、屏幕与地图的换算。第八十三轮按职责拆成一串基类（方法原样搬，照旧从 renderer.ts 导出）：`renderer-base.ts` 状态与上传、`renderer-layers.ts` 网格与逐格的图层、描格（`setFocus`）、`renderer-draw.ts` 各层与合成、极地与投影、`renderer-export.ts` 导出的分块；`renderer-parts.ts` 类型与小工具（镜头、场景 `planScene`、`FOCUS_REACH`、`packElevation` / `packCoast`）；`style-uniforms.ts` 画风的 uniform（`styleUniforms`）
 - `shaders/` 着色器源码（第四十一轮从 renderer.ts 原样搬出）：
   - `common.ts` 共用片段：噪声、破碎度 `FRAG_GLSL`、海岸类型 `STYLE_GLSL`、峡湾 `FJORD_GLSL`、花纹、岩性、`withoutFx`、`TEX_W`
   - `plane.ts` 平面的顶点 / 编号 / 地形 / 切线着色器、省份规则、描格 `FOCUS_GLSL`
   - `compose.ts` 合成着色器 `FS_COMPOSE`
   - `sphere.ts` 星球、极地、投影的着色器：由平面的按 `must` / `mustAll` 替换出来（替换次数不对就报错）
   - `index.ts` 测试用的 `COMPOSE_SOURCES`、`TERRAIN_SOURCES`、`PROJ_SOURCES`、`SHADER_PROGRAMS`；`shader-hashes.json` 每个程序源码的 sha256（`shader-sources.test.ts` 查；有意改着色器时 `RECORD_SHADERS=1` 重记）
-- `colors.ts` 每格的颜色与几层数据（`cellLayers`：底子与每种模式的一层、省份 / 国界的分组、岩性、花纹、幽灵）
+- `colors.ts` 每格的颜色与几层数据（`cellLayers`：底子与每种模式的一层、花纹、湖色）；第八十三轮拆出（照旧导出）：`color-ramps.ts` 色带与共用的小工具、碎岛的颜色，`colors-human.ts` 人文、省份 / 国界的分组、岩性、高亮，`ghost-buffer.ts` 幽灵海岸（`GhostBuffer`）
 - `near.ts` 离边界远的格（合成里跳过环上的点，第三十九轮）
 - `projection.ts` 整个星球的等面积、球形投影：正反算式与同一套 GLSL `PROJ_GLSL`、镜头换算、`sceneNeed`
 - `perf.ts` 测速开关（`?perf`、`window.__perf`）；`bench.ts` 开发用的帧测速（`__map2Bench`）

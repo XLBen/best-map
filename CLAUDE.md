@@ -43,13 +43,13 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 | 资源库面板 | 逻辑 `src/ui/packs/pages.ts`、`page-source.ts`、`rows.ts`（一行的状态和命令）、`page-actions.ts`（改一项就存）；组件 `LibPanel.tsx`、`PageHome.tsx`、`PageList.tsx`、`PageItem.tsx`；我的库的写入 `src/library-edit.ts`；清单见 `docs/dev/ui.md` |
 | 添加（看库就是添加）、依赖、融入、和库的差异 | 闭包 `core/packs/closure.ts`、能不能选 `core/packs/import-gates.ts`；勾选 `src/ui/packs/pick-store.ts`（按库记、连带）、`pick-view.ts`（怎么画、点了做什么）、`pick-look.ts`（每行的状态、清单分组）、写入 `pick-add.ts`、别的库的 `pick-other.ts`；组件 `LibPanel.tsx`、`LibSide.tsx`（右栏）、`LibBasket.tsx`（清单）、`PickBox.tsx`（一行的勾）；读文件 `lib-file.ts`；引用表 `core/content/links.ts`；融入 `core/content/arrange.ts`、`src/ui/packs/page-arrange.ts`；差异 `core/packs/source-diff.ts`；清理 `core/content/cleanable.ts`、`src/ui/packs/tidy.ts` |
 | 新命令、改命令 | 格式在 `core/commands/schema.ts` 的 `baseCommands`（先后不要调换），执行在对应类别的 `core/commands/<类>.ts` 的 `runXxxOp`；改人文数组的在 `core/commands.ts` 的 `touchedArrays` 登记 |
-| 生成的各步 | 流水线 `core/engine.ts`；地形 `generate.ts` / `planet-gen.ts` / `relief.ts` / `outline.ts` / `terrain.ts`；高程 `elevation.ts`；气候 `climate.ts` / `planet-climate.ts`；水 `hydrology.ts`、`rivers.ts`；生态 `vegetation.ts`；人文 `core/human/generate.ts` |
+| 生成的各步 | 流水线 `core/engine-recompute.ts`（历史、预览在 `core/engine.ts`）；地形 `generate.ts` / `planet-gen.ts` / `relief.ts` / `outline.ts` / `terrain.ts`；高程 `elevation.ts`；气候 `climate.ts` / `planet-climate.ts`；水 `hydrology.ts`、`rivers.ts`；生态 `vegetation.ts`；人文 `core/human/generate.ts` |
 | 着色器 | `src/render/shaders/*.ts`；CPU 的同一套式子在 `core/subcell.ts`、`core/display.ts`、`core/coast-style.ts`（测试把 GLSL 照字面换成 JS 对照）；有意改源码后 `RECORD_SHADERS=1 npx vitest run src/render/shader-sources.test.ts` |
 | 地名、国名、片区名的排版 | `src/render/overlay-labels.ts`、`overlay-country-labels.ts`、`src/ui/map/political.ts`；叠加层新选项要进 `overlay-base.ts` 的 `OverlayState` 与 `overlay-static.ts` 的 `FIELD_KIND` |
 | 工具 | 声明在 `src/ui/defs/tools/<类>.ts`（`index.ts` 合起来），行为在 `src/ui/tools/<类>.ts`（约定见 `src/ui/tools/api.ts`），河在 `src/ui/river/` |
 | 面板、底部条、顶栏 | `src/ui/panels/*.tsx`、`src/ui/shell/*.tsx`；控件只用 `src/ui/components/`；写法见 `docs/dev/ui-design.md` |
 | 地图模式、底图 | `src/ui/map/modes.ts`、`src/ui/defs/layers.ts`、`src/render/colors.ts` |
-| 画风 | `core/map-style.ts`、`core/packs/map-styles.ts`、`src/render/renderer.ts` 的 `styleUniforms` |
+| 画风 | `core/map-style.ts`、`core/packs/map-styles.ts`、`src/render/style-uniforms.ts` 的 `styleUniforms` |
 | 地名风格 | `core/name-styles.ts`、`core/packs/names/*.json` |
 | 世界文件的格式 | `core/world.ts`；改了就把 `core/doc-version.ts` 的 `DOC_VERSION` 加一 |
 | 主线程与 Worker 的消息 | `src/protocol.ts`、`src/worker.ts`、`src/state/worker-host.ts`（`src/state.ts` 照旧导出，界面从它引用） |
