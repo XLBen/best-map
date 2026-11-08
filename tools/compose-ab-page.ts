@@ -18,6 +18,8 @@ import type { ViewMode } from '../src/state';
 import { cellLayers, highlightColors, provinceScale } from '../src/render/colors';
 import { tileView } from '../src/render/export-plan';
 import { BUILTIN_ERAS } from '../core/packs/eras';
+import { BUILTIN_MAP_STYLES } from '../core/packs/map-styles';
+import { FALLBACK_MAP_STYLE } from '../core/map-style';
 
 // 两份渲染器共有的那些（旧的提交上的类型与现在的不一样，按用到的几样写）
 interface AnyRenderer {
@@ -34,6 +36,8 @@ interface AnyRenderer {
   render(km: number, o?: { still?: boolean }): boolean;
   renderTile(km: number, tv: unknown, T: number, zoom: number, dpr: number): Uint8Array;
   prepareNear?: () => void;
+  // 画风（第三十八轮起两边都有）
+  style: unknown;
 }
 type Ctor = new (c: HTMLCanvasElement) => AnyRenderer;
 
@@ -159,6 +163,10 @@ export function run(OldR: Ctor, NewR: Ctor, opts: { quick?: boolean; time?: bool
   let cases = 0;
   let bad = 0;
   let focusChanged = 0;
+  let atlasCases = 0;
+  let atlasNew = 0;
+  let atlasOld = 0;
+  const atlasBytes = [0, 0];
   const t0 = performance.now();
   try {
     const W = 300;
@@ -171,11 +179,16 @@ export function run(OldR: Ctor, NewR: Ctor, opts: { quick?: boolean; time?: bool
     };
     const ca = mk();
     const cb = mk();
+    const cc = mk();
     const A = new OldR(ca);
     const B = new NewR(cb);
+    // 第八十七轮：再一个旧的渲染器（地图册的那几组另比旧的与旧的：SwiftShader 上地图册本来就不逐字节相同，见下面）
+    const C = new OldR(cc);
+    let tri = false;
     const both = (f: (r: AnyRenderer) => void) => {
       f(A);
       f(B);
+      if (tri) f(C);
     };
     const check = (label: string) => {
       const a = pixels(ca);
@@ -305,12 +318,84 @@ export function run(OldR: Ctor, NewR: Ctor, opts: { quick?: boolean; time?: bool
           both((r) => (r.camera = { x: 1, y: 0.5, zoom: 100 }));
         }
       }
+      // 第八十七轮：地图册（合成着色器多了手绘的那一段，写实、地图册都不走）。地貌、国家两种模式，停稳的三种缩放、移动中、导出的一块。
+      // 地图册按水深分层的那一段在陆海分开的分支里算 fwidth（导数在不一致的分支里没有定义）：SwiftShader 上两个旧的渲染器之间
+      // 本来就差几个到几百个字节、每次跑都不一样（第八十七轮量到的）。所以每组另画一个旧的渲染器（C），旧↔新与旧↔旧都写出来；
+      // 这几组不算进最后一行的“不同”（另写一行地图册的总数）
+      const atlas = BUILTIN_MAP_STYLES.find((x) => x.id === 'atlas')!;
+      C.setMesh(mesh);
+      C.provinceScale = scale;
+      tri = true;
+      const check3 = (label: string) => {
+        const a = pixels(ca);
+        const dn = diff(a, pixels(cb));
+        const dd = diff(a, pixels(cc));
+        atlasCases++;
+        if (dn) atlasNew++;
+        if (dd) atlasOld++;
+        atlasBytes[0] += dn;
+        atlasBytes[1] += dd;
+        out.push(`${label}: ${dn ? `旧↔新 DIFF ${dn} bytes` : '旧↔新 same'}，${dd ? `旧↔旧 ${dd} bytes` : '旧↔旧 same'}`);
+      };
+      both((r) => (r.style = atlas));
+      for (const mode of ['terrain', 'country'] as ViewMode[]) {
+        const st = settings(w, mode, false);
+        const layers = cellLayers(w, st.o);
+        both((r) => {
+          r.setLayers(layers);
+          r.flatByGroup = st.flatByGroup;
+          r.highlightByGroup = false;
+          r.provinceAlpha = st.provinceAlpha;
+          r.countryAlpha = st.countryAlpha;
+          r.provinceScale = scale;
+          r.setHighlight(null);
+          r.setFocus(null, null);
+        });
+        B.prepareNear?.();
+        for (const z of opts.quick ? [8] : [3, 8, 24]) {
+          const [sx, sy] = [mesh.x[border[0] ?? 0], mesh.y[border[0] ?? 0]];
+          both((r) => {
+            r.camera = { x: sx, y: sy, zoom: z / mesh.spacing };
+            r.render(w.kmPerUnit, { still: true });
+          });
+          const tag = `${label} 地图册 ${mode} 一格 ${z} 像素`;
+          check3(`${tag} 停稳`);
+          both((r) => (r as unknown as { renderMoving(k: number): void }).renderMoving(w.kmPerUnit));
+          check3(`${tag} 移动中`);
+          both((r) => ((r as unknown as { composeKey: string }).composeKey = ''));
+        }
+        const Z = 16 / mesh.spacing;
+        const frame = { cam: { x: mesh.x[border[0] ?? 0], y: mesh.y[border[0] ?? 0], zoom: Z }, dpr: 1, width: 256, height: 256 };
+        const tv = tileView(frame as Parameters<typeof tileView>[0], 0, 0, 128, 16);
+        const ta = A.renderTile(w.kmPerUnit, tv, 128, Z, 1);
+        const td = diff(ta, B.renderTile(w.kmPerUnit, tv, 128, Z, 1));
+        const tdd = diff(ta, C.renderTile(w.kmPerUnit, tv, 128, Z, 1));
+        atlasCases++;
+        if (td) atlasNew++;
+        if (tdd) atlasOld++;
+        atlasBytes[0] += td;
+        atlasBytes[1] += tdd;
+        out.push(`${label} 地图册 ${mode} 导出的一块: ${td ? `旧↔新 DIFF ${td} bytes` : '旧↔新 same'}，${tdd ? `旧↔旧 ${tdd} bytes` : '旧↔旧 same'}`);
+        if (mesh.kind === 'sphere')
+          for (const kind of ['equalEarth', 'globe'] as const) {
+            const c = border[0] ?? 0;
+            both((r) => {
+              r.camera = { x: 1, y: 0.5, zoom: 160, proj: { kind, lon0: Math.PI * (mesh.x[c] - 1), lat0: kind === 'globe' ? Math.PI * (0.5 - mesh.y[c]) : 0 } };
+              r.render(w.kmPerUnit, { still: true });
+            });
+            check3(`${label} 地图册 ${mode} ${kind}`);
+          }
+        both((r) => (r.camera = { x: 1, y: 0.5, zoom: 100 }));
+      }
+      both((r) => (r.style = FALLBACK_MAP_STYLE));
+      tri = false;
     }
   } catch (e) {
     out.push(`ERROR ${(e as Error).stack ?? e}`);
     bad++;
   }
   out.push(`描格改变了画面的组：${focusChanged}`);
+  out.push(`地图册：${atlasCases} 组，旧↔新不同 ${atlasNew} 组（共 ${atlasBytes[0]} 字节），旧↔旧（同一份代码的两个渲染器）不同 ${atlasOld} 组（共 ${atlasBytes[1]} 字节）`);
   out.push(`DONE 共 ${cases} 组，不同 ${bad} 组（${((performance.now() - t0) / 1000).toFixed(0)} 秒）`);
   pre.textContent = out.join('\n');
 }

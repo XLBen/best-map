@@ -10,6 +10,7 @@
 // 结果写进 <pre id="o">，最后一行 DONE
 import { h, options, render } from 'preact';
 import { worldMapStyle } from '../core/map-style';
+import { BUILTIN_MAP_STYLES } from '../core/packs/map-styles';
 import { PLANET_SIZES, planetCells } from '../core/presets';
 import type { World } from '../core/world';
 import { modeDef, modeFeatures } from '../src/ui/map/modes';
@@ -225,9 +226,66 @@ function main(oldS: Side, newS: Side, opt: { quick: boolean; plain?: boolean }) 
         log(`${label}\n  主线程：${main}\n  连光栅化（软件画）：${soft}\n  排地名 ${f1(median(lay.o))} → ${f1(median(lay.n))}；直接画与旧的不同 ${same} 字节；一串帧（含只有图形变了、什么都不画的帧）与旧的不同 ${frameDiff[1]} 字节（按软件画）/ ${frameDiff[0]} 字节（按显卡画）${notes.length ? `（${notes.join('；')}）` : ''}`);
       }
     }
+    differ += atlasFrames(oldS, newS, w, paths);
     if (Object.keys(w.small.countries ?? {}).length) selectBench(oldS, newS, w, N);
   }
   if (differ) log(`直接画与旧的不同 ${differ} 字节`);
+}
+
+// 第八十七轮：地图册的叠加层（河、道路、国名的颜色按画风；手绘的几项地图册不写，符号、暗角、字体都不走）：
+// 地貌、国家两种模式，看全图与一格约 8 像素，旧的与新的直接画（每次都整张画）、读回来逐字节比；返回不同的字节数
+function atlasFrames(oldS: Side, newS: Side, w: World, paths: ReturnType<OverlayMod['buildPaths']>): number {
+  const style = BUILTIN_MAP_STYLES.find((x) => x.id === 'atlas')!;
+  const sp = w.mesh.spacing;
+  const sphere = w.mesh.kind === 'sphere';
+  const rows: string[] = [];
+  let total = 0;
+  for (const kind of ['geo', 'country'] as const) {
+    const md = modeDef(kind);
+    const st = {
+      rivers: true,
+      wind: false,
+      markers: false,
+      flowSeason: 'annual' as const,
+      style,
+      shapes: [],
+      provinceLabels: [],
+      features: modeFeatures(w.derived.features, md.features),
+      labelTypes: null,
+      nameMode: 'zh' as const,
+      peaks: null,
+      countries: md.regions ? regionDraws(w, md.regions, 'zh') : null,
+      ...settleOverlay(w, { mode: md, editing: false }),
+      kmPerUnit: w.kmPerUnit,
+      hoverLabel: null,
+      scaleBar: true,
+      cornerLift: 0,
+      latitude: null,
+    };
+    for (const cam of [
+      { x: sphere ? 1 : w.mesh.width / 2, y: sphere ? 0.5 : w.mesh.height / 2, zoom: CW / (sphere ? 2.2 : w.mesh.width * 1.05) },
+      { x: sphere ? 0.9 : w.mesh.width * 0.45, y: sphere ? 0.4 : w.mesh.height * 0.5, zoom: 8 / sp },
+    ]) {
+      const a = canvas(true);
+      const b = canvas(true);
+      oldS.O.overlayDebug.noStatic = true;
+      newS.O.overlayDebug.noStatic = true;
+      oldS.O.drawOverlay(a, w, paths, cam as never, st as never);
+      newS.O.drawOverlay(b, w, paths, cam as never, st as never);
+      oldS.O.overlayDebug.noStatic = false;
+      newS.O.overlayDebug.noStatic = false;
+      const pa = a.getImageData(0, 0, a.canvas.width, a.canvas.height).data;
+      const pb = b.getImageData(0, 0, b.canvas.width, b.canvas.height).data;
+      let d = 0;
+      for (let i = 0; i < pa.length; i++) if (pa[i] !== pb[i]) d++;
+      total += d;
+      rows.push(`${kind === 'geo' ? '地貌' : '国家'}·${cam.zoom === 8 / sp ? '一格约 8 像素' : '看全图'} ${d} 字节`);
+      a.canvas.remove();
+      b.canvas.remove();
+    }
+  }
+  log(`地图册（叠加层里画河，直接画）与旧的不同：${rows.join('，')}`);
+  return total;
 }
 
 // 选国家：档案（Preact）与列表；一国接一国地选。Preact 本来在微任务里重画（几次写信号合成一次）：这里把它要排的那一次接过来、
