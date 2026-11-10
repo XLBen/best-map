@@ -48,7 +48,7 @@
 
 同一个东西有几个名字（第七十一轮记下，存的字段、命令名不改）：**生态**（界面、文档）= `species`（世界里的 `small.species`、命令 `add_species` / `update_species`、检查器的页）= `biome`（内容种类的 id、资源包的段 `biomes`、涂生态的工具）= `vegetation`（算哪里长什么的那一步，`vegetation.ts`；结果是每格的主导生态 `derived.dominant`，底图“生态分区”的 id 是 `dominant`）。资源库面板里“生态与水系”这一层叫 `ecology`（路由 `{ p: 'ecology' }`、`PageEcology.tsx`）。一种生态算哪一大类（荒漠、森林、苔原、冰盖、沼泽湿地）只看 `species.ts` 的 `biomeGroupOf`：写了 `group` 用它，没写的按导出用的地形（`terrain`；奇幻的三种森林靠这一条）。
 
-- `species.ts` 生态类型（色块 + 条件 + 耐受曲线）、`PATTERNS`、大类 `BIOME_GROUPS` 与 `biomeGroupOf`；高度范围（第五十五轮：`height`、`heightTolerance`、`speciesTolerances`，算适宜度时用后者；第七十二轮：读进来的海拔条件换成高度范围逐值相同时换 `elevationAsHeight`，资源包的 `biomes` 读的时候用它；高山的下限 `ALPINE_LOW`）
+- `species.ts` 生态类型（色块 + 条件 + 耐受曲线）、`PATTERNS`、大类 `BIOME_GROUPS` 与 `biomeGroupOf`；高度范围（第五十五轮：`height`、`heightTolerance`、`speciesTolerances`，算适宜度时用后者；第七十二轮：读进来的海拔条件换成高度范围逐值相同时换 `elevationAsHeight`，资源包的 `biomes` 读的时候用它；高山的下限 `ALPINE_LOW`）；第九十轮 `freshSpecies`：新建的生态的样子（自然生成开着、强弱 3、温和湿润），登记表的 `blank()` 和生态页的“新建生态”共用
 - `vegetation.ts` 适宜度 / 竞争 / 扩散 / 长在哪里 / 不计水体类型的一遍（baseBiomes）/ 没有生态的陆地格的兜底（`fillBare`，写了高度范围的世界才走）；第八十九轮：场 `shelter`（有遮蔽的海岸，`shelterGetter`：三圈以内陆地的比例按网格记着，陆海变了的格附近作废），红树林用
 - `constraints.ts` 涂生态的反推与“没涂成”的原因
 - `biome-look.ts` 生态在地图上的样子（颜色脚本、花纹与发光的算式，着色器里同一份）；`biome-scripts.ts` 生态的脚本在世界上运行
@@ -67,6 +67,7 @@
 - `commands/` 第四十一轮从 commands.ts 拆出来：`schema.ts` 命令的格式（`baseCommands` 的先后不要调换）、`shared.ts` 共用的（`Dirty`、`UndoRecord`、`ApplyContext`、`RunResult`）、每类一个 `runXxxOp`：`terrain.ts`、`nature.ts`（生态、约束、画的河、河湖岛的种类、场）、`provinces.ts`、`features.ts`（地名、片区、内容、风格、画风）、`human.ts`、`settlements.ts`、`archive.ts`（第八十五轮：国家的备注、统治者、家族、大事）
 - `engine.ts` 历史、撤销缓存、预览、检查点、空闲预热（`warmSteps`）、`fixLakeProvinces`；第八十三轮拆出：`engine-recompute.ts` 按标记重算的流水线（`recomputeDerived`、`passStats`；第八十六轮：气候这一层更新冰盖 `derived.ice`，推导的高程 = 地形挖冰川（`elevation.ts` 的 `glacialTerrain`）再挖河床），`engine-types.ts` 世界文件、检查点、预览结果的类型，`engine-helpers.ts` 预览的差异、复制世界
 - `small-copy.ts` 小数据的副本（第四十七轮）：内容（`small.content`，不可变）按引用共用，别的是一段 JSON；撤销记录、比较、预览的克隆都用它第五十四轮：人口群体（`small.popGroups`）也按引用共用。第八十五轮：国家的档案（`small.archive`）也是，`postedSmall` 占位内容和档案，`withoutContent` 只占位内容（预览、快照里内容没换时）。
+- `regen-base.ts`（第九十轮）每一样（人文、国家、城市、省份）上一次生成时的内容，从历史里读（`regenBaseOf`：生成那一步之后的内容就是它后面一步的撤销记录里的那一份；`Engine.regenBase()`）；哪条命令重新生成哪一样 `scopesOf`、哪条是手改 `handOf`、每一样生成时读哪几种内容 `SCOPE_KINDS`（引擎和界面共用）；发给主线程的只带换过的项（`postRegenBase` / `unpostRegenBase`）。资源库面板的“改了 N 项 · 重新生成”刷新、重新打开以后还在，世界文件的格式不变
 - `preview-world.ts` 预览世界（只带变了的数组；`postedPatch`：内容没换时不发）；`doc-version.ts` 世界文件的版本（`DOC_VERSION`）与打开前的检查
 - `rng.ts` 随机数与噪声（按位置取，与格数无关）；`digest.ts` 64 位哈希；`errors.ts`、`type-id.ts`、`world-types.ts` 为避免循环引用拆出来的小文件
 

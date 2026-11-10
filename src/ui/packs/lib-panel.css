@@ -775,12 +775,6 @@ body.lp-dragging * {
 p.lp-banner {
   font-size: var(--fs-xs);
 }
-/* 改了马上变的一段（第八十一轮） */
-.lp-instant {
-  margin-left: var(--sp-1);
-  font-size: var(--fs-xs);
-  color: var(--ok);
-}
 /* 从别的库挑（第八十一轮）：标题是“从 [库] 挑选” */
 .lp-head.picking {
   background: var(--accent-bg);

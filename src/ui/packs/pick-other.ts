@@ -5,6 +5,7 @@ import { DEFAULT_LIBRARY } from '../../../core/packs/builtin-tree';
 import { worldLibrary } from '../../../core/packs/switch';
 import { ADD_DIMENSION_NOTE } from '../copy';
 import type { PageCtx, SourceRef } from './page-source';
+import { COUNTRY_KINDS } from './timing';
 
 // 从别的库加（第六十一轮写在导入窗口里，第六十七轮窗口并进资源库面板）：
 //   面板右上角“从库里添加…”、列表上“从别的库加”的右栏（第六十八轮，other-view.ts）先看哪个库（上次用的；没有时世界用的库以外第一个内置库）
@@ -48,8 +49,9 @@ export function regenLine(p: ImportPreview, target: ImportTarget): string | null
   const out: string[] = [];
   if (values) out.push(VALUE_NOTE);
   if (small.human && (has('era', 'cultureGroup', 'culture') || (has('popValue', 'valueGroup') && !values))) out.push('重新生成人文后才用上');
-  else if (!out.length && has('government', 'faction', 'countryTier', 'countryPattern') && small.human?.countryRules) out.push('重新生成国家后才用上');
-  if (has('cityRank', 'landmarkType', 'pointType') && small.settlementRules) out.push('重新生成城市后才放到地图上');
+  // 第九十轮：派系、点的类型不用重新生成（派系的影响力现算，点是自己放的；timing.ts）
+  else if (!out.length && has(...COUNTRY_KINDS) && small.human?.countryRules) out.push('重新生成国家后才用上');
+  if (has('cityRank', 'landmarkType') && small.settlementRules) out.push('重新生成城市后才放到地图上');
   // 第七十八轮：省份划分在“省份 ⋯”里划分省份时才用上（湖的归属马上整理）
   if (has('provinceRules') && Object.keys(small.provinces).length) out.push('在“省份 ⋯”里划分省份后才用上');
   return out.length ? out.join('；') : null;

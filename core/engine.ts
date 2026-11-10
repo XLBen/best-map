@@ -1,6 +1,7 @@
 import { coastStyleCached, fjordData, landStyle } from './coast-style';
 import { prepareClimatePlane } from './climate';
 import { DOC_VERSION, checkDoc } from './doc-version';
+import { type RegenBaseOf, regenBaseOf } from './regen-base';
 import { type Command, CommandError, Dirty, type RemovedItem, addArrayUndo, applyCommand, revert } from './commands';
 import { cloneSmall, copySmall, restoreSmall, type SmallCopy } from './small-copy';
 import type { ContentRef } from './content/unused';
@@ -518,6 +519,12 @@ export class Engine {
   // 整理本世界的计划（第二十九轮，见 tidy.ts）：在副本上试过、地图不变的才移出。执行 plan.command 就是整理
   planTidy(opts: Parameters<typeof planTidy>[1] = {}): TidyPlan {
     return planTidy(this, opts);
+  }
+
+  // 每一样（人文、国家、城市、省份）上一次生成时的内容（第九十轮，见 regen-base.ts）：从历史里读，不重算、不改世界。
+  // 打开世界、撤销、重做之后发给主线程（资源库面板的“改了 N 项 · 重新生成”，刷新以后还在）
+  regenBase(): RegenBaseOf {
+    return regenBaseOf(this.done, this.world.small.content);
   }
 
   toDoc(): WorldDoc {

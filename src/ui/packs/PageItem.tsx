@@ -11,10 +11,13 @@ import { type Obj, editorIssues } from './fields';
 import { commitItem, copyItemIn, deleteFromLibrary, saveBackToLibrary, useSourceVersion } from './page-actions';
 import { type Segment, initialOpen, segmentBrief } from './page-segments';
 import type { UsedBy } from './page-used-by';
-import { type ItemAction, type ItemPage, type PageCtx, type Route, type SourceRef, itemActions, itemPage, refRoute, rowsOf } from './pages';
+import { type ItemAction, type ItemPage, type PageCtx, type Route, type SourceRef, itemActions, itemPage, refRoute, rowsOf, sourceKind } from './pages';
 import { closeSide, copyToMine, goBack, goTo, openRoute, openSegments, rememberSegments, replaceTop } from './panel-store';
 import { DELETE, DELETE_WORLD_TIP, EXPORT_FILE, SAVE_BACK_TIP, SAVE_TO_MINE, SAVE_TO_MINE_TIP } from './copy';
-import { InstantMark } from './InstantMark';
+import { TimingMark } from './TimingMark';
+import { OnMapLine } from './OnMapLine';
+import { FlagSamples, LandmarkNameSamples } from './ItemPreviews';
+import { type SegmentTiming, segmentTiming, timingLine } from './timing';
 import { oneMark } from './page-marks';
 import { PickBox } from './PickBox';
 import { kindPickable, lookOf, shownPick } from './pick-view';
@@ -29,7 +32,8 @@ import { DEDICATED, type ItemRow, defaultStyleCommand, removeCommand, rowUsage, 
 // 一项的页面（第五十九轮）：几段可折叠的卡片，收起时标题旁写一句当前内容；表单是 ContentEditor 的 FieldsBox。
 // 松开滑块、打完字（框失去焦点、回车）就存：本世界是一条命令，我的库走自己的撤销；有错的留在页面上、不存。只读的库整个表单不能动，引用照样能点过去
 
-function Actions({ p, row, src, ctx, embedded, side }: { p: ItemPage; row: ItemRow | undefined; src: SourceRef; ctx: PageCtx; embedded: boolean; side: boolean }) {
+// onMap：页面顶上有“在地图上”一行（第九十轮）：定位在那一行上，这里不再放一个
+function Actions({ p, row, src, ctx, embedded, side, onMap }: { p: ItemPage; row: ItemRow | undefined; src: SourceRef; ctx: PageCtx; embedded: boolean; side: boolean; onMap: boolean }) {
   // 右栏里：删了收起右栏，复制出来的在右栏打开
   const back = side ? closeSide : goBack;
   const replace = side ? openRoute : replaceTop;
@@ -47,7 +51,7 @@ function Actions({ p, row, src, ctx, embedded, side }: { p: ItemPage; row: ItemR
     dedicated: DEDICATED.has(p.kind.id),
     newable: !!p.kind.blank,
     // 第八十一轮：整个库复制成我的库在右上角的“⋯”里，一项的页面上不放（只读的库顶上一行是“在本世界打开 / 添加到本世界…”）
-  }).filter((a) => a.id !== 'copyLibrary' && !(p.kind.id === 'biome' && src.t === 'world' && (a.id === 'copyItem' || a.id === 'removeFromWorld')));
+  }).filter((a) => a.id !== 'copyLibrary' && !(onMap && a.id === 'locate') && !(p.kind.id === 'biome' && src.t === 'world' && (a.id === 'copyItem' || a.id === 'removeFromWorld')));
   const button = (a: ItemAction) => {
     const dis = a.disabled;
     switch (a.id) {
@@ -182,6 +186,7 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
   const live = p?.item;
   // 世界里连着改几项时前一步算完不去掉草稿（不然后一步改的先闪回去）
   const pending = useRef(0);
+  const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!pending.current) setDraft(null);
   }, [live]);
@@ -199,6 +204,13 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
     if (!next.delete(id)) next.add(id);
     setOpen(next);
     rememberSegments(kindId, next);
+  };
+  // “在地图上”那一行的按钮要看某一段（“还没选生态 · 去选”）：展开它，滚到那里
+  const showSegment = (id: string) => {
+    const next = new Set([...open, id]);
+    setOpen(next);
+    rememberSegments(kindId, next);
+    requestAnimationFrame(() => root.current?.querySelector(`[data-seg="${id}"]`)?.scrollIntoView({ block: 'nearest' }));
   };
   const save = (next: Obj) => {
     if (p.readonly) return;
@@ -225,36 +237,47 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
   const sample = p.kind.id === 'nameStyle' && row ? sampleLine(row) : '';
   const biome = p.kind.id === 'biome';
   const mark = oneMark({ isDefault: row?.status.isDefault, inUse: p.kind.id === 'mapStyle', changed: p.diff.t === 'changed', modified: src.t === 'lib' && row?.status.modified });
-  const instant = src.t === 'world';
-  const segment = (s: Segment) => (
-    <SegmentCard key={s.id} seg={s} open={open.has(s.id)} onToggle={() => toggle(s.id)} brief={segmentBrief(s, item, labelOf)} instant={instant && !!s.instant}>
-      {s.hint && <p class="hint">{s.hint}</p>}
-      {s.custom === 'samples' && <Samples item={item} kindId={p.kind.id} />}
-      {s.custom === 'eraDims' && src.t === 'world' ? (
-        <WorldVariables era={item as unknown as Era} ctx={ctx} />
-      ) : s.custom === 'eraPatterns' ? (
-        <>
-          <FieldsBox fields={s.fields.filter((f) => f.key !== 'patterns' && f.key !== 'nationalism')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-          <EraPatterns era={item} src={src} ctx={ctx} onChange={save} />
-        </>
-      ) : s.custom === 'patternTip' ? (
-        <>
-          <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-          <PatternTip item={item} />
-        </>
-      ) : s.custom === 'waterBiomes' ? (
-        <>
-          <FieldsBox fields={s.fields.filter((f) => f.key === 'natural')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-          <WaterBiomesSegment src={src} ctx={ctx} kindId={p.kind.id} type={item as never} />
-          <FieldsBox fields={s.fields.filter((f) => f.key === 'when')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-        </>
-      ) : (
-        s.fields.length > 0 && <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-      )}
-    </SegmentCard>
-  );
+  // 第九十轮：每一段标改了什么时候用上（timing.ts）；只读的不标
+  const source = p.readonly ? null : sourceKind(src, ctx);
+  // 页面顶上的“在地图上”一行：只在看本世界、不是在上级页面里展开着时
+  const onMap = src.t === 'world' && !embedded;
+  const segment = (s: Segment) => {
+    const timing = segmentTiming(source, p.kind, s);
+    const line = timing && timingLine(timing);
+    return (
+      <SegmentCard key={s.id} seg={s} open={open.has(s.id)} onToggle={() => toggle(s.id)} brief={segmentBrief(s, item, labelOf)} timing={timing}>
+        {line && <p class="hint lp-timing-line">{line}</p>}
+        {s.hint && <p class="hint">{s.hint}</p>}
+        {s.custom === 'samples' && <Samples item={item} kindId={p.kind.id} />}
+        {s.custom === 'eraDims' && src.t === 'world' ? (
+          <WorldVariables era={item as unknown as Era} ctx={ctx} />
+        ) : s.custom === 'eraPatterns' ? (
+          <>
+            <FieldsBox fields={s.fields.filter((f) => f.key !== 'patterns' && f.key !== 'nationalism')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+            <EraPatterns era={item} src={src} ctx={ctx} onChange={save} />
+          </>
+        ) : s.custom === 'patternTip' ? (
+          <>
+            <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+            <PatternTip item={item} />
+          </>
+        ) : s.custom === 'waterBiomes' ? (
+          <>
+            <FieldsBox fields={s.fields.filter((f) => f.key === 'natural')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+            <WaterBiomesSegment src={src} ctx={ctx} kindId={p.kind.id} type={item as never} />
+            <FieldsBox fields={s.fields.filter((f) => f.key === 'when')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+          </>
+        ) : (
+          s.fields.length > 0 && <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+        )}
+        {/* 第九十轮：表单旁的小预览（previews.ts） */}
+        {p.kind.id === 'landmarkType' && s.id === 'label' && <LandmarkNameSamples item={item} src={src} ctx={ctx} />}
+        {p.kind.id === 'government' && s.id === 'flag' && <FlagSamples item={item} />}
+      </SegmentCard>
+    );
+  };
   return (
-    <div class={`lp-item ${embedded ? 'embedded' : ''}`}>
+    <div class={`lp-item ${embedded ? 'embedded' : ''}`} ref={root}>
       {!embedded && (
         <>
           <div class="row lp-item-head">
@@ -269,6 +292,7 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
           </p>
         </>
       )}
+      {onMap && <OnMapLine kind={p.kind} id={p.id} item={live} ctx={ctx} onSegment={showSegment} />}
       <DiffLine p={p} />
       {sample && <p class="small lp-sample">{sample}</p>}
       <EditorKind.Provider value={p.kind.id}>
@@ -314,7 +338,7 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
         </button>
       ))}
       <UsedBySegment u={p.usedBy} kindId={kindId} />
-      <Actions p={p} row={row} src={src} ctx={ctx} embedded={embedded} side={side} />
+      <Actions p={p} row={row} src={src} ctx={ctx} embedded={embedded} side={side} onMap={onMap} />
     </div>
   );
 }
@@ -397,13 +421,13 @@ function UsedBySegment({ u, kindId }: { u: UsedBy; kindId: string }) {
   );
 }
 
-function SegmentCard({ seg, open, onToggle, brief, children, instant }: { seg: Segment; open: boolean; onToggle: () => void; brief: string; children: ComponentChildren; instant?: boolean }) {
+function SegmentCard({ seg, open, onToggle, brief, children, timing }: { seg: Segment; open: boolean; onToggle: () => void; brief: string; children: ComponentChildren; timing?: SegmentTiming | null }) {
   return (
-    <section class={`lp-seg ${open ? 'open' : ''}`}>
+    <section class={`lp-seg ${open ? 'open' : ''}`} data-seg={seg.id}>
       <div class="lp-seg-head" role="button" tabIndex={0} onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()}>
         <ChevronRight class="lp-seg-twist" />
         <b>{seg.title}</b>
-        {instant && <InstantMark />}
+        {timing && <TimingMark t={timing.timing} />}
         {!open && brief && <span class="lp-seg-brief ellipsis">{brief}</span>}
       </div>
       {open && <div class="lp-seg-body">{children}</div>}

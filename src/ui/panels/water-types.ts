@@ -80,8 +80,8 @@ export function newWaterType(w: World, kind: WaterKind): WaterType {
   const ids = new Set(def.list(w).map((t) => t.id));
   let k = 1;
   while (ids.has(`${def.idPrefix}-${k}`)) k++;
-  // 新建的默认不自然生成（第十二轮）：只用在画的河、选了它的河（湖）上，打开“自然生成”才按条件自己出现
-  return { id: `${def.idPrefix}-${k}`, name: `新的${def.noun} ${k}`, color: NEW_COLORS[(k - 1) % NEW_COLORS.length], natural: false };
+  // 第九十轮：新建的自然生成开着（和资源库里新建的一样）：选了生态、写了条件或规则就按它自己出现，什么都没写时只用在画的、选了它的上
+  return { id: `${def.idPrefix}-${k}`, name: `新的${def.noun} ${k}`, color: NEW_COLORS[(k - 1) % NEW_COLORS.length], natural: true };
 }
 
 // 新建一种并用上：then 是用上它的命令（新画的河、新放的湖只改选项，没有命令）。一整步，然后打开它的编辑

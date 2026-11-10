@@ -62,7 +62,8 @@ async function open(req: Extract<Request, { kind: 'init' | 'load' }>, label: str
     if (marked) void clearLoading();
     // 新的引擎（可能在新开的 Worker 里）：步号从 1 起，自动保存从头写（镜头不动时世界的纪元不变，要在这里清）
     if (res.ok) resetAutosaveIds();
-    ok = await handle(res, !opts.keepView);
+    // 第三个参数：引擎是新的，“上一次生成时的内容”从这份回复里带的重新起头（镜头不动的“再试一次”也是）
+    ok = await handle(res, !opts.keepView, true);
     if (ok) afterOpen(res, scripts);
   });
   meshReady = prebuildMesh(settings, hostOpts.build);

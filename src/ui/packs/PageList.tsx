@@ -16,7 +16,8 @@ import { setPicksIn } from './pick-store';
 import { type PickView, kindPickable, lookOf, shownPick } from './pick-view';
 import { swatchOf } from './row-actions';
 import { oneMark } from './page-marks';
-import { PICK_ENTER, PICK_ENTER_TIP, TIDY, TIDY_TIP } from './copy';
+import { NEW_IN_WORLD_NOTE, PICK_ENTER, PICK_ENTER_TIP, TIDY, TIDY_TIP } from './copy';
+import { type NewChoice, newChoiceOf } from './new-in';
 import { otherLibs, pickFrom } from './other-view';
 import { tidyWorld } from './tidy';
 
@@ -143,10 +144,18 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
   useEffect(() => {
     if (v) search.current?.focus({ preventScroll: true });
   }, [!!v]);
+  // 第九十轮：要先选放进哪里的（从“全部文化”新建：选文化组）先在列表上面列出来选
+  const [choosing, setChoosing] = useState<NewChoice | null>(null);
   if (!p) return null;
   const create = async (kindId: string, defaults: Record<string, unknown>) => {
     const kind = kindOf(kindId);
     if (!kind) return;
+    const choice = newChoiceOf(kindId, defaults, src, ctx);
+    if (choice) {
+      setChoosing(choosing ? null : choice);
+      return;
+    }
+    setChoosing(null);
     const r = await newItemIn(src, kind, ctx, defaults);
     if (r && libPanel.value) goTo(r);
   };
@@ -172,6 +181,20 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
           </button>
         )}
       </div>
+      {choosing && (
+        <section class="box lp-new-in">
+          <b class="small">{choosing.title}</b>
+          {choosing.options.length === 0 && <p class="hint">{choosing.empty}</p>}
+          <div class="list">
+            {choosing.options.map((o) => (
+              <button class="item" key={o.id} onClick={() => void create(p.kind.id, { ...p.defaults, [choosing.field]: o.id })}>
+                <span class="grow ellipsis">{o.name}</span>
+              </button>
+            ))}
+          </div>
+          {src.t === 'world' && choosing.options.length > 0 && <p class="hint">{NEW_IN_WORLD_NOTE}</p>}
+        </section>
+      )}
       {faint > 0 && (
         <button class="lp-clean" title={TIDY_TIP} onClick={() => void tidyWorld()}>
           <Eraser />

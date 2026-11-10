@@ -146,6 +146,14 @@ function valueUsage(w: W, id: string): ContentUsage | null {
   return result([...part(cells.length, '格有这样的人'), ...(auto ? ['自动的人口里有它'] : [])], cells.length + auto, cells);
 }
 
+// 有这种文化、这一组、这个取值的人的格（第九十轮：资源库里一项顶上的“在地图上”数的就是它；和上面“用在哪里”数的是同一批格）
+export function peopleCells(w: W, kind: 'culture' | 'cultureGroup' | 'popValue', id: string): number[] {
+  if (kind === 'culture') return popCells(w, (t) => t.culture === id);
+  if (kind === 'popValue') return popCells(w, (t) => Object.values(t.values).includes(id));
+  const mine = new Set(culturesOf(w, id).map((c) => c.id));
+  return mine.size ? popCells(w, (t) => mine.has(t.culture)) : [];
+}
+
 // 取值组（第四十三轮）：世界里属于它的取值
 function valueGroupUsage(w: W, id: string): ContentUsage | null {
   const n = Object.values(contentItems(w.small, 'popValue')).filter((v) => linksOf('popValue', v).some((l) => l.cls === 'hard' && l.kinds.includes('valueGroup') && l.id === id)).length;

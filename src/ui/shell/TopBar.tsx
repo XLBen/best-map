@@ -5,28 +5,50 @@ import { openPanel, togglePanel, world } from '../../state';
 import { CATEGORIES, category, setCategory, setTool } from '../defs/tools';
 import type { CategoryDef, Icon } from '../defs/types';
 import { mapStatus } from '../maps/store';
-import { libPanel, redoHere, toggleLibrary, undoHere, undoState } from '../packs/panel-store';
-import { redoTitle, undoTitle } from '../packs/copy';
+import { panelLibrary } from '../../library';
+import { libPanel, pendingBadge, redoHere, showWorldLibrary, toggleLibrary, undoHere, undoState } from '../packs/panel-store';
+import { PENDING_TIP, redoTitle, regenCountText, undoTitle } from '../packs/copy';
 import { MapKindButton } from './MapKind';
 
 // 顶栏：左边是资源库（第四十五轮，最左边）、整个世界的事（世界、更多、调整）和撤销、重做，
 // 右边是指针、各类工具、图层与地图模式（生态的色板在“自然”里）。
 // 第八十二轮：最多两行——宽的窗口两组在同一行，放不下时右边那组换到第二行、靠右；地图模式不再单独占一行（MapKindButton）
 
-// 资源库：从左上角展开，再点一下关上
+// 资源库：从左上角展开，再点一下关上。
+// 第九十轮：内容改了、地图还没用上（要重新生成）时，按钮旁边一个“改了 N 项”的小标记——面板关着、看的是别的库时才有
+// （看本世界时那一条就在面板底下）；点它回到本世界，底下就是“改了 N 项 · 重新生成”
 function LibraryButton() {
+  const st = libPanel.value;
+  const w = world.value;
+  const pending = pendingBadge(st, w, panelLibrary.value);
   return (
-    <button
-      class={`tb-btn ${libPanel.value ? 'open' : ''}`}
-      onClick={() => {
-        if (!libPanel.value) openPanel.value = null;
-        toggleLibrary();
-      }}
-      title="资源库：文化、政体、生态、河湖、地名风格"
-    >
-      <Boxes size={18} />
-      <span class="tb-label">资源库</span>
-    </button>
+    <>
+      <button
+        class={`tb-btn ${st ? 'open' : ''}`}
+        onClick={() => {
+          if (!libPanel.value) openPanel.value = null;
+          toggleLibrary();
+        }}
+        title="资源库：文化、政体、生态、河湖、地名风格"
+      >
+        <Boxes size={18} />
+        <span class="tb-label">资源库</span>
+      </button>
+      {pending > 0 && (
+        <button
+          class="tb-badge"
+          title={PENDING_TIP}
+          aria-label={regenCountText(pending)}
+          onClick={() => {
+            openPanel.value = null;
+            showWorldLibrary();
+          }}
+        >
+          <span class="tb-label">{regenCountText(pending)}</span>
+          <span class="tb-badge-n">{pending}</span>
+        </button>
+      )}
+    </>
   );
 }
 

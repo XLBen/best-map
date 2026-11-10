@@ -12,6 +12,7 @@ import {
   type Tolerance,
   advancedTolerances,
   elevationTolerances,
+  freshSpecies,
   withCondition,
   withRect,
 } from '../../../core/species';
@@ -76,21 +77,21 @@ export const elevationText = (t: Tolerance): string => `${Math.max(0, t.optLow)}
 
 const PALETTE = ['#8a6fb0', '#c0607a', '#4f9fb0', '#b08a3a', '#6aa050', '#d07a40', '#5a70c0', '#a05a9a'];
 
-// 新建的生态默认不自然生成：只长在涂了它的地方（在“长在哪里”里打开“自然生成”就按条件自己长）
+// 第九十轮：新建的生态自然生成开着（合适的地方马上长，“在地图上”那一行写长在几格；不要它自己长时关掉“自然生成”）。
+// 样子和资源库列表上的“新建”一样（core/species.ts 的 freshSpecies），只差 id、名字带编号、颜色轮着取
 export function newSpeciesCommand(w: Pick<World, 'small'>): { id: string; cmd: Command } {
   const all = w.small.species;
   let k = all.length + 1;
   let id = `custom_${k}`;
   while (all.some((s) => s.id === id)) id = `custom_${++k}`;
-  const base: Species = { id, name: `新生态 ${k}`, color: PALETTE[k % PALETTE.length], terrain: 'plains', competition: 3, tolerances: [], natural: false };
-  return { id, cmd: { op: 'add_species', species: withRect(base, { t0: 5, t1: 18, m0: 0.6, m1: 1.6 }) } };
+  return { id, cmd: { op: 'add_species', species: freshSpecies(id, `新生态 ${k}`, PALETTE[k % PALETTE.length]) } };
 }
 
-// 副本不自然生成（不然会和原来的那种平分地盘）：涂到哪里长到哪里，要它自己长时在“长在哪里”打开
+// 第九十轮：副本原样（以前悄悄关掉“自然生成”）：原来自然生成的，副本也自然生成，和原来的那种分地盘；原来关着的还关着
 export function copySpeciesCommand(w: Pick<World, 'small'>, sp: Species): { id: string; cmd: Command } {
   let id = `${sp.id}_copy`;
   for (let k = 2; w.small.species.some((s) => s.id === id); k++) id = `${sp.id}_copy${k}`;
-  return { id, cmd: { op: 'add_species', species: { ...structuredClone(sp), id, name: `${sp.name}（副本）`, natural: false } } };
+  return { id, cmd: { op: 'add_species', species: { ...structuredClone(sp), id, name: `${sp.name}（副本）` } } };
 }
 
 // ---------- 长在哪里 ----------

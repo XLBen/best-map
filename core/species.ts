@@ -284,6 +284,13 @@ export function withRect(sp: Species, r: Rect): Species {
   return { ...sp, tolerances: [...rectTolerances(r), ...others] };
 }
 
+// 新建的生态（第九十轮）：资源库的列表上新建、生态页上“新建生态”都从这里起，两处一样。
+// 自然生成开着，最适合温和湿润的地方：一建好地图上就长（界面发命令时写明，重放照命令里写的，不看这里）
+export const NEW_SPECIES_RECT: Rect = { t0: 5, t1: 18, m0: 0.6, m1: 1.6 };
+export function freshSpecies(id: string, name: string, color: string): Species {
+  return withRect({ id, name, color, terrain: 'plains', competition: 3, tolerances: [], natural: true }, NEW_SPECIES_RECT);
+}
+
 // 命名条件：勾选即可，不用理解字段
 export const CONDITIONS = {
   coast: { label: '只长在海边', tol: (): Tolerance => ({ field: 'continentality', min: 0, optLow: 0, optHigh: 0.2, max: 0.4 }) },

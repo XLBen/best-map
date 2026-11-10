@@ -801,6 +801,24 @@ button.toggle {
   background: var(--fill);
   margin: 0 var(--sp-1);
 }
+/* “资源库”按钮旁的小标记（第九十轮）：改了还没用上的有几项。窄窗口只留数 */
+button.tb-badge {
+  gap: var(--sp-1);
+  min-height: var(--h-sm);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--accent);
+  background-color: var(--accent-bg);
+  border-radius: var(--r-pill);
+}
+.tb-badge .tb-badge-n {
+  display: none;
+}
+@media (max-width: 900px) {
+  .tb-badge .tb-badge-n {
+    display: inline;
+  }
+}
 /* 地图模式按钮（MapKind.tsx）的小箭头：点开是菜单 */
 .tb-chevron {
   margin-left: calc(-1 * var(--sp-1));

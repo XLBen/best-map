@@ -14,6 +14,8 @@ import { type OtherOpen, sameOther } from './other-view';
 import { canPick, pickCount, pickStore, setPickDest, togglePickIn } from './pick-store';
 import { pickMode } from './pick-view';
 import { defaultFrom } from './pick-other';
+import { regenNow } from './regen-now';
+import type { World } from '../../../core/world';
 import { ESC_RANK, pushEscape } from '../shell/escape';
 
 // 资源库面板的状态（第五十九轮）：看的是哪一份、点到了第几层。关上再打开回到原来的地方。
@@ -110,6 +112,21 @@ export function closeLibrary() {
 export function toggleLibrary() {
   if (libPanel.value) closeLibrary();
   else openLibrary();
+}
+
+// ---------- 顶栏上的“改了 N 项”（第九十轮） ----------
+
+// 顶栏“资源库”按钮旁的小标记写几：有要重新生成的、而面板底下那一条现在看不到（面板关着、看的是别的库）时是改了几项，别的时候 0
+export function pendingBadge(st: PanelState | null, w: World | null, lib: PageCtx['lib']): number {
+  if (!w) return 0;
+  if (st && livePanel(st, { world: w, lib }).source.t === 'world') return 0;
+  return regenNow(w.small, lib)?.count ?? 0;
+}
+
+// 点了小标记：回到本世界（面板关着就打开；上次看的就是本世界时回到那一页），底下就是“改了 N 项 · 重新生成”
+export function showWorldLibrary() {
+  if (!libPanel.value) openLibrary();
+  else if (current()?.source.t !== 'world') setSource(WORLD_SOURCE);
 }
 
 function current(): PanelState | null {

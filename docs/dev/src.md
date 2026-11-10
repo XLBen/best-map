@@ -9,9 +9,9 @@
 - `state/edits.ts` 执行、换掉最后一步、撤销、重做；`exact-preview.ts` 地形预览、命令预览、省份的轻预览、确切预览与调整面板的预览；`open.ts` 新建、打开、继续上次的世界、“再试一次”；`script-trust.ts` 问要不要信任脚本；`ask.ts` 问一句的对话框
 - `state/autosave.ts` 自动保存（IndexedDB，退回 localStorage）与连着的“我的地图”；`export-host.ts` 导出 Worker、下载；`tidy.ts` 移出的存进资源库、整理的计划、压缩世界文件
 - `notice-timer.ts` 提示条多久消失；`biome-range.ts` 生态范围外怎么说（第六十九轮从 `ui/` 搬来）
-- `protocol.ts` 主线程与计算 Worker 之间的消息；`transfer.ts` 搬数据不复制
+- `protocol.ts` 主线程与计算 Worker 之间的消息（第九十轮：新建、打开、撤销、重做的回复带 `regen`——上一次生成时的内容里和现在不一样的项；执行的回复不带）；`transfer.ts` 搬数据不复制
 - `worker.ts` 计算 Worker（持有引擎；快照、描好的河、空闲预热）；`worker-snapshot.ts` 快照（`SnapshotSender`，第八十轮搬出来）：推导数组、原因数组（第八十轮）、地物、河都只发与上一次发的不同的，主线程沿用手上的同一个对象
-- `regen-track.ts` 上一次生成时世界里的内容，跟着撤销的先后记（第六十二轮，资源库面板的“重新生成”；第八十一轮加省份 `provinces`，`hand` 记上次生成之后手改过的国家、省份）
+- `regen-track.ts` 上一次生成时世界里的内容，跟着撤销的先后记（第六十二轮，资源库面板的“重新生成”；第八十一轮加省份 `provinces`，`hand` 记上次生成之后手改过的国家、省份；第九十轮：新建、打开时用引擎从命令记录里算的那一份起头（`reset` 的第三个参数，`Response.regen`，`worker-host.ts` 的 `applySnapshot` 拼回来），撤销到这次打开页面之前的位置时也用引擎给的；规则 `scopesOf`、`handOf` 搬到 `core/regen-base.ts`）
 - `content-post.ts` 快照里的 `small.content` 没换时不发，主线程补上手上那一份（第四十七轮）；人口群体 `small.popGroups` 同样（第五十四轮）；第八十轮：小数据的其余各段按 JSON 比、国家一国一国比，没变的不发（`sameSmall`、`sameCountries`，要主线程用上了上一份才拼得起来）；第八十五轮：国家的档案 `small.archive` 按对象比（不可变，不序列化）
 - `engine-spawn.ts`、`engine-source.ts`、`isolation-probe.ts` 开计算 Worker 与隔离（data: 地址，Worker 里不打包内置数据）
 - `sandbox.ts` Worker 的看护（看门狗、恢复、安全模式）

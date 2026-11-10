@@ -1,0 +1,43 @@
+/* 第九十轮“改了就看得到”的几样：一段的“即时 / 要重新生成”、一项顶上的“在地图上”、新建时选组、旗的示例（从 lib-panel.css 分出来，那个文件已经够长） */
+/* 一段标题旁：改了什么时候用上（第九十轮；第八十一轮只有“即时”） */
+.lp-timing {
+  flex: none;
+  margin-left: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.lp-timing.instant {
+  color: var(--ok);
+}
+.lp-timing.regen {
+  color: var(--warn-text);
+}
+/* 一项顶上的“在地图上”一行（第九十轮）：用在多少格，或者没用上的原因和一个按钮 */
+.lp-onmap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0 var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--fill);
+  border-radius: var(--r-md);
+}
+.lp-onmap-text {
+  min-width: 8em;
+}
+.lp-onmap.off .lp-onmap-text {
+  color: var(--warn-text);
+}
+/* 列表上新建时先选放进哪个文化组（第九十轮） */
+.lp-new-in {
+  margin: 0 var(--sp-3) var(--sp-2);
+}
+.lp-new-in .list {
+  max-height: 220px;
+}
+/* 政体的旗的示例（第九十轮） */
+.lp-flag-samples {
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0;
+}

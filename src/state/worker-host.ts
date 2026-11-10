@@ -3,6 +3,7 @@ import type { Timings, WorldDoc } from '../../core/engine';
 import type { WorldgenInput } from '../../core/generate';
 import { storedMeshKey } from '../../core/mesh-pack';
 import { newWorldContentCommands } from '../../core/packs/import';
+import { type PostedRegenBase, unpostRegenBase } from '../../core/regen-base';
 import { type ScriptIssue, findScripts } from '../../core/script';
 import { isRiverCell } from '../../core/select';
 import type { Command } from '../../core/commands';
@@ -246,7 +247,7 @@ function engineRestored(r: Extract<Response, { ok: true }>, reason: string | nul
   recovered();
   hostHooks.resetAutosaveIds();
   // 换了 Worker：第一份快照总是带着内容
-  if (r.snapshot && contentHolder.unpack(r.snapshot)) applySnapshot(r.snapshot);
+  if (r.snapshot && contentHolder.unpack(r.snapshot)) applySnapshot(r.snapshot, false, r.regen, !!r.regen);
   safeMode.value = reason !== null ? { reason } : null;
 }
 
@@ -276,7 +277,9 @@ export function isPending(kind: Request['kind']): boolean {
   return [...pending.values()].some((p) => p.kind === kind);
 }
 
-function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
+// regen（第九十轮）：引擎从命令记录里算的“上一次生成时的内容”（新建、打开、撤销、重做的回复里带）。
+// restart：引擎是新的（新建、打开，或者卡住后另开 Worker 恢复的）：跟着记的那一份从引擎给的重新起头
+function applySnapshot(s: Snapshot | LightSnapshot, fresh = false, regen?: PostedRegenBase, restart = fresh) {
   const before = world.value;
   if ('light' in s && !before) throw new Error('轻快照之前必须有完整的世界');
   const next: World =
@@ -300,8 +303,9 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
     } else pruneVisualOverrides(next.small.species);
     // 第六十二轮：跟着撤销的先后记上一次生成时的内容（面板顶上的“重新生成”，见 regen-track.ts）
     const done = s.history.filter((h) => h.done).length;
-    if (fresh) regenTrack.reset(done, next.small.content);
-    else regenTrack.step(done, next.small.content);
+    const base = regen ? unpostRegenBase(regen, next.small.content) : null;
+    if (restart) regenTrack.reset(done, next.small.content, base);
+    else regenTrack.step(done, next.small.content, base);
     world.value = next;
     worldState.value = s.stateId;
     // 结果换上了：调整面板预览的世界（松手前一直显示着，不闪回原样）这时才去掉
@@ -360,8 +364,8 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
 // 快照里没带的内容从这里补上（见 content-post.ts）
 const contentHolder = new ContentHolder();
 
-// fresh：新建或打开了一个世界（不是编辑）
-export async function handle(r: Response, fresh = false): Promise<boolean> {
+// fresh：新建或打开了一个世界（不是编辑）。restart：引擎是新的（“再试一次”打开的是同一个世界，镜头不动，但引擎换了）
+export async function handle(r: Response, fresh = false, restart = fresh): Promise<boolean> {
   if (!r.ok) {
     regenTrack.pending = null;
     showToast(r.error, true);
@@ -369,13 +373,13 @@ export async function handle(r: Response, fresh = false): Promise<boolean> {
   }
   if (r.snapshot) {
     const s = contentHolder.unpack(r.snapshot) ? ('light' in r.snapshot ? r.snapshot : completeSnapshot(r.snapshot)) : null;
-    if (s) applySnapshot(s, fresh);
+    if (s) applySnapshot(s, fresh, r.regen, restart);
     else {
       // 只带变了的数组、却拼不起来（手上的世界不是 Worker 上一次发快照时的状态）：要一份完整的
       const full = await call({ kind: 'snapshot' }, null);
       if (full.ok && full.snapshot && !('light' in full.snapshot) && contentHolder.unpack(full.snapshot)) {
         const f = completeSnapshot(full.snapshot);
-        if (f) applySnapshot(f, fresh);
+        if (f) applySnapshot(f, fresh, r.regen, restart);
       }
     }
   }

@@ -22,12 +22,21 @@ export const ADD_TO_WORLD = '添加到本世界…';
 export const BACK_TO_WORLD = '回到本世界';
 
 // ---------- 改了什么时候用上 ----------
-export const INSTANT = '即时';
-export const INSTANT_TIP = '改了地图马上变';
+// 第九十轮：“即时 / 要重新生成 / 只影响新地图”三种标记的字在 timing.ts（TIMING_LABEL、TIMING_TIP）
 export const REGEN_BUSY = '正在生成…';
 export const regenCountText = (n: number) => `改了 ${n} 项`;
+// 顶栏“资源库”按钮旁的小标记（第九十轮）
+export const PENDING_TIP = '改了还没用上，点开重新生成';
 // 重新生成国家、人文时：国家档案里手写的备注、统治者、大事留着（第八十五轮，规则见 core/human/archive-keep.ts）
 export const REGEN_KEEPS_ARCHIVE = '手写的档案留着';
+
+// ---------- 在地图上（第九十轮：一项顶上的一行） ----------
+export const ON_MAP = '在地图上';
+export const ON_MAP_UNUSED = '没用上';
+
+// ---------- 新建（第九十轮） ----------
+// 从“全部文化”新建时选文化组的那一栏下面
+export const NEW_IN_WORLD_NOTE = '只列参与生成的组';
 
 // ---------- 从别的库挑（第八十一轮：一种模式） ----------
 export const PICK_ENTER = '从别的库添加…';

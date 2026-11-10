@@ -12,6 +12,7 @@ import type { GeoFeature } from '../core/features';
 import type { ScriptIssue } from '../core/script';
 import type { Causes, Derived, Settings, SmallState } from '../core/world';
 import type { PostedContent } from './content-post';
+import type { PostedRegenBase } from '../core/regen-base';
 
 // 主线程与计算 Worker 之间的消息
 
@@ -159,6 +160,8 @@ export type Response =
       removed?: RemovedItem[];
       // 缺了内容跳过的步骤（第三十轮，exec、新建 init 的回复里带；没有时不写）：“没有城市等级：没有放城市和道路”……
       skipped?: string[];
+      // 每一样上一次生成时的内容（第九十轮；新建、打开、撤销、重做的回复里带）：只带和这一份快照的内容不一样的项
+      regen?: PostedRegenBase;
       // 确切预览没算完就被取消了（没有 preview、world）
       cancelled?: boolean;
       snapshot?: Snapshot | LightSnapshot;

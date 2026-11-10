@@ -12,6 +12,7 @@ import { copyLibrary, libEdits } from '../../library-edit';
 import { askUser, noteAction, showToast, whenEditsIdle, world, worldEpoch } from '../../state';
 import { type Obj, blankItem, copyItem, editorIssues } from './fields';
 import { canArrange } from './page-arrange';
+import { newChoiceOf } from './new-in';
 import { type PageCtx, type Route, type SourceRef, kindReadonly, takenIn, waterLists } from './pages';
 import { runTrusted } from './row-actions';
 
@@ -150,9 +151,11 @@ export async function saveBackToLibrary(kind: ContentKind, id: string, ctx: Page
 
 // ---------- 新建、复制、删除 ----------
 
-// 新建一项：有默认值（只看一维、一组时带上）。返回它的页面
+// 新建一项：有默认值（只看一维、一组时带上）。返回它的页面。
+// 第九十轮：要先选放进哪里的（文化的文化组，new-in.ts）没选时不建——不再悄悄放进登记表里写的那个组
 export function newItemIn(src: SourceRef, kind: ContentKind, ctx: PageCtx, defaults: Obj = {}): Route | null | Promise<Route | null> {
   if (kindReadonly(src, kind, ctx)) return null;
+  if (newChoiceOf(kind.id, defaults, src, ctx)) return null;
   const blank = blankItem(kind, takenIn(src, kind, ctx));
   if (!blank) return null;
   return addItemIn(src, kind, { ...blank, ...defaults });

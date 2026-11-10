@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { Dirty, type RemovedItem } from '../core/commands';
 import { postedPatch, previewWorldOf } from '../core/preview-world';
+import { postRegenBase } from '../core/regen-base';
 import { riverBuffers, worldRivers } from '../core/river-pack';
 import { type Checkpoint, Engine, type WorldDoc } from '../core/engine';
 import { planetFormIssues, previewTerrain } from '../core/terrain';
@@ -298,11 +299,14 @@ self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => {
 async function handle(id: number, req: Request) {
   try {
     // light：这一步只重算了名字（或什么都没重算）时发轻快照。fresh：新建、打开（带上是不是安全模式）
-    const withSnap = (summary?: string, light = false, fresh = false, removed?: RemovedItem[], skipped?: string[]) => {
+    // regen（第九十轮）：新建、打开、撤销、重做的回复带上“上一次生成时的内容”（只带和现在不一样的项，见 core/regen-base.ts）；
+    // 执行的回复不带（主线程自己跟着记，编辑不多做事）
+    const withSnap = (summary?: string, light = false, fresh = false, removed?: RemovedItem[], skipped?: string[], regen = fresh) => {
       const deep = engine!.takeRecomputed();
       const { snap, transfer } = light && deep <= Dirty.Names ? lightSnapshot(engine!) : snapshot(engine!);
       const log = logOf(engine!);
-      reply({ id, ok: true, summary, snapshot: snap, log, ...(fresh ? { safe: safeMode } : {}), ...(removed?.length ? { removed } : {}), ...(skipped?.length ? { skipped } : {}) }, transfer);
+      const base = regen ? { regen: postRegenBase(engine!.regenBase(), engine!.world.small.content) } : {};
+      reply({ id, ok: true, summary, snapshot: snap, log, ...(fresh ? { safe: safeMode } : {}), ...(removed?.length ? { removed } : {}), ...(skipped?.length ? { skipped } : {}), ...base }, transfer);
       reported = log.ids;
     };
     switch (req.kind) {
@@ -348,11 +352,11 @@ async function handle(id: number, req: Request) {
       }
       case 'undo':
         engine!.undo();
-        withSnap('撤销', true);
+        withSnap('撤销', true, false, undefined, undefined, true);
         return;
       case 'redo':
         engine!.redo();
-        withSnap('重做', true);
+        withSnap('重做', true, false, undefined, undefined, true);
         return;
       case 'previewWorld': {
         // 分阶段算：阶段之间让出线程，新的一笔、松手执行别的命令时在那里停下（回 cancelled），不必等它算完

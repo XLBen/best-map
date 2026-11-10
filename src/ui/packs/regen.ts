@@ -2,12 +2,13 @@ import type { Command } from '../../../core/commands';
 import { stableJson } from '../../../core/content/refs';
 import type { Culture, Dimension, Era } from '../../../core/human/era';
 import type { SmallState } from '../../../core/world';
-import { type ProvinceRules, provinceSeed, worldProvinceRules } from '../../../core/province-rules';
+import { provinceSeed, worldProvinceRules } from '../../../core/province-rules';
 import type { LibraryEntry } from '../../library';
 import type { Content, RegenBase, RegenScope } from '../../regen-track';
 import { beyondGroupIds, regenerateCommand, withPackImports } from '../domain/human';
 import { worldLibrary } from '../domain/packChoice';
 import { REGEN_KEEPS_ARCHIVE } from './copy';
+import { COUNTRY_KINDS, PROVINCE_KEYS, REGEN_KINDS, SETTLE_KINDS, instantKeys } from './timing';
 
 // 面板底下的“改了 N 项 · 重新生成”（第六十二轮在顶上，第八十一轮挪到底下、省份划分也算）：内容改了、地图还没用上时才出现。和上一次生成时的内容比（regen-track.ts 记着），
 // 所以撤销掉改动就没了，就地展开的项、世界里别处改的都算（比的是世界，不是这一页）。
@@ -16,13 +17,15 @@ import { REGEN_KEEPS_ARCHIVE } from './copy';
 //   新加的、改过的算；移出的不算（在用的移不出，没用到的移出之后地图不变，清理不该让按钮出现）。
 //   只差说明和颜色的不算：地图按现在的颜色画，不用重新生成。国家的颜色、旗子是生成时从文化取的，不跟着变，只为这个不值得重算一遍地图
 //   （测试查着：改了之后重新生成，只差国家的颜色、旗子）。
+//   第九十轮：画、用的时候现读的字段也不算（国家等级的首都四项、城市等级的图标字号浓淡、地标名字的写法……，timing.ts 的 instantKeys：
+//   页面上标“即时”的和这里不算的是同一张表）；派系整个不算（生成国家不读它，影响力现算）。
 //   文化组的比重只看是不是 0（别的数和没写一样）；比重 0、没选的组和它的文化不算（生成不用它们）。
 //   别的时代不算；世界后加的变量和它的取值不算（只算新变量，文化、国家都不变，第五十四轮）。
 //   生成了才算：没有人文时不算，没有国家时政体不算，没有城市时城市等级不算。
 //
 // 一个按钮，只做一步（能撤销）：
 //   文化、时代、取值改了        重新生成人文（国家的领土不动）；时代里管国家的几项改了，连国家一起
-//   政体、派系、国家等级改了    重新生成国家（人口按新的国家重算，锁定的不动）
+//   政体、国家等级、格局改了    重新生成国家（人口按新的国家重算，锁定的不动）
 //   两样都改了                  重新生成人文和国家
 //   只有城市等级、地标、点改了  重新生成城市（锁定的、自己放的不动）
 //   省份划分改了（第八十一轮）  按世界的种子重新划分省份（同“省份 ⋯”的划分省份；“湖”改了马上整理，不算）
@@ -32,26 +35,28 @@ import { REGEN_KEEPS_ARCHIVE } from './copy';
 type Small = Pick<SmallState, 'content' | 'human' | 'settlementRules'> & Partial<Pick<SmallState, 'provinces'>>;
 type Store = Record<string, Record<string, unknown>>;
 
-const HUMAN: readonly string[] = ['era', 'popValue', 'valueGroup', 'cultureGroup', 'culture'];
-const GOV: readonly string[] = ['government', 'faction', 'countryTier', 'countryPattern'];
-const SETTLE: readonly string[] = ['cityRank', 'landmarkType', 'pointType'];
+const GOV = COUNTRY_KINDS;
+const SETTLE = SETTLE_KINDS;
 
-// 比较用的字：不看说明和颜色。按对象记（内容不改动）
-const COSMETIC = new Set(['description', 'color']);
+// 比较用的字：不看说明和颜色，不看画的时候现读的字段（timing.ts）。按对象记（内容不改动；一个对象只属于一种）
 const keys = new WeakMap<object, string>();
-function genKey(x: Record<string, unknown>): string {
+function genKey(kind: string, x: Record<string, unknown>): string {
   let s = keys.get(x);
   if (s === undefined) {
-    s = stableJson(Object.fromEntries(Object.entries(x).filter(([k]) => !COSMETIC.has(k))));
+    const skip = instantKeys(kind);
+    s = stableJson(Object.fromEntries(Object.entries(x).filter(([k]) => !skip.has(k))));
     keys.set(x, s);
   }
   return s;
 }
+// 新加的一项里有没有生成要读的字段（id 不算；城市等级、地标每一项都有，所以新加的都算）
+const BLANK: Record<string, unknown> = {};
+const hasGenFields = (kind: string, y: Record<string, unknown>): boolean => genKey(kind, { ...BLANK, id: y.id }) !== genKey(kind, y);
 
 const storeOf = (content: Content, kind: string): Store[string] => ((content as Store | undefined)?.[kind] ?? {}) as Store[string];
 
 // 这一种里新加的、改过的 id
-function changedIds(base: Content, now: Content, kind: string, same: (x: Record<string, unknown>, y: Record<string, unknown>) => boolean = (x, y) => genKey(x) === genKey(y)): string[] {
+function changedIds(base: Content, now: Content, kind: string): string[] {
   const a = storeOf(base, kind);
   const b = storeOf(now, kind);
   if (a === b) return [];
@@ -60,9 +65,16 @@ function changedIds(base: Content, now: Content, kind: string, same: (x: Record<
     const y = b[id] as Record<string, unknown>;
     const x = a[id] as Record<string, unknown> | undefined;
     if (x === y) continue;
-    if (!x || !same(x, y)) out.push(id);
+    if (x ? genKey(kind, x) !== genKey(kind, y) : hasGenFields(kind, y)) out.push(id);
   }
   return out;
+}
+
+// 参与生成的文化组：上次生成选了的，和重新生成时会加进来的（同“文化 ⋯”的重新生成）。没有人文时空的
+export function joiningGroups(small: Pick<SmallState, 'content' | 'human'>, lib: readonly LibraryEntry[] = []): Set<string> {
+  const h = small.human;
+  if (!h) return new Set();
+  return new Set([...h.groups, ...beyondGroupIds(small as SmallState, worldLibrary(small as SmallState) ?? null, lib, h.groups)]);
 }
 
 function humanChanges(small: Small, base: Content, lib: readonly LibraryEntry[]): string[] {
@@ -78,7 +90,7 @@ function humanChanges(small: Small, base: Content, lib: readonly LibraryEntry[])
   const out: string[] = [];
   // 时代：只看用着的那一个，后加的变量不算
   if (eraNow && eraThen && eraNow !== eraThen) {
-    const bare = (e: Era) => genKey({ ...e, dimensions: e.dimensions.filter((d: Dimension) => had.has(d.id)) } as unknown as Record<string, unknown>);
+    const bare = (e: Era) => genKey('era', { ...e, dimensions: e.dimensions.filter((d: Dimension) => had.has(d.id)) } as unknown as Record<string, unknown>);
     if (bare(eraNow) !== bare(eraThen)) out.push(`era:${eraId}`);
   } else if (eraNow && !eraThen) out.push(`era:${eraId}`);
   for (const kind of ['popValue', 'valueGroup']) {
@@ -87,7 +99,7 @@ function humanChanges(small: Small, base: Content, lib: readonly LibraryEntry[])
   }
   // 文化组：不参与的不算（参与的：上次选了的，和重新生成时会加进来的，同“文化 ⋯”的重新生成）。
   // 第七十七轮：比重就是各组占多少，改了也要重新生成（以前只看是不是 0）
-  const chosen = new Set([...h.groups, ...beyondGroupIds(small as SmallState, worldLibrary(small as SmallState) ?? null, lib, h.groups)]);
+  const chosen = joiningGroups(small, lib);
   const joins = (id: string) => chosen.has(id);
   for (const id of changedIds(base, small.content, 'cultureGroup')) if (joins(id) || storeOf(base, 'cultureGroup')[id]) out.push(`cultureGroup:${id}`);
   const cultures = storeOf(small.content, 'culture') as unknown as Record<string, Culture>;
@@ -109,8 +121,7 @@ function eraCountryChange(small: Small, base: Content): boolean {
 
 const changesIn = (small: Small, base: Content, kinds: readonly string[]) => kinds.flatMap((k) => changedIds(base, small.content, k).map((id) => `${k}:${id}`));
 
-// 第八十一轮：省份划分也走这一条。“湖”改了马上整理（不算）；名字、说明不算。世界里没有时按默认的比
-const PROVINCE_KEYS: readonly (keyof ProvinceRules)[] = ['size', 'varied', 'wasteland', 'seaByDistance', 'riverCost', 'ridgeCost'];
+// 第八十一轮：省份划分也走这一条。“湖”改了马上整理（不算）；名字、说明不算（timing.ts 的 PROVINCE_KEYS）。世界里没有时按默认的比
 function provinceChanges(small: Small, base: Content): string[] {
   if (!Object.keys(small.provinces ?? {}).length) return [];
   const a = worldProvinceRules({ content: base });
@@ -140,9 +151,10 @@ export function regenNeed(small: Small, base: RegenBase | null, lib: readonly Li
   const hasHuman = !!small.human;
   const hasCountries = hasHuman && !!small.human!.countryRules;
   const hasCities = hasHuman && !!small.settlementRules;
-  const human = hasHuman ? humanChanges(small, base.human, lib) : [];
-  const gov = hasCountries ? changesIn(small, base.countries, GOV) : [];
-  const settle = hasCities ? changesIn(small, base.settlements, SETTLE) : [];
+  // 内容还是那时候的那一份：没有改过的（画一笔、改地形时都走这里，什么都不用比）
+  const human = hasHuman && base.human !== small.content ? humanChanges(small, base.human, lib) : [];
+  const gov = hasCountries && base.countries !== small.content ? changesIn(small, base.countries, GOV) : [];
+  const settle = hasCities && base.settlements !== small.content ? changesIn(small, base.settlements, SETTLE) : [];
   const count = prov.length + human.length + gov.length + settle.length;
   if (!count) return null;
   const scopes: RegenScope[] = [];
@@ -175,7 +187,8 @@ export function regenNeed(small: Small, base: RegenBase | null, lib: readonly Li
   // 第八十五轮：国家档案里手写的（备注、改过的统治者、自己写的大事）留着
   const lore = hasCountries && (scopes.includes('countries') || scopes.includes('human')) ? `；${REGEN_KEEPS_ARCHIVE}` : '';
   const what = `会重做${redo.join('、')}；${keep}${lore}`;
-  const lost = (base.hand ?? []).filter((s) => scopes.includes(s) && s !== 'human' && s !== 'settlements').map((s) => HAND_NAME[s]);
+  // 先后固定（省份、国家）：主线程跟着记的是手改的先后，引擎从历史里算的是固定的先后，写出来要一样
+  const lost = (['provinces', 'countries'] as const).filter((s) => base.hand?.includes(s) && scopes.includes(s)).map((s) => HAND_NAME[s]);
   return { scopes, count, label, what, warn: lost.length ? `手改过的${lost.join('、')}会被换掉` : null };
 }
 
@@ -198,4 +211,4 @@ export function addedNeed(small: Small, after: Content, lib: readonly LibraryEnt
 // 按钮的字：“添加并重新生成国家”“添加并重新生成人文”“添加并重新生成城市”（人文和国家都要时“添加并重新生成人文和国家”）
 export const addRegenLabel = (need: Pick<RegenNeed, 'label'> | null): string | null => (need ? `添加并${need.label}` : null);
 
-export const REGEN_KINDS: readonly string[] = [...HUMAN, ...GOV, ...SETTLE, 'provinceRules'];
+export { REGEN_KINDS };

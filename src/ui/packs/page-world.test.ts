@@ -309,14 +309,18 @@ describe('重新生成的按钮', () => {
     const t = trackOf(e);
     const k = kindOf('cityRank')!;
     const id = itemId(k, k.inWorld(e.world)[0]);
+    // 第九十轮：名字是画的时候现读的，不算（以前改名也算）；“连大道”生成道路时才读，算
     edit(e, 'cityRank', id, { name: '改过' });
     t.step(1, e.world.small.content);
+    expect(need(e, t)).toBeNull();
+    edit(e, 'cityRank', id, { major: false });
+    t.step(2, e.world.small.content);
     const n = need(e, t)!;
     expect(n.label).toBe('重新生成城市');
     e.exec(regenCommand(n, e.world.small, BUILTIN));
     const none = worldOf('medieval', 3, { countries: {} });
     const t2 = trackOf(none);
-    edit(none, 'cityRank', id, { name: '改过' });
+    edit(none, 'cityRank', id, { major: false });
     t2.step(1, none.world.small.content);
     expect(need(none, t2)).toBeNull();
   });

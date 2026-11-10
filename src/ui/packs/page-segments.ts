@@ -17,9 +17,8 @@ export interface Segment {
   custom?: 'biomeWater' | 'waterBiomes' | 'samples' | 'eraDims' | 'eraPatterns' | 'patternTip';
   // 写在这一段里的一句说明（断流、按多数显示的类型……）
   hint?: string;
-  // 第八十一轮：本世界里改了地图马上变（标题旁写“即时”）；别的段要重新生成才用上
-  instant?: boolean;
 }
+// 第九十轮：改了什么时候用上不在这里手标（第八十一轮只标了省份划分的“湖”），每一段从 timing.ts 推
 
 interface SegDef {
   id: string;
@@ -27,7 +26,6 @@ interface SegDef {
   keys: readonly string[];
   custom?: Segment['custom'];
   hint?: string;
-  instant?: boolean;
 }
 
 const BASIC = '基本';
@@ -136,11 +134,11 @@ const TABLE: Record<string, readonly SegDef[]> = {
     { id: 'water', title: '河与路', keys: ['river', 'riverBank', 'road', 'roadMinor', 'quietRoad', 'quietRoadMinor'] },
     { id: 'text', title: '字', keys: ['countryLabel'] },
   ],
-  // 第七十八轮：省份划分（core/content/province-kind.ts）。湖的归属改了马上整理（即时）；别的改了以后底下“重新生成”（第八十一轮）
+  // 第七十八轮：省份划分（core/content/province-kind.ts）。湖的归属改了马上整理（即时）；别的改了以后底下“重新生成”（第八十一轮；标记从 timing.ts 推）
   provinceRules: [
     { id: 'basic', title: BASIC, keys: ['name', 'description'] },
     { id: 'size', title: '大小', keys: ['size', 'varied', 'wasteland', 'seaByDistance'] },
-    { id: 'water', title: '湖', keys: ['lakeMode'], hint: '只整理湖边的省份', instant: true },
+    { id: 'water', title: '湖', keys: ['lakeMode'], hint: '只整理湖边的省份' },
     { id: 'borders', title: '省界', keys: ['riverCost', 'ridgeCost'] },
   ],
   cityRank: [
@@ -177,7 +175,7 @@ export function segmentsOf(kind: ContentKind): Segment[] {
     // 字段的先后按这一段写的
     const sorted = [...fields].sort((a, b) => d.keys.indexOf(a.key) - d.keys.indexOf(b.key));
     const shown = (k === 0 ? [...sorted, ...rest] : sorted).filter((f) => !HIDDEN[kind.id]?.includes(f.key));
-    return { id: d.id, title: d.title, fields: shown, ...(d.custom ? { custom: d.custom } : {}), ...(d.hint ? { hint: d.hint } : {}), ...(d.instant ? { instant: true } : {}) };
+    return { id: d.id, title: d.title, fields: shown, ...(d.custom ? { custom: d.custom } : {}), ...(d.hint ? { hint: d.hint } : {}) };
   });
   memo.set(kind.id, { fields: kind.fields, segs });
   return segs;

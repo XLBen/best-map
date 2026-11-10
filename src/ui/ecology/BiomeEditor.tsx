@@ -13,8 +13,9 @@ import type { Obj } from '../packs/fields';
 import { BiomeWaterSegment } from '../packs/PageEcology';
 import type { PageCtx, SourceRef } from '../packs/pages';
 import { closeLibrary } from '../packs/panel-store';
-import { InstantMark } from '../packs/InstantMark';
-import { INSTANT_TIP } from '../packs/copy';
+import { TimingMark } from '../packs/TimingMark';
+import { TIMING_TIP, kindTiming } from '../packs/timing';
+import { sourceKind } from '../packs/page-source';
 import { rangePick } from '../tools/public';
 import { BiomeAdvanced } from './BiomeAdvanced';
 import { BiomeChart } from './BiomeChart';
@@ -48,6 +49,8 @@ export interface BiomeEditorProps {
 
 export function BiomeEditor({ sp, src, ctx, onSelect }: BiomeEditorProps) {
   const t = biomeTarget(src, ctx);
+  // 第九十轮：顶上写改了什么时候用上（本世界“即时”，我的库“只影响新地图”，只读的不写；timing.ts）
+  const timing = t.readonly ? null : kindTiming(sourceKind(src, ctx), 'biome');
   const w = world.value;
   const inWorld = !!w?.small.species.some((s) => s.id === sp.id);
   // 编辑器开着：“在地图上看”换上的底图留着；关上时换回去
@@ -57,9 +60,9 @@ export function BiomeEditor({ sp, src, ctx, onSelect }: BiomeEditorProps) {
   const rect = speciesRect(sp);
   return (
     <div class="biome-editor">
-      {t.inWorld && (
+      {timing && (
         <p class="hint row">
-          <InstantMark /> {INSTANT_TIP}
+          <TimingMark t={timing} /> {TIMING_TIP[timing]}
         </p>
       )}
       <p class="hint">色块是最适合的冷暖干湿：拖动移动，拖边改大小，拖到图边为“不限”。灰点是陆地，黄圈是指针所在。</p>

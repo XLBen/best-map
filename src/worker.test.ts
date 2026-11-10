@@ -421,3 +421,24 @@ describe('整理本世界的计划、移出的内容（第二十九轮）', () =
     expect(r.removed?.map((x) => [x.kind, x.id])).toEqual([['biome', 'mine']]);
   });
 });
+
+describe('上一次生成时的内容（第九十轮）', () => {
+  it('新建、打开、撤销、重做的回复带着（只带换过的项）；执行的回复不带——编辑不多做事', async () => {
+    const made = await send({ kind: 'init', settings, commands });
+    expect(made.regen).toEqual({ diff: {} });
+    // 划分省份，再改省份划分的大小：重新划分才用上
+    await send({ kind: 'exec', cmd: { op: 'generate_provinces', seed: 1 } });
+    const rules = Object.values((made.snapshot as Snapshot).small.content!.provinceRules!)[0] as { id: string; size: number };
+    const set = await send({ kind: 'exec', cmd: { op: 'set_content', kind: 'provinceRules', id: rules.id, item: { ...rules, size: rules.size + 40 } } as Command });
+    expect(set.snapshot).toBeDefined();
+    expect('regen' in set).toBe(false);
+    // 存成世界文件再打开：还知道省份是按改之前的那一份划分的
+    const doc = (await send({ kind: 'doc' })).doc!;
+    const opened = await send({ kind: 'load', doc: structuredClone(doc) });
+    expect(opened.regen).toEqual({ diff: { provinces: { provinceRules: { set: { [rules.id]: rules }, drop: [] } } } });
+    const undone = await send({ kind: 'undo' });
+    expect(undone.regen).toEqual({ diff: {} });
+    const redone = await send({ kind: 'redo' });
+    expect(redone.regen!.diff.provinces).toBeDefined();
+  });
+});
