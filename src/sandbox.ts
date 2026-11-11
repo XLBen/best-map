@@ -1,5 +1,5 @@
 import type { Command } from '../core/commands';
-import type { WorldDoc } from '../core/engine';
+import type { DocTail, WorldDoc } from '../core/engine';
 import type { MirrorLog, Request, Response, ScriptPing } from './protocol';
 
 // 计算 Worker 的看护（第三批）：用户写的脚本只在 Worker 里跑，可能卡死、把 Worker 弄崩。主线程这边：
@@ -18,6 +18,9 @@ import type { MirrorLog, Request, Response, ScriptPing } from './protocol';
 //   才让存储 Worker 写下；
 // - 一个计算 Worker 只装一个世界：新建、打开时，装过世界（或者运行过脚本）的 Worker 换一个新的。
 //   脚本可能在 Worker 里留下钩子，也可能从缓存里翻出之前打开过的世界：都不能让它看到你保存的其他世界
+// - 第九十六轮：不是脚本的请求也能停（stopAny）：算得久、卡住了都一样——停掉 Worker，世界用命令记录回到这一步之前；
+//   正在新建、打开的被停下时不换安全模式再开（不是脚本的事），原来有世界就回到原来的世界。
+//   消息解不出来（onmessageerror）当作 Worker 坏了，和崩了走同一条路
 // 不碰 DOM、不碰信号：时钟、Worker 都可以换成假的（见 sandbox.test.ts）
 
 // ---------- 时钟 ----------
@@ -205,6 +208,15 @@ export class Mirror {
     return `${this.gen}:${this.epoch}`;
   }
 
+  // 第九十六轮：engine.docTail(base) 的同一份答案，从命令记录里算（自动保存等不到计算程序时用）。
+  // base：已经写下的每一步的编号；from 是头一条对不上的。还没有世界时为 null
+  tail(base: readonly number[]): DocTail | null {
+    if (!this.head) return null;
+    let from = 0;
+    while (from < base.length && from < this.ids.length && base[from] === this.ids[from]) from++;
+    return { ...this.head, from, commands: this.commands.slice(from), ids: this.ids.slice() };
+  }
+
   // 同一个 Worker、同一个纪元，步号一模一样（检查点写的正是命令记录里的这个世界）
   matches(gen: number, epoch: number, ids: readonly number[]): boolean {
     if (!this.head || gen !== this.gen || epoch !== this.epoch || ids.length !== this.ids.length) return false;
@@ -219,6 +231,8 @@ export class Mirror {
 export interface WorkerLike {
   onmessage: ((ev: { data: unknown }) => void) | null;
   onerror?: ((ev: unknown) => void) | null;
+  // 发来的消息解不出来（第九十六轮）：当作 Worker 坏了
+  onmessageerror?: ((ev: unknown) => void) | null;
   postMessage(msg: unknown, transfer?: Transferable[]): void;
   terminate?(): void;
 }
@@ -228,8 +242,9 @@ type Ok = Extract<Response, { ok: true }>;
 export interface HostEvents {
   // 一段脚本算了 1.5 秒以上（谁的）；null：算完了，不再显示
   slow?(label: string | null): void;
-  // 卡住、停下、崩了：旧的 Worker 已经停掉，正在等的请求都回了 {ok:false}，正在用命令记录恢复。message 是给用户的话
-  reset?(message: string): void;
+  // 卡住、停下、崩了：旧的 Worker 已经停掉，正在等的请求都回了 {ok:false}，正在用命令记录恢复。message 是给用户的话；
+  // calm：是用户自己点的“停止”（不是出了事），不用当成报错说
+  reset?(message: string, calm?: boolean): void;
   // 恢复好了：打开的回复（带快照）。safeReason：安全模式打开的原因，正常打开时为 null
   restored?(r: Ok, safeReason: string | null): void;
   // 恢复不了（安全模式打开也出错），或者还没有世界、没有在等的请求时出了事（只说一句）
@@ -248,10 +263,16 @@ export interface HostOptions {
   commit?(token: number, epoch: number, ids: number[]): void;
 }
 
-type Why = 'hang' | 'stopped' | 'crash';
+// cancelled：用户停下了不是脚本的请求（第九十六轮）
+type Why = 'hang' | 'stopped' | 'crash' | 'cancelled';
+
+// 用户停下了不是脚本的请求时说的话：有世界时回到了这一步之前；还没有世界（启动时打开上次的世界）只说停了
+export const STOPPED_BACK = '已停止，回到了这一步之前';
+export const STOPPED_ONLY = '已停止';
 
 // 给用户的话。world：有世界要恢复（恢复后重做记录就没了）；step：有在等的请求（这一步没做）
 function stoppedText(why: Why, label: string | null, world = true, step = true): string {
+  if (why === 'cancelled') return world ? STOPPED_BACK : STOPPED_ONLY;
   const who = label ? `“${label}”的脚本` : '脚本';
   const head = why === 'hang' ? `${who}超过 4 秒没算完，已停止` : why === 'stopped' ? `已停止${who}` : '计算程序没有响应';
   return `${head}${step ? '，这一步没做' : ''}${world ? '。重做记录已清空' : ''}`;
@@ -262,6 +283,7 @@ function safeReasonText(why: Why, label: string | null): string {
   const who = label ? `“${label}”的脚本` : '脚本';
   if (why === 'hang') return `${who}卡住了`;
   if (why === 'stopped') return `已停止${who}`;
+  if (why === 'cancelled') return STOPPED_ONLY;
   return '计算程序没有响应';
 }
 
@@ -369,11 +391,34 @@ export class EngineHost {
     return true;
   }
 
+  // 第九十六轮：界面上的“停止”不只停脚本——有请求在等就能停（算得久、卡住了都一样）。
+  // 正在跑脚本时和 stop() 一样；别的：停掉 Worker，在等的请求都回 {ok:false, stopped:true}，有世界就用命令记录回到这一步之前
+  stopAny(): boolean {
+    if (!this.worker) return false;
+    const label = this.watchdog.running;
+    if (label !== null) {
+      this.recover('stopped', label);
+      return true;
+    }
+    if (!this.pending.size) return false;
+    this.recover('cancelled', null);
+    return true;
+  }
+
+  // 有没有发出去还没回复的请求（恢复时自己发的也算）
+  get waiting(): boolean {
+    return this.pending.size > 0;
+  }
+
   private spawn(safe: boolean, reason: string | null): WorkerLike {
     const w = this.spawnWorker();
     const gen = ++this.gen;
     w.onmessage = (ev) => this.receive(gen, ev.data);
     w.onerror = () => {
+      if (gen === this.gen) this.recover('crash', null);
+    };
+    // 发来的消息解不出来：这个 Worker 说的话不能信了，和崩了一样另开一个
+    w.onmessageerror = () => {
       if (gen === this.gen) this.recover('crash', null);
     };
     this.worker = w;
@@ -456,6 +501,7 @@ export class EngineHost {
     if (!w) return;
     w.onmessage = null;
     w.onerror = null;
+    w.onmessageerror = null;
     w.terminate?.();
   }
 
@@ -476,6 +522,15 @@ export class EngineHost {
     const wasSafe = this.safe;
     const quiet = this.quiet;
     this.kill();
+    if (why === 'cancelled') {
+      // 用户停下的（不是脚本）：在等的都说“被停下了”；有世界（正在算的一步之前的、或者正要换掉的那个）就照原来的模式打开回来。
+      // 正在新建、打开的不换安全模式再开：不是脚本卡住，是用户不要它了
+      for (const p of waiting) p.done({ id: CANCELLED, ok: false, error: message, stopped: true });
+      if (!doc) return;
+      this.events.reset?.(message, true);
+      this.restore(doc, this.mirrorSafe, this.mirrorReason);
+      return;
+    }
     const fail = (p: Pending) => p.done({ id: CANCELLED, ok: false, error: message });
     const head = waiting[0];
     if (head && (head.req.kind === 'init' || head.req.kind === 'load') && !wasSafe) {

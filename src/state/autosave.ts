@@ -13,7 +13,7 @@ import { fileAfterSave } from './file-save';
 import { showToast } from './notes';
 import { failWhy, saveFail, saveRole, savedState, storageTight, unsaved } from './save-status';
 import { adoptWorldId, freeVersionRoom, overwriteLinked, versionAfterSave, worldId } from './versions';
-import { call, currentHost, getDoc, hostHooks, safeMode } from './worker-host';
+import { currentHost, docNow, docTailNow, hostHooks, safeMode } from './worker-host';
 import { world, worldEpoch, worldState } from './world';
 
 // 第七十轮从 state.ts 分出来
@@ -145,7 +145,8 @@ export function noteThumb(at = Date.now()) {
 // link、state 是这次自动保存开始时的：之后换了世界（纪元变了）就不写
 async function syncLinked(link: { id: string; name: string; epoch: number }, state: number) {
   if (mapSavedState.value === state) return;
-  const doc = await getDoc();
+  // 第九十六轮：不死等计算程序（它在算很久的一步、卡住时用主线程手上的命令记录：还在算的那一步不在里面，算完会再写一次）
+  const doc = (await docNow())?.doc;
   if (!doc || link.epoch !== worldEpoch.value || activeLink(mapLink.value, worldEpoch.value)?.id !== link.id) return;
   const now = Date.now();
   const thumb = now - thumbAt > THUMB_EVERY_MS ? (thumbHook.make?.() ?? null) : null;
@@ -205,10 +206,12 @@ async function autosaveOnce() {
   // 最多两次：第二次是“要整份”（头不是这一页上一次写的那一代）时重新取整份
   for (let round = 0; round < 2; round++) {
     const base = writer.savedIds;
-    const r = await call({ kind: 'docTail', ids: base as number[] }, null);
-    if (!r.ok || !r.tail || epoch !== worldEpoch.value || gen !== savedGen) return;
+    // 第九十六轮：照旧先问计算程序；它几秒没回（在算很久的一步、卡住了）就用主线程手上的命令记录算同一份——
+    // 已经应答的每一步都写得下去，不会因为它卡着就一直不存（docTailNow）
+    const r = await docTailNow(base);
+    if (!r || epoch !== worldEpoch.value || gen !== savedGen) return;
     // 回复到的时候主线程的命令记录正是这一份：记下是哪个引擎的（关页面的那一下拿它认下标还对不对）
-    const key = currentHost()?.mirror.keyFor(r.tail.ids) ?? null;
+    const key = r.key;
     let out: WriteOutcome;
     try {
       out = await writer.write(r.tail, extraNow(link, mapSavedState.value === state), { base, key });
@@ -251,7 +254,7 @@ async function autosaveOnce() {
   }
   if (idbError === null) return;
   // IndexedDB 用不了（比如隐私模式）、满了：整份存进 localStorage
-  const doc = await getDoc();
+  const doc = (await docNow())?.doc;
   if (!doc || epoch !== worldEpoch.value) return;
   try {
     // 位置上还压着一份没能挪走的旧世界（存储满了，见 backups.ts）：不盖它

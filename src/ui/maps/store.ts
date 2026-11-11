@@ -31,8 +31,8 @@ import {
   currentSeries,
   download,
   fileFlush,
+  docNow,
   fileMoved,
-  getDoc,
   history,
   keepVersion,
   loadDoc,
@@ -113,11 +113,17 @@ function makeThumb(): string | null {
 }
 if (typeof window !== 'undefined') thumbHook.make = makeThumb;
 
-// 写出去的世界文件（存进“我的地图”、导出）：压缩过的（第二十九轮：加了又移出的、没用上的内容去掉，末尾补整理；核对不上用原来的）
-async function savedDoc(): Promise<WorldDoc | null> {
-  const doc = await getDoc();
-  return doc ? compactForSave(doc) : null;
+// 写出去的世界文件（存进“我的地图”、导出）：压缩过的（第二十九轮：加了又移出的、没用上的内容去掉，末尾补整理；核对不上用原来的）。
+// 第九十六轮：不死等计算程序（state/worker-host.ts 的 docNow）。它几秒没算完时用主线程手上的命令记录——
+// 还在算的那一步不在里面（behind），这时也不整理（整理要把世界从头重放两遍，计算程序正忙着的时候不再添一件久的事），原样写出去
+async function savedDoc(): Promise<{ doc: WorldDoc; behind: boolean } | null> {
+  const got = await docNow();
+  if (!got) return null;
+  return got.behind ? got : { doc: await compactForSave(got.doc), behind: false };
 }
+// 还在算的那一步不在里面时添的一句
+export const BEHIND_NOTE = '还在算的那一步不在里面';
+const behindNote = (behind: boolean) => (behind ? `。${BEHIND_NOTE}` : '');
 
 const doneSteps = () => history.value.reduce((n, h) => n + (h.done ? 1 : 0), 0);
 
@@ -160,8 +166,9 @@ async function saveNew(title: string, initial: string): Promise<boolean> {
   if (name === null) return false;
   const epoch = worldEpoch.value;
   const state = worldState.value;
-  const doc = await savedDoc();
-  if (!doc || epoch !== worldEpoch.value) return false;
+  const saved = await savedDoc();
+  if (!saved || epoch !== worldEpoch.value) return false;
+  const { doc } = saved;
   const thumb = makeThumb();
   try {
     const e = await createMap(store, { name, doc, thumb });
@@ -179,7 +186,7 @@ async function saveNew(title: string, initial: string): Promise<boolean> {
       // 自动保存记下连着的是这一张（刷新后照样连着）
       void autosaveNow();
     }
-    showToast(`已保存“${e.name}”到“我的地图”`);
+    showToast(`已保存“${e.name}”到“我的地图”${behindNote(saved.behind)}`);
     void refreshMaps();
     void fileFlush();
     return true;
@@ -204,8 +211,9 @@ export async function saveMap(): Promise<boolean> {
   if (!link) return saveNew('保存到“我的地图”', await defaultName());
   const epoch = worldEpoch.value;
   const state = worldState.value;
-  const doc = await savedDoc();
-  if (!doc || epoch !== worldEpoch.value) return false;
+  const saved = await savedDoc();
+  if (!saved || epoch !== worldEpoch.value) return false;
+  const { doc } = saved;
   const thumb = makeThumb();
   try {
     // 第九十五轮：别的页面往这一张里存过、盖掉会丢东西时，先把存着的那一份留成一个版本
@@ -217,7 +225,7 @@ export async function saveMap(): Promise<boolean> {
     }
     if (epoch === worldEpoch.value && mapLink.value?.id === link.id) mapSavedState.value = state;
     if (thumb) noteThumb();
-    showToast(`已保存“${e.name}”`);
+    showToast(`已保存“${e.name}”${behindNote(saved.behind)}`);
     void refreshMaps();
     // 连着电脑上的文件时也马上写一次
     void fileFlush();
@@ -356,9 +364,12 @@ export async function deleteSaved(e: MapEntry): Promise<void> {
 }
 
 // 导出世界文件（.json）：连着地图时用地图的名字当文件名
+// 第九十六轮：计算程序在算很久的一步、卡住了也导得出（几秒内）：那时文件里是已经应答的最后一步为止，顶上说一句
 export async function exportCurrent(): Promise<void> {
-  const doc = await savedDoc();
-  if (doc) download(fileNameOf(currentMap.value?.name ?? 'world'), JSON.stringify(doc), 'application/json');
+  const saved = await savedDoc();
+  if (!saved) return;
+  download(fileNameOf(currentMap.value?.name ?? 'world'), JSON.stringify(saved.doc), 'application/json');
+  if (saved.behind) showToast(`已导出${behindNote(true)}`);
 }
 
 // 打开世界文件：不连着任何一张（之后 ⌘S 存进我的地图，默认名字是文件名）

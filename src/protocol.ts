@@ -184,4 +184,5 @@ export type Response =
       // 缩略图里星球形态的脚本出的错（thumb 的回复里，有形态时才有）
       issues?: ScriptIssue[];
     }
-  | { id: number; ok: false; error: string };
+  // stopped（第九十六轮）：不是 Worker 回的——用户点了“停止”，这个请求没算完就被停下了（sandbox.ts 的 stopAny）
+  | { id: number; ok: false; error: string; stopped?: boolean };

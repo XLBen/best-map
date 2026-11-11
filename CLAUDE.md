@@ -12,7 +12,7 @@ npm run test:fast                # 跳过最慢的几个文件
 npx vitest run core/foo.test.ts  # 单个文件；机器忙时 core/sizing 的“滑块最小值命令都接受”会超时，单独重跑；整套里 `tools/realism.test.ts` 的“类地星球”、`src/ui/speed-r80.test.ts` 的“一串编辑”也常超时，这两个文件单独重跑
 npm run golden                   # 只跑金标准
 npm run build                    # 查类型后打包
-npm run smoke                    # 打包后在无头 Chrome 里走一遍：新建、画一笔、刷新后还在、两个页面、打不开先问（约 4 分钟；--shots <目录> 截图）
+npm run smoke                    # 打包后在无头 Chrome 里走一遍：新建、画一笔、刷新后还在、两个页面、打不开先问、计算卡住能停、画面丢了能恢复、页面出错有自救页（约 7 分钟；--shots <目录> 截图）
 node tools/bench-median.mjs 5 --against <提交> --           # 一块地区的加工各步与旧提交对照，五次中位数（结尾的 -- 不能省：省了只测星球）
 node tools/bench-median.mjs 5 --against <提交> -- --globe   # 整个星球
 node tools/bench-median.mjs 5 --against <提交> -- --library # 带着一整个时代库的世界（small.content 约 300 KB）：同样的加工，另计不重算的几步（libEdit、libUndo……）
@@ -63,6 +63,7 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 | 世界文件的格式 | `core/world.ts`；改了就把 `core/doc-version.ts` 的 `DOC_VERSION` 加一，同时改 `src/checkpoint-store.ts` 的 `CURRENT_VERSION`、测试夹具里的 `version:`、`core/raster-identity.test.ts` 的四个 `world.json`（先把版本写回旧的，核对别的一项没变） |
 | 自动保存：写什么、谁写、关页面时、没存成怎么说 | 写什么 `src/autosave-io.ts`（`AutosaveWriter`：事务里先读头，`writer` / `gen`，盖掉别人的之前先留着）；谁写 `src/autosave-lock.ts`（`SaveRole`：锁 `map2-autosave`、“在这里接着做”；`stale` 是“这个页面里的是旧的”，按钮“重新载入”在 `save-note.ts` 的 `reloadSaved`）；定时、页面事件 `src/state/autosave.ts`（`flushNow`、`takeOverSaving`）；状态 `src/state/save-status.ts`；界面 `src/ui/shell/save-note.ts`、`SaveBanner.tsx`、`TopBar.tsx` 的 `SaveBadge`，文字 `src/ui/copy.ts` 的 `SAVE_TEXT`；存储够不够 `src/storage-health.ts`；测试的替身 `src/testing/fake-idb.ts`、`fake-engine-worker.ts`；改完跑 `npm run smoke`；设计见 `docs/dev/history/第94轮.md` |
 | 留着的旧世界；上次的世界没能打开时的问话 | 这一版打不开的、没存完整的、被换掉之前的自动保存原样挪进 `backups` 表：规则 `src/backups.ts`（`BackupWhy`、`staleWhy`）、信号 `src/state/backups.ts`、界面 `src/ui/maps/backups.ts`、`BackupsDialog.tsx`、`src/ui/shell/BackupBanner.tsx`，文字 `BACKUP_TEXT.why`；问话 `src/state/open.ts` 的 `resumeLast`、`RESUME_FAILED`；库的表在 `src/idb.ts` |
+| 出了问题时：没接住的错、自救页、“停止”、计算卡着时导出、画面丢了、报错的人话 | 怎么分 `src/mishap.ts`（`classify`、`MishapLog`、`DrawHealth`），接线 `src/crash-host.ts`（`report`、`crashHooks`），最先载入的 `src/boot.ts`；自救页 `src/rescue.ts`（只用 DOM，不要引用界面、状态）、导出从哪拿世界 `src/rescue-doc.ts`（认存储里的形状，自动保存的格式变了要跟着改）；错误边界 `src/ui/shell/Guard.tsx`，顶上的一条 `src/state/mishap.ts`、`shell/MishapBanner.tsx`；“停止” `src/stall.ts`（`STOP_AFTER_MS`）、`src/sandbox.ts` 的 `stopAny`、`src/state/worker-host.ts` 的 `stalled` / `stopBusy`；不死等计算程序 `docNow` / `docTailNow` / `idleWithin`；连着两次没打开成 `src/open-guard.ts`、`src/state/open.ts` 的 `resumeLast`；WebGL `src/render/gl-recover.ts`、`Renderer.revive`、`shell/GlNote.tsx`；报错的人话 `src/error-text.ts`（`showToast(…, true)` 里已经用了）；文字 `src/crash-text.ts`（`copy.ts` 照旧导出）；冒烟 `tools/smoke-safety.mjs`、钩子 `src/smoke-hooks.ts`；改完跑 `npm run smoke`；设计见 `docs/dev/history/第96轮.md` |
 | 以前的版本（留哪些、记在哪一串上、回到这一份、盖掉地图之前留一份） | 规则 `src/versions.ts`（`thin`、`planDrop`、`addVersion`、`overwriteKeeping`；表 `versions` / `versionDocs`）；接线 `src/state/versions.ts`（`worldId`、`keepVersion`、`versionAfterSave`、`overwriteLinked`）；界面 `src/ui/maps/versions.ts`、`VersionsDialog.tsx`，文字 `VERSION_TEXT`；世界文件的字 `src/doc-text.ts`；设计见 `docs/dev/history/第95轮.md` |
 | 存到电脑上的文件 | 规则 `src/file-save.ts`（`FileSaver`、`FileIo`、`FILE_SAVE_MS`）；接线 `src/state/file-save.ts`；界面 `src/ui/shell/save-note.ts`（`fileLine`、`pickFile`）、`SaveBanner.tsx` 的 `FileBanner`、`ActionsPanel.tsx` 的 `FileStatusLine`，文字 `FILE_TEXT`；真的选择框没法自动点，冒烟里换成浏览器自己管的文件 |
 | 撤销的内存上限 | `core/undo-budget.ts`、`core/engine.ts` 的 `settleUndo` / `trimUndo`（`core/engine.ts` 已近 800 行，再加要拆）；界面 `UNDO_LIMIT_TEXT`；量：`node --expose-gc --import tsx tools/undo-bytes.ts [--globe] [--human]` |
@@ -78,6 +79,7 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 - **计算 Worker 不打包内置数据**：内置的包只在主线程（`src/worker-imports.test.ts` 查着）。
 - **文件不要太大**：往一个文件里加代码时控制在约 800 行以内，超过就按职责拆（原样搬、照旧导出）。
 - **冻结的参照不要改**：`src/testing/frozen/`、测试里标着“不要改它”的原样拷贝。
+- **界面只经 `src/state.ts` 引用状态**：`src/ui/` 里不直接引用 `src/state/*.ts`（`src/ui/layering.test.ts` 查着）。
 - 用户是新手：结果要可以预料，界面像 Procreate，控件是连续的（滑块），文字的规矩见 `docs/dev/ui-design.md`。
 
 ## 文档

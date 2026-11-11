@@ -14,19 +14,27 @@ import {
   resumeLast,
   sheet,
   showToast,
+  stalled,
+  stopBusy,
   uiHidden,
   wizardOpen,
   world,
 } from '../state';
+import { SmokeBomb } from '../smoke-hooks';
+import { STOP_TEXT } from './copy';
 import { CATEGORY_DEFS } from './defs/tools';
 import { Help } from './Help';
 import { MapView } from './MapView';
 import { BackupsDialog } from './maps/BackupsDialog';
+import { backupsDialog } from './maps/backups';
 import { VersionsDialog } from './maps/VersionsDialog';
+import { versionsDialog } from './maps/versions';
 import { MapsDialog } from './maps/MapsDialog';
+import { mapsDialog } from './maps/store';
 import { PackDialog } from './packs/PackDialog';
+import { packDialog } from './packs/store';
 import { LibPanel } from './packs/LibPanel';
-import { libPanel, libWide } from './packs/panel-store';
+import { closeLibrary, libPanel, libWide } from './packs/panel-store';
 import { MorePanel, WorldMenu } from './panels/ActionsPanel';
 import { AdjustPanel } from './panels/AdjustPanel';
 import { LayersPanel } from './panels/LayersPanel';
@@ -48,6 +56,9 @@ import { HereCard } from './shell/HereCard';
 import { onKeyDown, onMouseDownCapture, onPointerDownCapture } from './shell/keys';
 import { AskDialog } from './shell/Ask';
 import { onEscapeCapture } from './shell/escape';
+import { GlNote } from './shell/GlNote';
+import { Guard } from './shell/Guard';
+import { MishapBanner } from './shell/MishapBanner';
 import { Notice } from './shell/Notice';
 import { Popover } from './shell/Popover';
 import { RulerButton } from './shell/Ruler';
@@ -213,17 +224,43 @@ export function App() {
     <LucideProvider size={16} strokeWidth={1.8}>
       <div class={`app ${sheet.value ? 'with-sheet' : ''} ${libWide.value ? 'lib-wide' : libPanel.value ? 'lib-open' : ''}`}>
         <MapView />
-        {!w && !wizardOpen.value && <div class="loading">{busy.value ?? '正在准备…'}</div>}
+        {/* 第九十六轮：地图的画面暂时不可用、恢复不了时盖在地图中间的一块 */}
+        <GlNote />
+        {!w && !wizardOpen.value && (
+          <div class="loading">
+            {busy.value ?? '正在准备…'}
+            {/* 第九十六轮：启动时打开上次的世界，几秒还没好：可以停下（那一份留着，进向导） */}
+            {busy.value && stalled.value && (
+              <button class="pill-btn busy-stop" onClick={() => void stopBusy()} title={STOP_TEXT.openTip}>
+                {STOP_TEXT.stop}
+              </button>
+            )}
+          </div>
+        )}
         {!hidden && (
           <>
             <TopBar />
             {w && <ContextBar />}
             {w && <RulerButton />}
-            <MapLegend />
-            <HereCard />
-            <Sheet />
-            <LibPanel />
-            {openPanel.value && <PanelHost id={openPanel.value} />}
+            {/* 第九十六轮：一块画不出来（Guard）只关上这一块、顶上说一句，别的照常用；包不住的（顶栏、底部条、地图）交给根上的那一个 */}
+            <Guard name="图例" watch={w}>
+              <MapLegend />
+              <SmokeBomb at="part" />
+            </Guard>
+            <Guard name="这里" watch={w}>
+              <HereCard />
+            </Guard>
+            <Guard name="档案" watch={sheet.value} onFail={() => (sheet.value = null)}>
+              <Sheet />
+            </Guard>
+            <Guard name="资源库" watch={libPanel.value} onFail={closeLibrary}>
+              <LibPanel />
+            </Guard>
+            {openPanel.value && (
+              <Guard name="面板" watch={openPanel.value} onFail={() => (openPanel.value = null)}>
+                <PanelHost id={openPanel.value} />
+              </Guard>
+            )}
           </>
         )}
         {hidden && <div class="hidden-hint">按 Tab 显示界面</div>}
@@ -236,15 +273,28 @@ export function App() {
           {!wizardOpen.value && <FileBanner />}
           <ScriptBanner />
           <SkippedBanner />
+          {/* 第九十六轮：没接住的错（界面还能用）：一条，不打断 */}
+          <MishapBanner />
           <Notice />
         </div>
         <CursorHint />
+        <SmokeBomb at="root" />
         <Wizard />
-        <PackDialog />
-        <MapsDialog />
-        <BackupsDialog />
-        <VersionsDialog />
-        <Help />
+        <Guard name="管理库" watch={packDialog.value} onFail={() => (packDialog.value = null)}>
+          <PackDialog />
+        </Guard>
+        <Guard name="我的地图" watch={mapsDialog.value} onFail={() => (mapsDialog.value = false)}>
+          <MapsDialog />
+        </Guard>
+        <Guard name="留着的旧世界" watch={backupsDialog.value} onFail={() => (backupsDialog.value = false)}>
+          <BackupsDialog />
+        </Guard>
+        <Guard name="以前的版本" watch={versionsDialog.value} onFail={() => (versionsDialog.value = null)}>
+          <VersionsDialog />
+        </Guard>
+        <Guard name="帮助" watch={helpOpen.value} onFail={() => (helpOpen.value = false)}>
+          <Help />
+        </Guard>
         <AskDialog />
       </div>
     </LucideProvider>

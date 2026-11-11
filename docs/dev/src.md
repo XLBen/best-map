@@ -3,9 +3,15 @@
 界面的入口、Worker 与存储。画地图在 [render.md](render.md)，界面在 [ui.md](ui.md)。线程怎样分工见 [开发说明 · 线程与隔离](../开发说明.md#线程与隔离)。
 
 ## 线程
-- `main.tsx` 入口（第一次画界面前 `startToolEffects`）；`state.ts` 只给界面用的信号（地图模式、季节、开着的面板、悬停……）、脚本出错的“编辑”，并把 `state/` 下给界面用的照旧导出（界面只从它引用；不引用 `ui/`）
+- `boot.ts`（第九十六轮，见 [第96轮](history/第96轮.md)）页面最先载入的一小段（`index.html` 里排在 `main.tsx` 前面）：接上全局的兜底（`installCrashHandlers`、`crashHooks.fatal = showRescue`），自救页开着时在捕获阶段拦下键盘；只引用 `crash-host.ts`、`rescue.ts` 和它们用的纯文件
+- `mishap.ts`（第九十六轮）没接住的错怎么分，纯规则：`classify`（不管 / 不致命 / 致命；不把扩展、别的来源的 `Script error.`、ResizeObserver 的警告、`AbortError`、隔离探针当成错）、`signatureOf`、`MishapLog`（同一个错不反复刷屏）、`DrawHealth`（地图连着几帧画不出来才算坏了）；`crash-host.ts` 接线：`report`、`reportNoWebgl`、`crashHooks`（界面顶上的一条、整页的自救页、页面里现在的世界、马上写自动保存、要自己重新载入）、`crashState`
+- `rescue.ts`（第九十六轮）整页的自救页（只用 DOM，不用 Preact、信号、`components/`）：发生了什么、世界还在不在、导出文件、重新载入、原因；`rescue-doc.ts` 导出从哪里拿世界：`rescueExport`（先页面里现在的，再浏览器里存着的）、`readSavedWorld`（自己读 IndexedDB 的自动保存和 localStorage 的后备，不引用 `autosave-io.ts`）；`crash-text.ts` 这一轮的几组文字（不引用任何东西，`ui/copy.ts` 照旧导出）
+- `error-text.ts`（第九十六轮）报错改人话 `humanError`（只在显示的那一层翻，原话留在 `detail`）：命令的格式不对、第几步做不出来、浏览器和运行时的原话；本来就是中文的、脚本出的错原样
+- `stall.ts`（第九十六轮）计算程序多久没应答就给“停止”：`Stall`（有带提示的请求在等、连着 `STOP_AFTER_MS` = 5 秒没有回过一条）；`open-guard.ts` 启动时打开上次的世界连着几次没打开成（localStorage 的 `map2.opening`）：`beginOpen` / `endOpen` / `askBeforeOpen`
+- `smoke-hooks.ts`（第九十六轮）冒烟要“画界面时抛一个错”用的钩子：只在网址的 `#` 后面是 `#map2-smoke-96` 时才装
+- `main.tsx` 入口（第一次画界面前 `startToolEffects`；第九十六轮：把 `crashHooks` 的几样接上、`RootGuard` 包着 `<App />`、画出来以后 `crashState.rendered`）；`state.ts` 只给界面用的信号（地图模式、季节、开着的面板、悬停……）、脚本出错的“编辑”，并把 `state/` 下给界面用的照旧导出（界面只从它引用；不引用 `ui/`）
 - `state/`（第七十轮从 `state.ts` 分出来，原样搬，彼此不绕成圈）：`world.ts` 世界与选中的东西（快照换上时一起改的信号）；`notes.ts` 提示、跳过的步骤、“改了什么”与高亮（`describeChange`）；`options.ts` 工具的选项；`prefs.ts` 偏好（localStorage）与参考图（IndexedDB）
-- `state/worker-host.ts` 开计算 Worker、请求排队（`call`、`editsIdle`）、换上快照（`applySnapshot`）、缩略图、页面隐藏时写检查点；上层的预览作废、自动保存经 `hostHooks` 接回来；`snapshot-merge.ts` 把只带变了的快照拼到手上的世界上（`mergeSnapshot`、轻快照 `lightWorld`，第八十轮搬出来）；`mesh.ts` 网格的缓存与建网格的 Worker；`cost-gate.ts` 成本闸门
+- `state/worker-host.ts` 开计算 Worker、请求排队（`call`、`editsIdle`）、换上快照（`applySnapshot`）、缩略图、页面隐藏时写检查点；第九十六轮：`stalled`（几秒没应答）、`stopBusy`、不死等计算程序的 `docNow`（现在的世界文件，等不到就用命令记录并标 `behind`）、`docTailNow`、`idleWithin`；`state/mishap.ts` 顶上“没接住的错”的那一条（`mishap`、`showToastReason`）；`state/gl.ts` 地图的画面现在怎么样（`glState`）；上层的预览作废、自动保存经 `hostHooks` 接回来；`snapshot-merge.ts` 把只带变了的快照拼到手上的世界上（`mergeSnapshot`、轻快照 `lightWorld`，第八十轮搬出来）；`mesh.ts` 网格的缓存与建网格的 Worker；`cost-gate.ts` 成本闸门
 - `state/edits.ts` 执行、换掉最后一步、撤销、重做；`exact-preview.ts` 地形预览、命令预览、省份的轻预览、确切预览与调整面板的预览；`open.ts` 新建、打开、继续上次的世界（第九十四轮：没能打开时停在问话上 `RESUME_FAILED`，`openDoc` 另说是取消了还是没能打开）、“再试一次”；`script-trust.ts` 问要不要信任脚本；`ask.ts` 问一句的对话框
 - `state/autosave.ts` 自动保存（IndexedDB，退回 localStorage）与连着的“我的地图”（第九十一轮：读、写之前先等 `keepStaleOnce`；后备的位置上压着没能挪走的旧世界时不盖它；第九十四轮：只剩定时、信号、接到 Worker 和页面事件上——写什么、谁写在 `autosave-io.ts`、`autosave-lock.ts`；`takeOverSaving`“在这里接着做”、`flushNow` 关页面的那一下同步写、`noteResumed` / `noteNotResumed`、页面隐藏和 `pagehide` 时马上写、有没存的改动才挂 `beforeunload`、测试换存取的 `useAutosaveIo`）；`state/save-status.ts`（第九十四轮）保存状态的信号 `saveFail`、`saveRole`、`savedState`、`storageTight`、`saveProblem`、`unsaved` 与纯函数 `failWhy`、`saveProblemOf`、`hasUnsaved`；`state/backups.ts`（第九十一轮）留着的旧世界的信号 `backups`、这一次打开页面只挪一次的 `keepStaleOnce`、`deleteBackup`、`dismissBackups`、测试换存取的 `useBackupIo`；`state/versions.ts`（第九十五轮，见 [第95轮](history/第95轮.md)）以前的版本接到世界上：世界的编号 `worldId` / `adoptWorldId`（记在自动保存的头里）、现在是哪一串 `seriesNow` / `currentSeries`、信号 `versions`、留一份 `keepVersion` / `keepText`、自动保存写成之后隔一阵留一份 `versionAfterSave`、键换了 `versionsMoved`、删一张地图 `versionsDropped`、腾地方 `freeVersionRoom`、盖掉“我的地图”里的一张之前 `overwriteLinked`（`noteMapSeen` 记着上一次看到的保存时间）、测试换存取的 `useVersionIo`；`state/file-save.ts`（第九十五轮）存到电脑上的文件接到世界、自动保存、⌘S 上：信号 `fileStatus`，`saveToFile`、`resumeFile`、`stopFile`、`fileAfterSave`、`fileFlush`、`fileMoved`、`useFileIo`；`export-host.ts` 导出 Worker、下载；`tidy.ts` 移出的存进资源库、整理的计划、压缩世界文件
 - `notice-timer.ts` 提示条多久消失；`biome-range.ts` 生态范围外怎么说（第六十九轮从 `ui/` 搬来）
@@ -14,7 +20,7 @@
 - `regen-track.ts` 上一次生成时世界里的内容，跟着撤销的先后记（第六十二轮，资源库面板的“重新生成”；第八十一轮加省份 `provinces`，`hand` 记上次生成之后手改过的国家、省份；第九十轮：新建、打开时用引擎从命令记录里算的那一份起头（`reset` 的第三个参数，`Response.regen`，`worker-host.ts` 的 `applySnapshot` 拼回来），撤销到这次打开页面之前的位置时也用引擎给的；规则 `scopesOf`、`handOf` 搬到 `core/regen-base.ts`）
 - `content-post.ts` 快照里的 `small.content` 没换时不发，主线程补上手上那一份（第四十七轮）；人口群体 `small.popGroups` 同样（第五十四轮）；第八十轮：小数据的其余各段按 JSON 比、国家一国一国比，没变的不发（`sameSmall`、`sameCountries`，要主线程用上了上一份才拼得起来）；第八十五轮：国家的档案 `small.archive` 按对象比（不可变，不序列化）
 - `engine-spawn.ts`、`engine-source.ts`、`isolation-probe.ts` 开计算 Worker 与隔离（data: 地址，Worker 里不打包内置数据）
-- `sandbox.ts` Worker 的看护（看门狗、恢复、安全模式）
+- `sandbox.ts` Worker 的看护（看门狗、恢复、安全模式；第九十六轮：`stopAny` 不是脚本的请求也能停——在等的回 `{ok:false, stopped:true}`、世界用命令记录回到这一步之前，正在新建 / 打开的不换安全模式再开；`onmessageerror` 当作 Worker 坏了；`Mirror.tail` 从命令记录算 `engine.docTail` 的同一份）
 - `storage-worker.ts` + `checkpoint-store.ts` 存储 Worker 与检查点（经 MessageChannel，不过主线程）
 - `mesh-worker.ts` 建网格；`export-worker.ts` 导出（游戏文件包、整张地图的栅格化）；`compact-job.ts` 压缩世界文件（在导出 Worker 里）
 

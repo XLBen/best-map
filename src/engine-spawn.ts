@@ -42,6 +42,7 @@ export function readHello(data: unknown): { isolated: boolean } | null {
 export interface RawWorker {
   onmessage: ((ev: { data: unknown }) => void) | null;
   onerror: ((ev: unknown) => void) | null;
+  onmessageerror?: ((ev: unknown) => void) | null;
   postMessage(msg: unknown, transfer?: Transferable[]): void;
   terminate(): void;
 }
@@ -78,6 +79,8 @@ function dataUrlFor(code: string): string | null {
 export class EngineWorker implements WorkerLike {
   onmessage: ((ev: { data: unknown }) => void) | null = null;
   onerror: ((ev: unknown) => void) | null = null;
+  // 第九十六轮：发来的消息解不出来。打过招呼之后的交给 EngineHost（当作坏了）；之前的和报错一样换普通的
+  onmessageerror: ((ev: unknown) => void) | null = null;
   private w: RawWorker | null = null;
   // 可以把请求发过去了（data: 的 Worker 打过招呼，或者已经换成普通的）
   private ready = false;
@@ -151,6 +154,10 @@ export class EngineWorker implements WorkerLike {
       if (this.ready) this.onerror?.(ev);
       else this.giveUp();
     };
+    w.onmessageerror = (ev) => {
+      if (this.ready) this.onmessageerror?.(ev);
+      else this.giveUp();
+    };
     this.timer = (this.deps.setTimer ?? ((f, ms) => setTimeout(f, ms)))(
       () => {
         this.timer = null;
@@ -200,6 +207,7 @@ export class EngineWorker implements WorkerLike {
       this.onmessage?.(ev);
     };
     w.onerror = (ev) => this.onerror?.(ev);
+    w.onmessageerror = (ev) => this.onmessageerror?.(ev);
     this.ready = true;
     this.flush();
   }
@@ -220,6 +228,7 @@ export class EngineWorker implements WorkerLike {
     if (!w) return;
     w.onmessage = null;
     w.onerror = null;
+    w.onmessageerror = null;
     w.terminate();
   }
 }

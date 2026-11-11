@@ -1,5 +1,5 @@
 import { batch, signal } from '@preact/signals';
-import type { Timings, WorldDoc } from '../../core/engine';
+import type { DocTail, Timings, WorldDoc } from '../../core/engine';
 import type { WorldgenInput } from '../../core/generate';
 import { storedMeshKey } from '../../core/mesh-pack';
 import { newWorldContentCommands } from '../../core/packs/import';
@@ -16,6 +16,7 @@ import type { LightSnapshot, Request, Response, Snapshot } from '../protocol';
 import { seedRivers, reseedRivers } from '../render/overlay';
 import { lightWorld, mergeSnapshot } from './snapshot-merge';
 import { CANCELLED, EngineHost, type WorkerLike } from '../sandbox';
+import { Stall } from '../stall';
 import { noteTimings } from './cost-gate';
 import { meshFor } from './mesh';
 import { showToast } from './notes';
@@ -66,6 +67,22 @@ export const safeMode = signal<{ reason: string } | null>(null);
 // 脚本是不是在隔离的环境里跑：计算 Worker 是从 data: 地址开的，而且它自查的三项（来源为 null、IndexedDB 打不开、
 // fetch('data:…') 被拒）全部通过（见 engine-spawn.ts、isolation-probe.ts）。没隔离时信任的问话里老实说
 export const scriptsIsolated = signal(false);
+
+// 第九十六轮：计算程序已经连着几秒（stall.ts 的 STOP_AFTER_MS）没有回过一条，而有带提示的请求在等——“正在计算…”旁出现“停止”
+export const stalled = signal(false);
+// 时钟就是 sandbox.ts 的那一种（这里用真的）
+const stall = new Stall(
+  {
+    now: () => performance.now(),
+    every: (ms, f) => {
+      const h = setInterval(f, ms);
+      return () => clearInterval(h);
+    },
+  },
+  (on) => (stalled.value = on && !recovering),
+);
+// 发给计算程序、还没回来的带提示的请求有几个（回复到了、还在等网格和换快照的不算：那不是计算程序的事）
+let awaited = 0;
 
 let host: EngineHost | null = null;
 let nextId = 1;
@@ -210,6 +227,7 @@ export function call(req: Request, label: string | null, safeReason?: string, af
   if (label) {
     labelled++;
     busy.value = label;
+    stall.set(++awaited);
   }
   return new Promise<Response>((resolve) => {
     // 不带提示的请求（预览、自动保存）不改世界，不挡排队
@@ -224,6 +242,9 @@ export function call(req: Request, label: string | null, safeReason?: string, af
     engineHost().send(
       req,
       (r) => {
+        // 计算程序回了一条（哪一条都算）：它还在往下算
+        stall.progress();
+        if (label) stall.set(--awaited);
         if (!after) return finish(r);
         after(r)
           .catch((e) => console.error(e))
@@ -234,11 +255,12 @@ export function call(req: Request, label: string | null, safeReason?: string, af
   });
 }
 
-// Worker 卡住、停下、崩了，旧的已经停掉（正在等的请求都回了出错）：预览都作废，提示这一步没有做，等着恢复
-function engineReset(message: string) {
+// Worker 卡住、停下、崩了，旧的已经停掉（正在等的请求都回了出错）：预览都作废，提示这一步没有做，等着恢复。
+// calm：用户自己点的“停止”（第九十六轮），不当成报错说；撤销过的几步（重做记录）没了时添一句
+function engineReset(message: string, calm = false) {
   hostHooks.dropPreviews();
   hostHooks.resetAutosaveIds();
-  showToast(message, true);
+  showToast(calm && canRedo.peek() ? `${message}。重做记录已清空` : message, !calm);
   recovering = true;
   if (labelled === 0) busy.value = RECOVERING;
 }
@@ -266,6 +288,12 @@ function recovered() {
 // 界面上的“停下”：停掉正在跑的脚本（与卡住一样恢复，这一步不做）
 export function stopScripts() {
   host?.stop();
+}
+
+// 第九十六轮：“正在计算…”旁的“停止”——什么请求都能停（脚本的照旧）。停下 = 结束这个 Worker、用命令记录另开一个，
+// 世界回到这一步之前；启动时正在打开上次的世界也能停（那时还没有世界：只是不打开了，见 state/open.ts）
+export function stopBusy(): boolean {
+  return host?.stopAny() ?? false;
 }
 
 // 现在的计算 Worker（还没开时为 null，不去开）
@@ -371,7 +399,8 @@ const contentHolder = new ContentHolder();
 export async function handle(r: Response, fresh = false, restart = fresh, quiet = false): Promise<boolean> {
   if (!r.ok) {
     regenTrack.pending = null;
-    if (!quiet) showToast(r.error, true);
+    // 用户自己点“停止”停下的不当成报错说（恢复世界时已经说了“已停止，回到了这一步之前”）
+    if (!quiet && !r.stopped) showToast(r.error, true);
     return false;
   }
   if (r.snapshot) {
@@ -396,6 +425,55 @@ const completeSnapshot = (s: Snapshot): Snapshot | null => mergeSnapshot(world.v
 export async function getDoc(): Promise<WorldDoc | null> {
   const r = await call({ kind: 'doc' }, null);
   return r.ok ? (r.doc ?? null) : null;
+}
+
+// ---------- 不死等计算程序（第九十六轮） ----------
+// 导出世界文件、存进“我的地图”、自动保存、留版本以前都要问计算程序要世界文件（或者等它把排着的编辑算完）；它在算一个很久的步骤、
+// 卡住了的时候，这些就一直等着——存不了也导不出。主线程手上有一份完整的命令记录（sandbox.ts 的 Mirror：每一条改动世界的回复都带着
+// 变了的命令），内容就是计算程序里“已经应答的最后一步为止”的世界文件。所以：
+//   - 没有改动世界的请求在等：命令记录就是现在的世界，直接用，不问；
+//   - 有在等的：最多等 DOC_WAIT_MS，等到了用（那一步在里面）；等不到也用，并且说明还在算的那一步不在里面（behind）。
+// 3 秒：比几乎所有编辑的一步都长（等得到），又短到点了“导出文件”不像没反应
+export const DOC_WAIT_MS = 3000;
+// 测试里改短（不然每一条要真的等三秒）
+export const docWait = { ms: DOC_WAIT_MS };
+
+// 等排着的改动算完，最多 ms 毫秒；等到了 true
+export function idleWithin(ms = docWait.ms): Promise<boolean> {
+  if (editsIdle()) return Promise.resolve(true);
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), ms);
+    void whenEditsIdle().then(() => {
+      clearTimeout(timer);
+      resolve(true);
+    });
+  });
+}
+
+// 现在的世界文件。behind：还有一步在算，不在这一份里
+export async function docNow(wait = docWait.ms): Promise<{ doc: WorldDoc; behind: boolean } | null> {
+  const idle = await idleWithin(wait);
+  const doc = host?.mirror.doc() ?? null;
+  if (doc) return { doc, behind: !idle };
+  // 还没有命令记录（不该发生：有世界就有）：照旧问计算程序
+  if (!idle) return null;
+  const asked = await getDoc();
+  return asked ? { doc: asked, behind: false } : null;
+}
+
+// 自动保存要的“已经写下的之后变了的命令”（engine.docTail）：照旧先问计算程序（它的回复顺带写检查点）；
+// wait 毫秒没有回就用命令记录算同一份。key：这些步号是哪个引擎的（见 Mirror.keyFor）
+export async function docTailNow(base: readonly number[], wait = docWait.ms): Promise<{ tail: DocTail; key: string | null; behind: boolean } | null> {
+  const asked = call({ kind: 'docTail', ids: base as number[] }, null);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const r = await Promise.race([asked, new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), wait)))]);
+  if (timer) clearTimeout(timer);
+  if (r) {
+    if (!r.ok || !r.tail) return null;
+    return { tail: r.tail, key: host?.mirror.keyFor(r.tail.ids) ?? null, behind: false };
+  }
+  const tail = host?.mirror.tail(base) ?? null;
+  return tail ? { tail, key: host?.mirror.keyFor(tail.ids) ?? null, behind: true } : null;
 }
 
 // 带脚本的缩略图（向导里带脚本的星球形态）在另一个计算 Worker 里算（同样隔离）：脚本看不到当前打开的世界；

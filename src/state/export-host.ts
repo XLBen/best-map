@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import type { ExportOptions, ExportPartId } from '../../core/export';
 import type { ExportJob, ExportReply } from '../protocol';
 import { showToast } from './notes';
-import { getDoc } from './worker-host';
+import { docNow } from './worker-host';
 import { world } from './world';
 
 // 导出（第七十轮从 state.ts 分出来）：在导出 Worker（export-worker.ts）里写文件包、单独导出的一项；下载
@@ -14,7 +14,8 @@ let exporting: { worker: Worker; done: (v: null) => void } | null = null;
 
 export async function exportZip(opts: ExportOptions): Promise<Uint8Array | null> {
   const w = world.value;
-  const doc = await getDoc();
+  // 第九十六轮：不死等计算程序（docNow）
+  const doc = (await docNow())?.doc;
   if (!w || !doc) return null;
   cancelExport();
   const worker = new Worker(new URL('../export-worker.ts', import.meta.url), { type: 'module' });
@@ -54,7 +55,8 @@ export async function exportZip(opts: ExportOptions): Promise<Uint8Array | null>
 // 分开导出的一项（第二十四轮，“导出”里的“单独导出”）：在导出 Worker 里写好这一项的文件（图要几秒）。取消、出错时为 null
 export async function exportPartFiles(id: ExportPartId, width: number): Promise<Record<string, Uint8Array> | null> {
   const w = world.value;
-  const doc = await getDoc();
+  // 第九十六轮：不死等计算程序（docNow）
+  const doc = (await docNow())?.doc;
   if (!w || !doc) return null;
   cancelExport();
   const worker = new Worker(new URL('../export-worker.ts', import.meta.url), { type: 'module' });

@@ -3,8 +3,12 @@ import { checkDoc } from '../../core/doc-version';
 import type { WorldDoc } from '../../core/engine';
 import { type FoundScript, findScripts } from '../../core/script';
 import type { Settings } from '../../core/world';
+import { crashState } from '../crash-host';
+import { humanError } from '../error-text';
+import { OPEN_TWICE_TEXT, STOP_TEXT } from '../crash-text';
 import { buildKey } from '../engine-source';
 import { idbMapStore, mapLink, mapSavedState } from '../maps';
+import { OPEN_SETTLE_MS, askBeforeOpen, beginOpen, endOpen, readOpenMark } from '../open-guard';
 import type { Request, Response } from '../protocol';
 import { clearLoading, markLoading, readLoading, tidyTrusted, uniqueScripts } from '../trust';
 import { askUser } from './ask';
@@ -15,7 +19,7 @@ import { changeNote, flash, noteSkipped, showToast, skippedNote } from './notes'
 import { askTrust } from './script-trust';
 import { keepVersion, noteMapSeen } from './versions';
 import { call, currentHost, engineHost, getDoc, handle, hostOpts, safeMode, whenEditsIdle } from './worker-host';
-import { worldEpoch, worldState } from './world';
+import { world, worldEpoch, worldState } from './world';
 
 // 新建、打开世界（第七十轮从 state.ts 分出来）：带脚本时先查信任，安全模式；继续上次的世界、“再试一次”
 
@@ -39,8 +43,9 @@ export interface OpenOptions {
   quiet?: boolean;
 }
 
-// 打开的结果：打开了；用户取消了（不信任脚本时点了取消）；没能打开（原因）
-export type OpenResult = { ok: true } | { ok: false; cancelled: true } | { ok: false; cancelled?: undefined; error: string };
+// 打开的结果：打开了；用户取消了（不信任脚本时点了取消）；没能打开（原因）。
+// stopped（第九十六轮）：正在打开时用户点了“停止”（计算程序被停下了，不是打不开）
+export type OpenResult = { ok: true } | { ok: false; cancelled: true } | { ok: false; cancelled?: undefined; error: string; stopped?: boolean };
 
 // 新建、打开：带脚本时先查信任（没见过的问用户）；正常打开带脚本的世界期间记下标记（页面停止响应后下次启动时先问）。
 // 不带脚本时与以前一样立刻发给 Worker
@@ -64,6 +69,7 @@ async function open(req: Extract<Request, { kind: 'init' | 'load' }>, label: str
   let meshReady: Promise<void> = Promise.resolve();
   let ok = false;
   let error = '没能打开';
+  let stopped = false;
   // 等网格、换上快照都在 call 的 after 里：做完之前新建、打开一直算在 pending、busy 里（见 call）
   const r = call(safe === null ? req : { ...req, safe: true }, label, safe ?? undefined, async (res) => {
     await meshReady;
@@ -71,13 +77,18 @@ async function open(req: Extract<Request, { kind: 'init' | 'load' }>, label: str
     // 新的引擎（可能在新开的 Worker 里）：步号从 1 起，自动保存从头写（镜头不动时世界的纪元不变，要在这里清）
     if (res.ok) resetAutosaveIds();
     // 第三个参数：引擎是新的，“上一次生成时的内容”从这份回复里带的重新起头（镜头不动的“再试一次”也是）
-    if (!res.ok) error = res.error;
+    if (!res.ok) {
+      error = res.error;
+      stopped = res.stopped === true;
+    }
     ok = await handle(res, !opts.keepView, true, opts.quiet);
     if (ok) afterOpen(res, scripts);
   });
   meshReady = prebuildMesh(settings, hostOpts.build);
   await r;
-  return ok ? { ok: true } : { ok: false, error };
+  // 被停下、而原来没有世界可回（向导里新建到一半）：这里说一句（有世界时恢复那边说“回到了这一步之前”）
+  if (stopped && !opts.quiet && !world.peek()) showToast(error);
+  return ok ? { ok: true } : { ok: false, error, ...(stopped ? { stopped } : {}) };
 }
 
 export async function newWorld(settings: Partial<Settings>, commands: Command[], opts: OpenOptions = {}) {
@@ -104,12 +115,17 @@ export async function openDoc(doc: WorldDoc, opts: OpenOptions = {}): Promise<Op
 // 上次正常打开带脚本的世界时页面停止了响应（标记还在、是这个世界的脚本）：先问要不要用安全模式。没有自动保存时返回 null。
 // 第九十四轮：没能打开（重放出错、计算程序出错……）时不直接进向导——停在一个问话上：再试一次、用安全模式打开（有脚本时）、
 // 导出文件、新建。那一份自动保存原样在原处；选了新建，新世界第一次自动保存之前它被挪进“留着的旧世界”（autosave-io.ts）。
-// 用户自己取消（不信任脚本时点了取消）不算打不开：照旧返回 false（进向导），同样在被盖掉之前留着
+// 用户自己取消（不信任脚本时点了取消）不算打不开：照旧返回 false（进向导），同样在被盖掉之前留着。
+// 第九十六轮：
+//   - 正在打开时用户点了“停止”：和取消一样（那一份留着，进向导；向导上面“继续上次的世界”还在）；
+//   - 连着两次动手打开都没打开成（页面出了问题、卡住被关掉、被停下——../open-guard.ts 记在 localStorage 里）：这一次先问，
+//     就是没能打开时的那一个问话（再试一次 / 用安全模式打开 / 导出文件 / 新建），不直接再打开一遍
 export async function resumeLast(): Promise<boolean | null> {
   const saved = await readAutosave();
   if (!saved) return null;
   let safe = saved.safe ?? null;
   const scripts = findScripts(saved.doc);
+  const guard = guardStore();
   const mark = await readLoading();
   if (mark) {
     await clearLoading();
@@ -126,9 +142,25 @@ export async function resumeLast(): Promise<boolean | null> {
       if (v !== 'run') safe = '上次打开时程序停止了响应';
     }
   }
+  if (askBeforeOpen(readOpenMark(guard, saved.savedAt))) {
+    const v = await askResumeFailed(saved, null, scripts.length > 0 && safe === null);
+    if (v === 'safe') safe = SAFE_AFTER_FAIL;
+    else if (v !== 'retry') {
+      // 选了新建：那一份在被新世界盖掉之前留着（原因写连着两次没打开成）；记的那几笔擦掉
+      noteNotResumed('failed', OPEN_TWICE_TEXT.why);
+      endOpen(guard);
+      return false;
+    }
+  }
   for (;;) {
+    // 要动手了：记一笔。打开成了、明白地没打开才擦掉；页面就此出了问题、被停下，这一笔留着
+    beginOpen(guard, saved.savedAt, Date.now());
     const r = await openDoc(saved.doc, { ...(safe !== null ? { safe } : {}), quiet: true });
     if (r.ok) {
+      // 打开了：过几秒界面没有坏才算数（世界一画出来整个界面就坏的，下次不能再照样打开）
+      setTimeout(() => {
+        if (!crashState.fatal) endOpen(guard);
+      }, openSettle.ms);
       noteResumed(saved);
       if (saved.mapId) await relink(saved.mapId, saved.mapSynced ? 0 : saved.savedAt);
       // 第九十五轮：打开时的样子留一份（和最新的那一份一样就不留）——之后画坏了，回得到“上次结束时”
@@ -136,13 +168,33 @@ export async function resumeLast(): Promise<boolean | null> {
       return true;
     }
     if (r.cancelled) {
+      endOpen(guard);
       noteNotResumed('cancelled');
       return false;
     }
+    if (r.stopped) {
+      // 用户停下的：不问“没能打开”，和取消一样进向导；记的那一笔不擦（连着两次停下，下次先问）
+      noteNotResumed('cancelled');
+      showToast(STOP_TEXT.openStopped);
+      return false;
+    }
+    // 有原因的没打开：马上就问，不用下次再问
+    endOpen(guard);
     noteNotResumed('failed', r.error);
     const v = await askResumeFailed(saved, r.error, scripts.length > 0 && safe === null);
     if (v === 'safe') safe = SAFE_AFTER_FAIL;
     else if (v !== 'retry') return false;
+  }
+}
+
+// 打开以后多久没出事才擦掉记的那一笔（测试里改短）
+export const openSettle = { ms: OPEN_SETTLE_MS };
+// 记“连着几次没打开成”的地方（没有 localStorage 时不记）
+function guardStore(): Storage | null {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage : null;
+  } catch {
+    return null;
   }
 }
 
@@ -165,15 +217,18 @@ export function resumeFileName(savedAt: number): string {
   const two = (n: number) => String(n).padStart(2, '0');
   return `上次的世界 ${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}.json`;
 }
-async function askResumeFailed(saved: Autosaved, error: string, canSafe: boolean): Promise<'retry' | 'safe' | 'new'> {
+// error 为 null（第九十六轮）：不是这一次没打开，是连着两次动手都没打开成——还没试，先问（没有原因可写）
+async function askResumeFailed(saved: Autosaved, error: string | null, canSafe: boolean): Promise<'retry' | 'safe' | 'new'> {
   const T = RESUME_FAILED;
+  const twice = error === null;
+  // 原因先翻成人话（引擎的原话里常带英文）；原话不一样时折叠着留在下面，能选中、复制（问别人时用）
+  const why = twice ? null : humanError(error);
   let exported = false;
   for (;;) {
     const v = await askUser({
-      title: T.title,
-      text: exported ? T.exported : canSafe ? T.textScripts : T.text,
-      // 原因原样写一行（能选中、复制，问别人时用）
-      note: { label: T.reason, text: error },
+      title: twice ? OPEN_TWICE_TEXT.title : T.title,
+      text: exported ? T.exported : twice ? (canSafe ? OPEN_TWICE_TEXT.textScripts : OPEN_TWICE_TEXT.text) : canSafe ? T.textScripts : T.text,
+      ...(why ? { note: { label: T.reason, text: why.text, ...(why.detail ? { detail: why.detail } : {}) } } : {}),
       choices: [
         { value: 'retry', label: T.retry, primary: true },
         ...(canSafe ? [{ value: 'safe', label: T.safe }] : []),

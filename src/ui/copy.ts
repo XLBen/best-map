@@ -17,6 +17,10 @@ export const WIZARD_MINE_NOTE = '“我的库”里有你存过的内容';
 // 没见过的脚本：打开世界、导入、换星球形态、资源包都问这一句（写在 trust.ts：state.ts 也用，它不引用界面）
 export { scriptTrustText } from '../trust';
 
+// 第九十六轮：出了问题时说的话（自救页、顶上的一条、“停止”、地图画面不可用、连着两次没打开成）写在 crash-text.ts：
+// 自救页在程序别的部分坏了时也要写得出字，那个文件不引用任何东西
+export { GL_TEXT, MISHAP_TEXT, OPEN_TWICE_TEXT, RESCUE_TEXT, STOP_TEXT } from '../crash-text';
+
 // 选中的河、湖、地名、省份：名字的几个按钮
 export const NAME_TIPS = {
   reroll: '自动换一个名字',

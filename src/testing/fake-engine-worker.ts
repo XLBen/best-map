@@ -28,6 +28,10 @@ export const workerControl = {
   loadErrorTimes: Infinity,
   // 执行的回复先压着（还在算），放出来：release()
   holdExec: false,
+  // 第九十六轮：计算程序卡住了——从这时起收到的什么请求都不回（真的 Worker 一个一个处理，卡在一步上后面的都排着）；
+  // 打开（load、init）也压着：holdOpen
+  holdAll: false,
+  holdOpen: false,
   held: [] as (() => void)[],
   release() {
     for (const send of this.held.splice(0)) send();
@@ -36,6 +40,8 @@ export const workerControl = {
     this.loadError = null;
     this.loadErrorTimes = Infinity;
     this.holdExec = false;
+    this.holdAll = false;
+    this.holdOpen = false;
     this.held.length = 0;
   },
 };
@@ -44,6 +50,7 @@ export class FakeEngineWorker {
   static all: FakeEngineWorker[] = [];
   onmessage: ((ev: { data: unknown }) => void) | null = null;
   onerror: ((ev: unknown) => void) | null = null;
+  onmessageerror: ((ev: unknown) => void) | null = null;
   sent: Request[] = [];
   terminated = false;
   // 这个 Worker 里的“引擎”：做了的每一步
@@ -108,7 +115,8 @@ export class FakeEngineWorker {
       const out = this.respond(m.req);
       this.onmessage?.({ data: 'error' in out ? { id: m.id, ok: false, error: out.error } : { id: m.id, ok: true, ...out } });
     };
-    if (workerControl.holdExec && m.req.kind === 'exec') workerControl.held.push(send);
+    const open = m.req.kind === 'load' || m.req.kind === 'init';
+    if (workerControl.holdAll || (workerControl.holdOpen && open) || (workerControl.holdExec && m.req.kind === 'exec')) workerControl.held.push(send);
     else queueMicrotask(send);
   }
   terminate() {

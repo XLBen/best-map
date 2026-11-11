@@ -17,7 +17,8 @@ export interface Ask {
   // 列出的几行（整理本世界：移出哪些、留着哪些）：名字和灰色的一句
   lines?: { label: string; hint?: string }[];
   // 原样的一行（第九十四轮：世界没能打开的原因）：整句都写出来、能选中复制，前面一个灰色的名字
-  note?: { label: string; text: string };
+  // detail（第九十六轮）：text 是翻成人话的，原话不一样时放在这里（问话里折叠着，能选中复制）
+  note?: { label: string; text: string; detail?: string };
   choices: AskChoice[];
   // 带一个输入框（起名字）：框里一开始的字。回车等于点主要的按钮
   input?: string;

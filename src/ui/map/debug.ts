@@ -16,6 +16,8 @@ export function installMapHooks(o: {
   exportImage: (o: ExportImageOptions, progress: (p: number) => void, cancelled: () => boolean) => Promise<HTMLCanvasElement | null>;
   // 上一帧叠加层的参数（开发用的测速重画它）
   lastOverlay: () => OverlayArgs | null;
+  // 第九十六轮：地图现在画不画得出来（WebGL 的上下文丢着、坏了时不能截图：截到的是空的）
+  ready?: () => boolean;
 }) {
   const { renderer, glCanvas, ovCanvas, requestDraw, draw } = o;
   // clean（默认）：只有地图本身，不带高亮、闪烁、工具的图形和预览；调试时 snapshot(false) 截下屏幕上看到的样子（带预览）
@@ -24,8 +26,13 @@ export function installMapHooks(o: {
     requestDraw,
     world: () => world.value,
     snapshot: (clean = true) => {
-      draw(clean);
       const out = document.createElement('canvas');
+      // 画不出来时给一张 0×0 的（缩略图那边按“没有”处理），不把空白当成地图的样子存下去
+      if (o.ready && !o.ready()) {
+        out.width = out.height = 0;
+        return out;
+      }
+      draw(clean);
       out.width = glCanvas.width;
       out.height = glCanvas.height;
       const c = out.getContext('2d')!;

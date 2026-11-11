@@ -296,6 +296,12 @@ self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => {
   queue(() => handle(id, req));
 };
 
+// 主线程发来的消息解不出来（第九十六轮）：不知道是哪一个请求，回不了它——抛出去，主线程那边当作这个 Worker 坏了（EngineHost 的 onerror），
+// 另开一个用命令记录恢复；不然那个请求会一直等下去
+self.onmessageerror = () => {
+  throw new Error('计算程序收到的消息解不出来');
+};
+
 async function handle(id: number, req: Request) {
   try {
     // light：这一步只重算了名字（或什么都没重算）时发轻快照。fresh：新建、打开（带上是不是安全模式）

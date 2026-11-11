@@ -213,7 +213,7 @@ export {
 export { FLASH_MS, type NoteAction, changeNote, describeChange, flash, flashCells, holdNote, noteAction, noteSkipped, showToast, skippedNote, toast } from './state/notes';
 export { type MapKind, type Prefs, type ProjectionPref, type Reference, type WheelPref, loadReference, nameMode, parseMapKind, parsePrefs, prefs, reference, setNameMode, setPrefs, setReference } from './state/prefs';
 export { type ToolOptions, brushRange, lakeRange, mapKm, options, reachRange, setOptions } from './state/options';
-export { busy, editsIdle, formThumbnail, getDoc, knowIsolation, onlyEditsPending, safeMode, scriptRunning, scriptsIsolated, stopScripts, thumbnail, whenEditsIdle } from './state/worker-host';
+export { DOC_WAIT_MS, busy, docNow, editsIdle, formThumbnail, getDoc, idleWithin, knowIsolation, onlyEditsPending, safeMode, scriptRunning, scriptsIsolated, stalled, stopBusy, stopScripts, thumbnail, whenEditsIdle } from './state/worker-host';
 export { type Ask, type AskChoice, ask, askText, askUser } from './state/ask';
 export { confirmImport, showScripts, trustFormScripts, trustHandledElsewhere } from './state/script-trust';
 export { type OpenOptions, type OpenResult, loadDoc, newWorld, openDoc, resumeLast, retryScripts } from './state/open';
@@ -259,5 +259,8 @@ export { fileAfterSave, fileFlush, fileMoved, fileStatus, fileSupported, resumeF
 export type { FileStatus } from './file-save';
 export type { VersionInfo } from './versions';
 export { type SaveFail, type SaveProblem, saveFail, saveProblem, saveRole, storageTight, unsaved } from './state/save-status';
+// 第九十六轮：顶上“没接住的错”的那一条、地图的画面现在怎么样
+export { type Mishap, closeMishap, mishap, showToastReason, startMishaps, toggleMishapReason } from './state/mishap';
+export { glReason, glState } from './state/gl';
 export { backupOf, backups, deleteBackup, dismissBackups, refreshBackups } from './state/backups';
 export type { BackupInfo, WorldBackup } from './backups';

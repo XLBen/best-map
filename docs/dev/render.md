@@ -4,6 +4,7 @@ WebGL2 底图 + 2D 画布的矢量叠加。屏幕与导出共用同一套画法�
 
 ## WebGL
 - `renderer.ts` 渲染器 `Renderer`：编号层、地形层、切线层、合成四遍；每一帧（停稳、移动中的半分辨率、投影）、停稳补全（`SETTLE_MS`）、屏幕与地图的换算。第八十三轮按职责拆成一串基类（方法原样搬，照旧从 renderer.ts 导出）：`renderer-base.ts` 状态与上传、`renderer-layers.ts` 网格与逐格的图层、描格（`setFocus`）、`renderer-draw.ts` 各层与合成、极地与投影、`renderer-export.ts` 导出的分块；`renderer-parts.ts` 类型与小工具（镜头、场景 `planScene`、`FOCUS_REACH`、`packElevation` / `packCoast`）；`style-uniforms.ts` 画风的 uniform（`styleUniforms`）
+- `gl-recover.ts`（第九十六轮，见 [第96轮](history/第96轮.md)）WebGL 的上下文丢了怎么办，纯规则：`GlRecovery`（`lost` → 等着；`restored` → 重建；等了 `GL_RESTORE_MS` = 8 秒没恢复 `stuck`；重建出错、连着几帧画不出来 `broken`）。重建是 `Renderer.revive()`：在同一个对象上新建一个渲染器、把状态整个换进来（镜头、画风照旧），网格、图层、高亮由 `MapView` 重新给一遍——画法没动，恢复后和丢之前逐像素相同（冒烟里比）
 - `shaders/` 着色器源码（第四十一轮从 renderer.ts 原样搬出）：
   - `common.ts` 共用片段：噪声、破碎度 `FRAG_GLSL`、海岸类型 `STYLE_GLSL`、峡湾 `FJORD_GLSL`、花纹、岩性、`withoutFx`、`TEX_W`
   - `plane.ts` 平面的顶点 / 编号 / 地形 / 切线着色器、省份规则、描格 `FOCUS_GLSL`；第八十六轮：海的浅水不盖过格颜色里的海冰（`iceK`）

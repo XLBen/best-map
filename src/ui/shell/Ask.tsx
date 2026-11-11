@@ -63,6 +63,12 @@ export function AskDialog() {
             {a.note.text}
           </p>
         )}
+        {a.note?.detail && (
+          <details class="ask-raw">
+            <summary>原话</summary>
+            <pre>{a.note.detail}</pre>
+          </details>
+        )}
         {a.input !== undefined && <input ref={input} class="ask-input" type="text" maxLength={60} />}
         {!!a.scripts?.length && a.choices.some((c) => c.value === 'run') && <p class="hint">{isolationNote()}</p>}
         {a.scripts && a.scripts.length > 0 && (

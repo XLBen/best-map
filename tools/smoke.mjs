@@ -23,6 +23,18 @@
 //         装成“要重新给权限”→ 顶上有“没在写”的一条、不写；点“接着存到…”→ 写；“不再存到这个文件”→ 不再写；
 //     5b. 写的那一页刷新（锁空出来过一下）时，世界不一样的那一页不说“已在另一个页面打开”，说“这个页面里的是旧的”，
 //         主要的按钮是“重新载入”；点它 → 这个页面打开保存的那一份，原来的样子留在以前的版本里。
+//   第九十六轮加的（接在后面）：不白屏、不卡死。下载都拦住（页面里记下文件名和内容，不真的下载；浏览器那边也设成不许下载）。
+//     8. 计算程序卡住：经调试协议在计算 Worker 里跑一段忙等（不用程序配合，普通用户碰不到）→ 画一笔 → 几秒后“正在计算…”旁出现“停止”；
+//        这时点“世界 → 世界文件（.json）”→ 几秒内拿到文件（到最后一条应答过的命令为止），顶上说还在算的那一步不在里面；
+//        点“停止”→ 说“已停止，回到了这一步之前”，世界还在（陆地逐字节相同）；再画一笔照常；
+//     9. WebGL 的上下文丢了（WEBGL_lose_context）→ 地图上盖一层“画面暂时不可用，正在恢复…”→ 恢复 → 画面和丢之前逐字节相同；
+//        丢了不还 → 等一阵说“画面没能恢复”和世界存好了没有、有“重新载入”→ 之后还了照样恢复；
+//    10. 没接住的错（定时器里抛）→ 顶上一条人话的提示，同一个错连着来只有一条，“原因”里是原话；一块画不出来 → 只关那一块；
+//        整个界面画不出来（src/smoke-hooks.ts 的钩子：只在网址带 #map2-smoke-96 时才有）→ 整页的自救页，写着世界还在，
+//        “导出文件”拿得到世界文件，“重新载入”后世界还在；
+//    11. 启动时：记着连着两次没打开成 → 先问，不直接打开；打开卡住（冒烟把发给计算 Worker 的“打开”吞掉）→ 几秒后能“停止”→ 进向导、
+//        那一份还在；浏览器画不了地图（把 webgl2 换成拿不到）→ 整页的说明，已有的世界还能导出；
+//        程序的主体一运行就出错（第一次找 #app 说没有）→ 不是白的，是自救页，导出的是浏览器里存着的那一份。
 //   退出码：有没过的 1
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -30,6 +42,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { safetySteps } from './smoke-safety.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
@@ -606,8 +619,11 @@ try {
   check(!!note7 && note7.includes('没存完整'), `向导上面写着：“${note7}”`);
   await q.shot('没存完整-向导上面');
 
+  // ---------- 第九十六轮 ----------
+  // 到这里为止（前七步）页面里不该有没接住的错；后面几步是故意弄出来的
   const errors = [...p.errors, ...q.errors];
-  check(errors.length === 0, '页面里没有没接住的错', errors.slice(0, 3).join('；'));
+  check(errors.length === 0, '前七步：页面里没有没接住的错', errors.slice(0, 3).join('；'));
+  await safetySteps({ cdp, q, origin, errors, check, sleep, stroke, count, ownWrite, READY, LAND, HEAD, ASK, clickMenuItem, closeMenu });
   console.log(`${failed ? `没过 ${failed} 项` : '都通过'}（${((Date.now() - t0) / 1000).toFixed(0)} 秒）`);
 } catch (e) {
   failed++;

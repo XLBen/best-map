@@ -9,11 +9,16 @@ import type { World } from '../../core/world';
 import { type ColorOptions, GhostBuffer, baseKey, editGhost, fxLayers, groupPreview, highlightColors, lakeTintLayer, lakeTypesSignature, modeKey, provinceScale, terrainGhost, terrainLikeMode } from '../render/colors';
 import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay, peakLabels, riverLayer, riverLayerScene, resetOverlayCache, riverPathsKey, samePathsKey, setOverlayPerf } from '../render/overlay';
 import { convertCamera, effectiveZoom } from '../render/projection';
+import { GlRecovery } from '../render/gl-recover';
 import { type CellLayers, Renderer, SETTLE_MS } from '../render/renderer';
 import { Perf, perfEnabled } from '../render/perf';
+import { report, reportNoWebgl } from '../crash-host';
+import { rawText } from '../error-text';
+import { DrawHealth } from '../mishap';
 import {
   adjustPreview,
   adjustPreviewWorld,
+  autosaveNow,
   cornerLift,
   cursorHint,
   erasing,
@@ -37,7 +42,8 @@ import {
   riverStyleOverride,
   season,
   flowSeason,
-  showToast,
+  glReason,
+  glState,
   sliderActive,
   tool,
   visualOverrides,
@@ -84,7 +90,9 @@ export function MapView() {
     try {
       renderer = new Renderer(glCanvas);
     } catch (e) {
-      showToast((e as Error).message, true);
+      // 第九十六轮：浏览器画不了地图（不支持 WebGL2、显卡不行）——整页的说明（哪些浏览器可以、怎么打开硬件加速），
+      // 上面已有的世界还能导出文件（crash-host.ts → rescue.ts）；不是顶上闪一句报错
+      reportNoWebgl(e);
       return;
     }
     const ctx = ovCanvas.getContext('2d')!;
@@ -143,6 +151,46 @@ export function MapView() {
       if (frame) return;
       frame = requestAnimationFrame(() => draw());
     };
+
+    // 第九十六轮：WebGL 的上下文丢了（显卡驱动重置、页面放久了）能恢复（规则在 render/gl-recover.ts）。丢着的时候不画
+    // （盖在地图上的一层说“正在恢复…”，shell/GlNote.tsx）；浏览器还了上下文以后重建渲染器的 GPU 资源，再把这里
+    // “给过没有”的记号都清掉——下一帧照平常的路把网格、图层、高亮、预览重新给一遍，画出来和丢之前一样。
+    // 连着几帧画不出来（DrawHealth）也在这里说：不再重画，请用户重新载入
+    const health = new DrawHealth();
+    const recovery = new GlRecovery({
+      isLost: () => glCanvas.getContext('webgl2')?.isContextLost() ?? true,
+      rebuild: () => {
+        renderer.revive();
+        colorsFor = colorCache(perf);
+        layersShown = null;
+        ghostBuf = null;
+        ghostKey = [];
+        groupKey = [];
+        lastHighlightKey = [];
+        fxKey = [];
+        tintKey = [];
+        const w = world.peek();
+        if (w) renderer.setMesh(w.mesh);
+        health.reset();
+        requestDraw();
+      },
+      changed: (state, reason) => {
+        glReason.value = reason ?? '';
+        glState.value = state;
+        // 要请用户重新载入了：先把世界存好（那一层上写着存好了没有）
+        if (state === 'stuck' || state === 'broken') void autosaveNow();
+      },
+      setTimer: (f, ms) => setTimeout(f, ms),
+      clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+    });
+    const onGlLost = (e: Event) => {
+      // 不拦的话浏览器不会再还上下文
+      e.preventDefault();
+      recovery.lost();
+    };
+    const onGlRestored = () => recovery.restored();
+    glCanvas.addEventListener('webglcontextlost', onGlLost);
+    glCanvas.addEventListener('webglcontextrestored', onGlRestored);
 
     // 鼠标在同一格里动、预览没变（第四十轮，map/input.ts）：不重画，只把鼠标旁的那句话挪过去（与 drawFrame 算的相同：同一句话、新的位置）
     const hintAt = (p: { sx: number; sy: number }) => {
@@ -243,8 +291,17 @@ export function MapView() {
       if (!w || !paths) return;
       // 正在导出整张地图：渲染器的图层是导出用的干净的那一份，屏幕先不画（导出完了重画）
       if (exporter.state.busy && !clean) return;
+      // 上下文丢着、地图坏了：不画（恢复以后重画）
+      if (!recovery.drawable) return;
       const t0 = perf ? (perf.frame(), performance.now()) : 0;
-      drawFrame(w, paths, clean);
+      try {
+        drawFrame(w, paths, clean);
+        health.ok();
+      } catch (e) {
+        // 这一帧画不出来：顶上说一句（同一个错只说一次）；连着几帧都这样才算地图坏了（盖一层说明，不再重画）
+        report('error', e);
+        if (health.fail()) recovery.broke(rawText(e));
+      }
       if (perf) perf.cpu('draw', performance.now() - t0);
     }
     // 一帧（clean 见上；paths：这一帧的河流路径）
@@ -429,7 +486,7 @@ export function MapView() {
 
     // 着色：视图模式、季节、关注的类型、边界，按画出来的世界（预览的将来的世界或当前世界，在 draw 里做）。
     // 着色用到的数组都没变就不重新着色、不重画地形；底子与每种模式的一层各缓存几份（map/color-cache.ts）
-    const colorsFor = colorCache(perf);
+    let colorsFor = colorCache(perf);
     // 这次着色的选项（拖花纹、发光滑块时按它重算花纹）与花纹覆盖的键（见 applyFx）
     let colorOpts: ColorOptions | null = null;
     let fxKey: unknown[] = [];
@@ -623,7 +680,7 @@ export function MapView() {
       },
     };
 
-    installMapHooks({ renderer, glCanvas, ovCanvas, requestDraw, draw, exportImage: exporter.exportImage, lastOverlay: () => lastOverlay });
+    installMapHooks({ renderer, glCanvas, ovCanvas, requestDraw, draw, exportImage: exporter.exportImage, lastOverlay: () => lastOverlay, ready: () => recovery.drawable });
 
     return () => {
       if (settleTimer) clearTimeout(settleTimer);
@@ -638,6 +695,9 @@ export function MapView() {
       mapApi.current = null;
       onSettleImageLoad(null);
       ovCanvas.removeEventListener('contextrestored', onRestored);
+      glCanvas.removeEventListener('webglcontextlost', onGlLost);
+      glCanvas.removeEventListener('webglcontextrestored', onGlRestored);
+      recovery.dispose();
       if (perf) setOverlayPerf(null);
       input.dispose();
     };

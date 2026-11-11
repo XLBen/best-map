@@ -25,6 +25,32 @@ export type { Camera, CellLayers, RiverTex, ProjScene, RiverScene } from './rend
 export type { MapStyle } from '../../core/map-style';
 
 export class Renderer extends RendererExport {
+  // 第九十六轮：WebGL 的上下文丢了又恢复以后（webglcontextrestored）——GPU 上的东西（程序、纹理、缓冲、渲染目标）全没了。
+  // 在同一个对象上从头来一遍：新建一个渲染器（同一块画布上拿到的就是恢复了的上下文；构造时把资源都建好），把它的全部状态换进来——
+  // “传过没有、画过没有”的记号一个不留，和刚打开页面时一样。外面拿着这个对象的（导出、window.__map2、工具）不用换。
+  // 镜头、画风这些设置照旧；网格、图层、高亮、预览由调用方（ui/MapView.tsx）照平常的路重新给一遍。
+  // 画法没有动：之后的每一帧走的还是原来的那几个函数，所以和丢之前逐像素相同（冒烟里比）
+  revive() {
+    if (this.rhoTimer) clearTimeout(this.rhoTimer);
+    if (this.nearTimer) clearTimeout(this.nearTimer);
+    const keep = {
+      camera: this.camera,
+      relief: this.relief,
+      detail: this.detail,
+      provinceScale: this.provinceScale,
+      style: this.style,
+      riverLayer: this.riverLayer,
+      flatByGroup: this.flatByGroup,
+      highlightByGroup: this.highlightByGroup,
+      provinceAlpha: this.provinceAlpha,
+      countryAlpha: this.countryAlpha,
+      // 移动中的场景的编号只增不减（叠加层按它认缓存）
+      motionEpoch: this.motionEpoch + 1,
+      perf: this.perf,
+    };
+    Object.assign(this, new Renderer(this.canvas), keep);
+  }
+
   resize() {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const w = Math.max(1, Math.round(this.canvas.clientWidth * dpr));

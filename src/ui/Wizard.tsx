@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { WORLD_TYPES, WORLD_TYPE_INFO, type WorldgenInput, type WorldType } from '../../core/generate';
 import { type PlanetForm, hasFormScripts } from '../../core/planet-form';
-import { CLIMATE_BELT_NOTE, WIZARD_MINE_NOTE } from './copy';
+import { CLIMATE_BELT_NOTE, STOP_TEXT, WIZARD_MINE_NOTE } from './copy';
 import {
   CLIMATE_ZONES,
   type ClimateZone,
@@ -23,7 +23,7 @@ import {
   settingsAt,
 } from '../../core/presets';
 import { library, refreshLibrary } from '../library';
-import { autosaved, newWorld, resumeLast, safeMode, thumbnail, trustFormScripts, wizardOpen, world } from '../state';
+import { autosaved, newWorld, resumeLast, safeMode, stalled, stopBusy, thumbnail, trustFormScripts, wizardOpen, world } from '../state';
 import { BackupBanner } from './shell/BackupBanner';
 import { resetTools } from './defs/tools';
 import { FormEditor } from './FormEditor';
@@ -490,6 +490,14 @@ export function Wizard() {
           {kind === 'planet' ? '左右相连，上下是两极。' : ''}
           缩略图是粗略版，看不到很小的岛。{creating ? ' 正在生成…' : ''}
         </p>
+        {/* 第九十六轮：生成、打开了几秒还没好（state/worker-host.ts 的 stalled）：可以停下，回到这里 */}
+        {creating && stalled.value && (
+          <div class="row wizard-stop">
+            <button class="busy-stop" onClick={() => void stopBusy()} title={STOP_TEXT.wizardTip}>
+              {STOP_TEXT.stop}
+            </button>
+          </div>
+        )}
       </div>
       <FormEditor />
     </div>

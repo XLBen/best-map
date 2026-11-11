@@ -1,0 +1,101 @@
+/* 第九十六轮：不白屏、不卡死——顶上“没接住的错”的一条、提示条上的“原因”和“停止”、地图画面不可用时盖着的一块、问话里的原话。
+   整页的自救页（src/rescue.ts）的样式写在元素上，不在这里：这个文件没读到时它也要看得清 */
+
+/* 没接住的错：一条，展开是原话 */
+.notice.mishap {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  max-width: min(520px, 100%);
+}
+.mishap-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.mishap-head .notice-text {
+  flex: 1;
+}
+.mishap-reason {
+  margin: var(--sp-1) var(--sp-2) var(--sp-2) 0;
+}
+.mishap-reason pre,
+.ask-raw pre {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  background: var(--field);
+  border-radius: var(--r-sm);
+}
+.mishap-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+}
+
+/* 出错的提示条上多一个“原因” */
+.notice.error.with-reason {
+  padding-right: 2px;
+}
+
+/* 启动时中间那一块上的“停止” */
+.loading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.wizard-stop {
+  justify-content: flex-end;
+}
+
+/* 地图的画面暂时不可用、恢复不了：盖在地图中间 */
+.gl-note {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 11;
+  max-width: min(440px, calc(100% - 2 * var(--sp-4)));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--glass-strong);
+  border: 1px solid var(--warn-bg);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+}
+.gl-note.busy {
+  justify-content: flex-start;
+  border-color: var(--fill);
+}
+.gl-note-text {
+  flex: 1 1 240px;
+  overflow-wrap: anywhere;
+}
+
+/* 问话里折叠着的原话（“上次的世界没能打开”的原因翻成了人话，原话在这里） */
+.ask-raw {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.ask-raw summary {
+  cursor: pointer;
+  user-select: none;
+}
+.ask-raw pre {
+  margin-top: var(--sp-1);
+  color: var(--text);
+}

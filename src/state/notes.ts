@@ -1,11 +1,13 @@
 import { signal } from '@preact/signals';
 import type { World } from '../../core/world';
+import { humanError } from '../error-text';
 import { NOTE_ACTION_MS, NOTE_MS, PausableTimer } from '../notice-timer';
 import { world } from './world';
 
 // 顶上的提示（第七十轮从 state.ts 分出来）：一句话的提示、缺了内容跳过的步骤、编辑后的“改了什么”与几秒钟的高亮
 
-export const toast = signal<{ text: string; error: boolean } | null>(null);
+// detail（第九十六轮）：出错的提示翻成人话以后的原话（和 text 不一样时才有）；提示条上多一个“原因”
+export const toast = signal<{ text: string; error: boolean; detail?: string } | null>(null);
 // 缺了内容跳过的步骤（第三十轮）：顶上的横幅说一次，关掉、点“从资源库添加…”、新建或打开别的世界时去掉
 export const skippedNote = signal<{ id: number; notes: string[] } | null>(null);
 let skippedId = 0;
@@ -28,8 +30,10 @@ export function noteAction(head: string, action: NoteAction | undefined, undo?: 
   noteTimer.start(NOTE_ACTION_MS);
 }
 
+// 出错的提示（error）先改成人话（../error-text.ts）：引擎、浏览器给的原话里的英文不直接给用户看，原话留在 detail 里
 export function showToast(text: string, error = false) {
-  toast.value = { text, error };
+  const h = error ? humanError(text) : null;
+  toast.value = h?.detail ? { text: h.text, error, detail: h.detail } : { text, error };
   const current = toast.value;
   setTimeout(() => {
     if (toast.value === current) toast.value = null;

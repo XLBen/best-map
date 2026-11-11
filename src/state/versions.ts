@@ -20,7 +20,7 @@ import {
   versionBudget,
   worldSeries,
 } from '../versions';
-import { currentHost, getDoc, whenEditsIdle } from './worker-host';
+import { currentHost, getDoc, idleWithin } from './worker-host';
 import { world, worldEpoch } from './world';
 
 // 以前的版本（第九十五轮，规则在 ../versions.ts）：现在的世界是哪一串、什么时候留一份、列表的信号。
@@ -138,9 +138,10 @@ export function keepText(a: KeepArgs): Promise<VersionInfo | null> {
 }
 
 // 把现在的世界留一份。用户点了什么之后留的（回去之前、换世界之前、重新载入之前）：先等排着的编辑算完——还在算的那一笔也要在里面。
+// 第九十六轮：最多等几秒（idleWithin）。计算程序卡住时不一直等：留下的是已经应答的最后一步为止的样子
 // opened：刚打开的那份世界文件（主线程还没有命令记录时用它，不为这个去问计算程序）
 export async function keepVersion(why: VersionWhy, opened?: WorldDoc): Promise<VersionInfo | null> {
-  if (why !== 'opened') await whenEditsIdle();
+  if (why !== 'opened') await idleWithin();
   return keepNow(why, opened);
 }
 async function keepNow(why: VersionWhy, opened?: WorldDoc): Promise<VersionInfo | null> {
