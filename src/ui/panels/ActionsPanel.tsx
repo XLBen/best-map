@@ -1,6 +1,6 @@
 import { Archive, Boxes, CircleHelp, CopyPlus, FileDown, FilePlus, FolderOpen, ImageDown, Library, PackageOpen, Save } from 'lucide-preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { type WheelPref, download, exportPartFiles, exportProgress, exportZip, helpOpen, openPanel, prefs, setPrefs, wizardOpen, world } from '../../state';
+import { type WheelPref, download, exportPartFiles, exportProgress, exportZip, helpOpen, openPanel, prefs, saveProblem, setPrefs, wizardOpen, world } from '../../state';
 import { Seg } from '../common';
 import { Slider, linear } from '../components/Slider';
 import { type LabelSize, autoSeam, seamLongitude } from '../../render/export-plan';
@@ -8,7 +8,8 @@ import { EE_HALF_W } from '../../render/projection';
 import type { World } from '../../../core/world';
 import { exportFullMap, snapshotCanvas } from '../map/export';
 import { HistoryPanel } from '../panels';
-import { BACKUP_TEXT, LIBRARY_NOTE } from '../copy';
+import { BACKUP_TEXT, LIBRARY_NOTE, SAVE_TEXT } from '../copy';
+import { saveNote, takeOverHere } from '../shell/save-note';
 import { openLibrary } from '../packs/panel-store';
 import { fileNameOf } from '../../maps';
 import { beforeLeave, currentMap, exportCurrent, mapStatus, openFile, openMaps, saveMap, saveMapAs } from '../maps/store';
@@ -24,6 +25,7 @@ export function WorldMenu() {
   const close = () => (openPanel.value = null);
   return (
     <div class="menu">
+      <SaveProblemLine />
       <p class="hint map-status">{mapStatus()}</p>
       <button
         class="item"
@@ -126,6 +128,27 @@ export function WorldMenu() {
         </span>
       </button>
       <ExportSection />
+    </div>
+  );
+}
+
+// 第九十四轮：自动保存没存成时“世界”菜单的第一行——原因、“导出文件”（这个世界开在另一个页面里时还有“在这里接着做”）
+function SaveProblemLine() {
+  const n = saveNote(saveProblem.value);
+  if (!n) return null;
+  return (
+    <div class="save-problem">
+      <span>{n.line}</span>
+      <span class="row">
+        {n.take && (
+          <button class="small" onClick={() => void takeOverHere()} title={SAVE_TEXT.takeOverTip}>
+            {SAVE_TEXT.takeOver}
+          </button>
+        )}
+        <button class="small primary" onClick={() => void exportCurrent()} title={SAVE_TEXT.exportTip}>
+          <FileDown /> {SAVE_TEXT.export}
+        </button>
+      </span>
     </div>
   );
 }

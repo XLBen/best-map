@@ -1,7 +1,7 @@
 import { Boxes, CircleEllipsis, Globe, Layers, MousePointer, Redo2, Undo2, WandSparkles } from 'lucide-preact';
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { PanelId } from '../../state';
-import { openPanel, togglePanel, world } from '../../state';
+import { openPanel, saveProblem, togglePanel, world } from '../../state';
 import { CATEGORIES, category, setCategory, setTool } from '../defs/tools';
 import type { CategoryDef, Icon } from '../defs/types';
 import { mapStatus } from '../maps/store';
@@ -9,6 +9,7 @@ import { panelLibrary } from '../../library';
 import { libPanel, pendingBadge, redoHere, showWorldLibrary, toggleLibrary, undoHere, undoState } from '../packs/panel-store';
 import { PENDING_TIP, redoTitle, regenCountText, undoTitle } from '../packs/copy';
 import { MapKindButton } from './MapKind';
+import { saveNote } from './save-note';
 
 // 顶栏：左边是资源库（第四十五轮，最左边）、整个世界的事（世界、更多、调整）和撤销、重做，
 // 右边是指针、各类工具、图层与地图模式（生态的色板在“自然”里）。
@@ -57,6 +58,19 @@ function PanelButton({ panel, icon: I, label, disabled = false, title }: { panel
     <button class={`tb-btn ${openPanel.value === panel ? 'open' : ''}`} data-panel={panel} disabled={disabled} onClick={() => togglePanel(panel)} title={title ?? label}>
       <I size={18} />
       <span class="tb-label">{label}</span>
+    </button>
+  );
+}
+
+// 第九十四轮：自动保存没存成（存储满了、不可用、世界太大、这个世界开在另一个页面里）期间，“世界”旁边一直有一个“没保存”的小标记；
+// 点它打开“世界”菜单，第一行写原因和“导出文件”。下一次存成了它自己消失
+function SaveBadge() {
+  const n = saveNote(saveProblem.value);
+  if (!n) return null;
+  return (
+    <button class="tb-badge warn" title={n.tip} aria-label={n.tip} onClick={() => (openPanel.value = 'world')}>
+      <span class="tb-label">{n.badge}</span>
+      <span class="tb-badge-n">!</span>
     </button>
   );
 }
@@ -124,6 +138,7 @@ export function TopBar() {
         <LibraryButton />
         <span class="tb-sep" />
         <PanelButton panel="world" icon={Globe} label="世界" title={`新建、保存、打开、资源库、导出\n${mapStatus()}`} />
+        <SaveBadge />
         <PanelButton panel="more" icon={CircleEllipsis} label="更多" disabled={!w} title="历史、偏好、上手说明" />
         <PanelButton panel="adjust" icon={WandSparkles} label="调整" disabled={!w} title="冷暖干湿、四季、河流多少" />
         <span class="tb-sep" />

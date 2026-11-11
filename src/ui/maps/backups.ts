@@ -33,7 +33,13 @@ export function backupNotice(list: readonly BackupInfo[] | null): BackupNotice |
   const fresh = (list ?? []).filter((b) => !b.seen);
   if (!fresh.length) return null;
   const first = fresh[0];
-  return { text: `${first.age === 'newer' ? T.newer : T.older}${fresh.length > 1 ? `（共 ${fresh.length} 个）` : ''}`, id: first.id, count: fresh.length };
+  return { text: `${backupWhyText(first)}${fresh.length > 1 ? `（共 ${fresh.length} 个）` : ''}`, id: first.id, count: fresh.length };
+}
+// 为什么留着（一句话，说清它还在）。第九十四轮：这一版的世界也会留着（没存完整、没能打开、被换掉之前……）
+export function backupWhyText(b: Pick<BackupInfo, 'age' | 'why'>): string {
+  if (b.age === 'newer') return T.newer;
+  if (b.age === 'older') return T.older;
+  return T.why[b.why ?? 'replaced'];
 }
 
 // 这一版能打开了（比如程序更新以后，原来“更新的版本做的”那一份）
@@ -46,7 +52,7 @@ export function backupWhen(t: number): string {
 }
 // 列表的一行：名字（它最后一次自动保存的时间）和灰字（第几版、几步、为什么打不开）
 export function backupRow(b: BackupInfo): { name: string; note: string } {
-  const why = canOpenBackup(b) ? '这一版能打开' : b.age === 'newer' ? '更新的版本做的' : '旧版本做的';
+  const why = b.why ? T.whyRow[b.why] : canOpenBackup(b) ? '这一版能打开' : b.age === 'newer' ? '更新的版本做的' : '旧版本做的';
   return { name: `${backupWhen(b.savedAt)} 的世界`, note: `${b.version !== null ? `第 ${b.version} 版 · ` : ''}${b.steps} 步 · ${why}` };
 }
 

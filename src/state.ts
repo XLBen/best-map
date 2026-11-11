@@ -215,7 +215,7 @@ export { type ToolOptions, brushRange, lakeRange, mapKm, options, reachRange, se
 export { busy, editsIdle, formThumbnail, getDoc, knowIsolation, onlyEditsPending, safeMode, scriptRunning, scriptsIsolated, stopScripts, thumbnail, whenEditsIdle } from './state/worker-host';
 export { type Ask, type AskChoice, ask, askText, askUser } from './state/ask';
 export { confirmImport, showScripts, trustFormScripts, trustHandledElsewhere } from './state/script-trust';
-export { type OpenOptions, loadDoc, newWorld, resumeLast, retryScripts } from './state/open';
+export { type OpenOptions, type OpenResult, loadDoc, newWorld, openDoc, resumeLast, retryScripts } from './state/open';
 export { exec, paintNote, redo, replaceLast, undo } from './state/edits';
 export { noteCost, slowHint, slowPreview } from './state/cost-gate';
 export {
@@ -236,6 +236,7 @@ export {
 } from './state/exact-preview';
 export { cancelExport, download, exportPartFiles, exportProgress, exportZip, imageExportCancel } from './state/export-host';
 export { compactForSave, keepRemoved, planTidy, worldName } from './state/tidy';
-export { type Autosaved, autosaveNow, autosaved, noteThumb } from './state/autosave';
+export { type Autosaved, autosaveNow, autosaved, flushNow, noteThumb, takeOverSaving } from './state/autosave';
+export { type SaveFail, type SaveProblem, saveFail, saveProblem, saveRole, storageTight, unsaved } from './state/save-status';
 export { backupOf, backups, deleteBackup, dismissBackups, refreshBackups } from './state/backups';
 export type { BackupInfo, WorldBackup } from './backups';

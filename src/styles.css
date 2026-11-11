@@ -859,6 +859,11 @@ button.tb-badge {
   background-color: var(--accent-bg);
   border-radius: var(--r-pill);
 }
+/* 自动保存没存成（第九十四轮）：“世界”旁的“没保存” */
+button.tb-badge.warn {
+  color: var(--warn-text);
+  background-color: var(--warn-bg);
+}
 .tb-badge .tb-badge-n {
   display: none;
 }
@@ -1286,6 +1291,21 @@ button.here {
 }
 .map-status {
   margin: 0 var(--sp-2) var(--sp-1);
+}
+/* “世界”菜单第一行：自动保存没存成的原因和“导出文件”（第九十四轮） */
+.save-problem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--warn-text);
+  background: var(--warn-bg);
+  border-radius: var(--r-md);
+}
+.save-problem .row {
+  justify-content: flex-end;
+  gap: var(--sp-2);
 }
 .export-body {
   padding: 0 var(--sp-2);
@@ -2157,6 +2177,21 @@ button.thumb {
 }
 .ask-lines .item-text {
   min-height: 24px;
+}
+/* 问话里原样的一行（世界没能打开的原因，第九十四轮）：整句写出来，能选中复制 */
+.ask-note {
+  display: flex;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+  background: var(--field);
+  border-radius: var(--r-sm);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.ask-note .hint {
+  flex: none;
 }
 .ask-scripts {
   max-height: 50vh;

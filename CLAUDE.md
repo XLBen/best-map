@@ -12,6 +12,7 @@ npm run test:fast                # 跳过最慢的几个文件
 npx vitest run core/foo.test.ts  # 单个文件；机器忙时 core/sizing 的“滑块最小值命令都接受”会超时，单独重跑；整套里 `tools/realism.test.ts` 的“类地星球”、`src/ui/speed-r80.test.ts` 的“一串编辑”也常超时，这两个文件单独重跑
 npm run golden                   # 只跑金标准
 npm run build                    # 查类型后打包
+npm run smoke                    # 打包后在无头 Chrome 里走一遍：新建、画一笔、刷新后还在、两个页面、打不开先问（约 4 分钟；--shots <目录> 截图）
 node tools/bench-median.mjs 5 --against <提交> --           # 一块地区的加工各步与旧提交对照，五次中位数（结尾的 -- 不能省：省了只测星球）
 node tools/bench-median.mjs 5 --against <提交> -- --globe   # 整个星球
 node tools/bench-median.mjs 5 --against <提交> -- --library # 带着一整个时代库的世界（small.content 约 300 KB）：同样的加工，另计不重算的几步（libEdit、libUndo……）
@@ -60,7 +61,8 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 | 改的是哪一份、来源下拉、存到我的库 | `src/ui/packs/source-view.ts`、`lib-prefs.ts`（`showAllSources`：“完整界面”开关接这里）、`save-mine.ts`（去向、怎么存，纯函数）、`save-mine-run.ts`（写入、提示、撤销）；旧的“我的资源”在 `src/library.ts` 的 `MY_PACK_KEY` / `shownPack`；挑选时的人话 `pick-help.ts`；样式 `lib-find.css` |
 | 国名、称号跟着资源库变 | 每条命令之后的重算 `core/human/retitle.ts`（`core/commands.ts` 的 `applyCommand` 调）；称号怎么挑 `core/human/government.ts` 的 `govTitles`；称号编辑器旁的示例、“换说法盖过”、“都换掉” `src/ui/packs/title-help.ts`；设计见 `docs/dev/history/第91轮.md` |
 | 世界文件的格式 | `core/world.ts`；改了就把 `core/doc-version.ts` 的 `DOC_VERSION` 加一，同时改 `src/checkpoint-store.ts` 的 `CURRENT_VERSION`、测试夹具里的 `version:`、`core/raster-identity.test.ts` 的四个 `world.json`（先把版本写回旧的，核对别的一项没变） |
-| 自动保存、留着的旧世界 | `src/state/autosave.ts`；这一版打不开的自动保存原样挪进 `backups` 表：规则 `src/backups.ts`、信号 `src/state/backups.ts`、界面 `src/ui/maps/backups.ts`、`BackupsDialog.tsx`、`src/ui/shell/BackupBanner.tsx`；库的表在 `src/idb.ts` |
+| 自动保存：写什么、谁写、关页面时、没存成怎么说 | 写什么 `src/autosave-io.ts`（`AutosaveWriter`：事务里先读头，`writer` / `gen`，盖掉别人的之前先留着）；谁写 `src/autosave-lock.ts`（`SaveRole`：锁 `map2-autosave`、“在这里接着做”）；定时、页面事件 `src/state/autosave.ts`（`flushNow`、`takeOverSaving`）；状态 `src/state/save-status.ts`；界面 `src/ui/shell/save-note.ts`、`SaveBanner.tsx`、`TopBar.tsx` 的 `SaveBadge`，文字 `src/ui/copy.ts` 的 `SAVE_TEXT`；存储够不够 `src/storage-health.ts`；测试的替身 `src/testing/fake-idb.ts`、`fake-engine-worker.ts`；改完跑 `npm run smoke`；设计见 `docs/dev/history/第94轮.md` |
+| 留着的旧世界；上次的世界没能打开时的问话 | 这一版打不开的、没存完整的、被换掉之前的自动保存原样挪进 `backups` 表：规则 `src/backups.ts`（`BackupWhy`、`staleWhy`）、信号 `src/state/backups.ts`、界面 `src/ui/maps/backups.ts`、`BackupsDialog.tsx`、`src/ui/shell/BackupBanner.tsx`，文字 `BACKUP_TEXT.why`；问话 `src/state/open.ts` 的 `resumeLast`、`RESUME_FAILED`；库的表在 `src/idb.ts` |
 | 主线程与 Worker 的消息 | `src/protocol.ts`、`src/worker.ts`、`src/state/worker-host.ts`（`src/state.ts` 照旧导出，界面从它引用） |
 | 用户看得到的说明 | `docs/使用说明.md`、`src/ui/Help.tsx`、`src/ui/copy.ts` |
 

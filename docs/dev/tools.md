@@ -20,6 +20,9 @@
 - `r40-world.ts` 叠加层测试、测速用的世界（种子 3，人文、国家、城市）
 - `rewrite-factions.mjs` 一次性（第五十三轮）：从 bcf2c05 的 JSON 推出政体的派系名单和基础分量，写进 `core/packs/`；`--check` 查可复现，`--table` 打印
 
+## 冒烟
+- `smoke.mjs`（第九十四轮）`npm run smoke`：无头 Chrome 里把打包好的 `dist/` 真的走一遍（先 `npm run build`）——新建（`#demo`）→ 画一笔 → 等自动保存 → 刷新后还在；世界一变马上刷新、马上关页再开也还在（关页面时同步写的那一下）；同一个地址开第二个页面出现“已在另一个页面打开”、“在这里接着做”换过来；把存着的一步改坏 → “上次的世界没能打开”的问话 → 新建以后在留着的旧世界里；删掉一条 → “没存完整”挪进留着的旧世界。自己起一个只绑 127.0.0.1、随机端口的静态服务器（跑完就关，不碰 5191 / 5196），Chrome 用临时的用户目录，经调试端口（Node 自带的 WebSocket）操作，不加依赖；约 4 分钟；`--shots <目录>` 把几处界面截成图，`--show` 不用无头，`--keep` 留下用户目录，`--chrome <路径>`；有没过的退出码 1。不进 `npx vitest run`（要 Chrome）
+
 ## 开发服务器与一键开启
 - `isolated-engine.ts` Vite 插件：开发服务器上现打包计算 Worker（`/__map2/engine.js`，开发时也隔离）；`isolated-engine.test.ts`
 - `launch.mjs` 一键开启（查 Node 版本、装依赖、打包、开浏览器）；`launchers.test.ts` 查两个启动文件

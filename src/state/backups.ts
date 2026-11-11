@@ -21,12 +21,16 @@ export async function refreshBackups(): Promise<BackupInfo[]> {
   return list;
 }
 
+// 第九十四轮：只有写自动保存的那一方才挪（这个世界开在另一个页面里时，这个页面不动它的自动保存）。
+// autosave.ts 接上；没接时（测试）都能挪
+export const keepGate: { ready: () => Promise<boolean> } = { ready: async () => true };
+
 // 这一次打开页面只挪一次：读自动保存、写自动保存之前都先等它（哪个先到都行）
 let kept: Promise<void> | null = null;
 export function keepStaleOnce(): Promise<void> {
   kept ??= (async () => {
     try {
-      await keepStaleAutosaves(io.now);
+      if (await keepGate.ready()) await keepStaleAutosaves(io.now);
       await refreshBackups();
     } catch {
       // 存储用不了：没有什么可挪的，也没有什么会被盖掉

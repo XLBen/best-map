@@ -365,10 +365,11 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false, regen?: Poste
 const contentHolder = new ContentHolder();
 
 // fresh：新建或打开了一个世界（不是编辑）。restart：引擎是新的（“再试一次”打开的是同一个世界，镜头不动，但引擎换了）
-export async function handle(r: Response, fresh = false, restart = fresh): Promise<boolean> {
+// quiet：出错时不在顶上弹出原因（调用方自己说）
+export async function handle(r: Response, fresh = false, restart = fresh, quiet = false): Promise<boolean> {
   if (!r.ok) {
     regenTrack.pending = null;
-    showToast(r.error, true);
+    if (!quiet) showToast(r.error, true);
     return false;
   }
   if (r.snapshot) {
@@ -428,7 +429,8 @@ export async function formThumbnail(
   return r.thumb ? { thumb: r.thumb, issues: r.issues ?? [] } : { error: '缩略图生成失败' };
 }
 
-// 页面要被隐藏、关掉：让 Worker 立即写检查点（下次打开时直接恢复，不必重放）
+// 页面要被隐藏、关掉：让 Worker 立即写检查点（下次打开时直接恢复，不必重放）。
+// 自动保存在这时也马上写一次（第九十四轮，state/autosave.ts 的 saveOnLeave：先用主线程的命令记录同步写，再照平常的路写）
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden' && host?.alive && world.value) void call({ kind: 'checkpoint' }, null);

@@ -2,6 +2,7 @@ import { render } from 'preact';
 import { disallowScripts } from '../core/script';
 import { App } from './ui/App';
 import { startToolEffects } from './ui/defs/tools';
+import { startSaveNotes } from './ui/shell/save-note';
 // 第三批几处的口子（滑块的即时外观、自己写的脚本的信任、出错提示的“编辑”）
 import './ui/connect';
 import './styles.css';
@@ -21,5 +22,7 @@ disallowScripts();
 
 // 换工具、底图跟着状态变的几件事（以前在 defs/tools.ts 的模块里）：在第一次画界面之前
 startToolEffects();
+// 自动保存没存成、存储快满了时顶上说一次（第九十四轮）
+startSaveNotes();
 
 render(<App />, document.getElementById('app')!);

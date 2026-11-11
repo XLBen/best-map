@@ -1,5 +1,7 @@
 import { findScripts } from '../../core/script';
-import { openPanel, safeMode, scriptEditor, setSpeciesVisualOverride, waterTypeEditor, world, worldEpoch } from '../state';
+import { openPanel, safeMode, scriptEditor, setSpeciesVisualOverride, showToast, waterTypeEditor, world, worldEpoch } from '../state';
+import { libStoreFail } from '../library-edit';
+import { libNotStored } from './packs/copy';
 import { forgetDrafts, trustDraft } from '../trust';
 import { type CommittedScript, openScriptEditor, registerScriptCommitted, registerVisualOverride } from './editor-hooks';
 import { openWaterType } from './ecology/open';
@@ -9,8 +11,10 @@ import { openWaterType } from './ecology/open';
 // - 脚本框提交的脚本：记进信任列表（trust.ts），同一步里被换掉的中间版本去掉；
 // - 顶部“「X」的脚本出错了”的“编辑”：打开资源库里这种生态的页面、展开“高级”、光标放进那个脚本框
 //   （第九十三轮：河流、湖泊类型的规则也是——打开资源库里那种河的页面、展开“规则”一段；星球形态的脚本没有“编辑”）
+//   （第九十四轮）我的库没写进浏览器（存储满了、不可用）：顶上说一次
 
 registerVisualOverride(setSpeciesVisualOverride);
+libStoreFail.notify = (name) => showToast(libNotStored(name), true);
 
 // 世界上（各种生态、河流类型、在用的星球形态里）还用着这一段
 function usedInWorld(src: string): boolean {

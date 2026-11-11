@@ -3,89 +3,10 @@ import { DOC_VERSION } from '../../core/doc-version';
 import { AUTOSAVE_KEY, backupFileText, browserBackupIo, listBackups } from '../backups';
 import { autosaved, readAutosave } from './autosave';
 import { backups, useBackupIo } from './backups';
+import { FakeIDB } from '../testing/fake-idb';
 
 // 第九十一轮：启动时读自动保存的那一条路（readAutosave → 浏览器里的存取）。IndexedDB、localStorage 换成内存里的小替身：
 // 旧版本的自动保存挪进 backups 表（库从第 6 版升上来时才补这张表），原来的位置空出来；之后新世界的自动保存写在原处，它还在
-
-type Data = Map<string, Map<IDBValidKey, unknown>>;
-class FakeRequest {
-  result: unknown;
-  error: unknown = null;
-  onsuccess: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  onupgradeneeded: (() => void) | null = null;
-  onblocked: (() => void) | null = null;
-}
-class FakeTx {
-  oncomplete: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  onabort: (() => void) | null = null;
-  private open = 0;
-  constructor(private data: Data) {
-    setTimeout(() => this.maybeDone(), 0);
-  }
-  private maybeDone() {
-    if (this.open === 0 && this.oncomplete) {
-      const f = this.oncomplete;
-      this.oncomplete = null;
-      f();
-    }
-  }
-  private req(run: () => unknown): FakeRequest {
-    const r = new FakeRequest();
-    this.open++;
-    queueMicrotask(() => {
-      r.result = run();
-      r.onsuccess?.();
-      this.open--;
-      setTimeout(() => this.maybeDone(), 0);
-    });
-    return r;
-  }
-  objectStore(name: string) {
-    const s = this.data.get(name);
-    if (!s) throw new Error(`没有表 ${name}`);
-    const inRange = (k: IDBValidKey, range?: { lo: number; hi: number }) => !range || (typeof k === 'number' && k >= range.lo && k <= range.hi);
-    return {
-      get: (k: IDBValidKey) => this.req(() => structuredClone(s.get(k))),
-      put: (v: unknown, k: IDBValidKey) => this.req(() => void s.set(k, structuredClone(v))),
-      delete: (k: IDBValidKey) => this.req(() => void s.delete(k)),
-      clear: () => this.req(() => void s.clear()),
-      getAll: (range?: { lo: number; hi: number }) =>
-        this.req(() =>
-          [...s.entries()]
-            .filter(([k]) => inRange(k, range))
-            .sort((a, b) => (typeof a[0] === 'number' && typeof b[0] === 'number' ? a[0] - b[0] : 0))
-            .map(([, v]) => structuredClone(v)),
-        ),
-    };
-  }
-}
-class FakeIDB {
-  data: Data = new Map();
-  version = 0;
-  created: string[] = [];
-  open(_name: string, version: number) {
-    const r = new FakeRequest();
-    setTimeout(() => {
-      r.result = {
-        objectStoreNames: { contains: (n: string) => this.data.has(n) },
-        createObjectStore: (n: string) => {
-          this.created.push(n);
-          this.data.set(n, new Map());
-        },
-        transaction: () => new FakeTx(this.data),
-        close: () => {},
-      };
-      if (version > this.version) {
-        this.version = version;
-        r.onupgradeneeded?.();
-      }
-      r.onsuccess?.();
-    }, 0);
-    return r;
-  }
-}
 
 const settings = { seed: 1, cells: 3000, aspect: 2, latNorth: 60, latSouth: 20 };
 const commands = [

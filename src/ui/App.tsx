@@ -51,6 +51,7 @@ import { Notice } from './shell/Notice';
 import { Popover } from './shell/Popover';
 import { RulerButton } from './shell/Ruler';
 import { BackupBanner } from './shell/BackupBanner';
+import { SaveBanner } from './shell/SaveBanner';
 import { ScriptBanner } from './shell/ScriptBanner';
 import { SkippedBanner } from './shell/SkippedBanner';
 import { Sheet } from './shell/Sheet';
@@ -171,7 +172,8 @@ export function App() {
       ]);
     } else {
       // 回来接着做：直接打开上次的世界（上次是安全模式就照样用安全模式；带没信任过的脚本时先问）；
-      // 没有、打不开（比如版本变了）、取消了再弹向导
+      // 没有、取消了再弹向导。第九十四轮：没能打开时 resumeLast 先停在一个问话上（再试一次、安全模式、导出文件、新建），
+      // 选了新建才到这里；那一份在被新世界的自动保存盖掉之前挪进“留着的旧世界”
       void resumeLast().then((ok) => {
         if (ok) showToast('已打开上次的世界');
         else wizardOpen.value = true;
@@ -227,6 +229,8 @@ export function App() {
         <div class="notices">
           {/* 向导开着时这一条在向导上面那一块里 */}
           {!wizardOpen.value && <BackupBanner />}
+          {/* 第九十四轮：这个世界已在另一个页面打开 */}
+          {!wizardOpen.value && <SaveBanner />}
           <ScriptBanner />
           <SkippedBanner />
           <Notice />

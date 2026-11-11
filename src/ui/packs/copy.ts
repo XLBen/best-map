@@ -19,6 +19,8 @@ export const MERGE_TO_MINE_TIP = '里面的都存到我的库，这个库留着'
 export const KEEP_FILE = '加进资源库…';
 export const KEEP_FILE_TIP = '查过脚本后整个留下，成为一个库';
 export const EXPORT_FILE = '导出文件';
+// 第九十四轮：我的库的改动没写进浏览器（存储满了、不可用）。改动还在这个页面里，过一阵会再试
+export const libNotStored = (name: string) => `“${name}”的改动没能存进浏览器（存储满了或不可用），现在只在这个页面里。请导出库的文件`;
 // 整个内置的库复制一份来改（只有整个库才用这个词）
 export const COPY_LIBRARY = '复制成我的库';
 export const COPY_LIBRARY_TIP = '复制一份来改';

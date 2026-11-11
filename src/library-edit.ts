@@ -61,9 +61,10 @@ interface Head {
   redo: Step[];
 }
 
-// 停手多久写整个库；日志写不进去时快一点；日志最多多大（放不下时写整个库）；撤销最多几步
+// 停手多久写整个库；日志写不进去时快一点；没写成（存储满了、不可用）过多久再试；日志最多多大（放不下时写整个库）；撤销最多几步
 export const FLUSH_MS = 4000;
 export const FLUSH_SOON_MS = 200;
+export const FLUSH_RETRY_MS = 30_000;
 const WAL_MAX_CHARS = 1_000_000;
 const UNDO_MAX = 200;
 
@@ -167,6 +168,8 @@ function placeFor(pack: ResourcePack, kind: ContentKind, item: Record<string, un
 export interface LibEditorOptions {
   publish?: (key: string, pack: ResourcePack) => void;
   entries?: () => readonly LibraryEntry[];
+  // 第九十四轮：整个库没写进存储（满了、不可用）。一段失败只叫一次，写成了以后再失败才再叫
+  onStoreFail?: (key: string, pack: ResourcePack) => void;
 }
 
 export function createLibEditor(backend: LibBackend = localBackend(), opts: LibEditorOptions = {}) {
@@ -195,14 +198,35 @@ export function createLibEditor(backend: LibBackend = localBackend(), opts: LibE
     timers.delete(key);
   };
 
-  // 写整个库
+  // 没写成、已经说过了的库（写成了去掉）
+  const failed = new Set<string>();
+
+  // 写整个库。第九十四轮：没写进去（存储满了、不可用）时不当它写成了——留着 dirty 和日志（刷新后日志还能补上），说一次，过一阵再试
   async function flush(key: string): Promise<void> {
     clearTimer(key);
     const h = heads.get(key);
     if (!h?.dirty) return;
     h.dirty = false;
     const rev = h.rev;
-    await backend.put({ key, pack: h.pack, installedAt: h.installedAt, mine: true, rev });
+    let ok = false;
+    try {
+      ok = await backend.put({ key, pack: h.pack, installedAt: h.installedAt, mine: true, rev });
+    } catch {
+      ok = false;
+    }
+    // 写的时候库被删了、被别处换掉了：不管了
+    if (heads.get(key) !== h) return;
+    if (!ok) {
+      h.dirty = true;
+      if (!failed.has(key)) {
+        failed.add(key);
+        opts.onStoreFail?.(key, h.pack);
+      }
+      // 写的时候又改了的话已经另排了一次；没有就过一阵再试
+      if (!timers.has(key)) schedule(key, FLUSH_RETRY_MS);
+      return;
+    }
+    failed.delete(key);
     // 写的时候又改了：日志留着，等下一次
     if (h.rev === rev) {
       h.ops.clear();
@@ -437,6 +461,7 @@ export function createLibEditor(backend: LibBackend = localBackend(), opts: LibE
     // 库不在了（删除）：撤销和日志一起去掉
     forget(key: string) {
       clearTimer(key);
+      failed.delete(key);
       heads.delete(key);
       backend.walWrite(key, null);
       tick.value++;
@@ -480,8 +505,11 @@ export function createLibEditor(backend: LibBackend = localBackend(), opts: LibE
 
 export type LibEditor = ReturnType<typeof createLibEditor>;
 
+// 整个库没写进存储时界面说一句（ui/packs 里接上；这里不碰界面）
+export const libStoreFail: { notify: (name: string) => void } = { notify: () => {} };
+
 // 应用里只有一份：读存储时接上；关页面时写一次（日志已经在，这一次写得成就不用补）
-export const libEdits = createLibEditor();
+export const libEdits = createLibEditor(undefined, { onStoreFail: (_, pack) => libStoreFail.notify(pack.name) });
 useLibraryOverlay(
   (rec, pack) => libEdits.adopt(rec, pack),
   (key) => libEdits.forget(key),

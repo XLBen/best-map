@@ -8,6 +8,10 @@ import { idbAll, idbTx, openDb } from './idb';
 // 自动保存的位置空出来，之后新世界怎么自动保存都碰不到它。它一直留着，直到用户自己删除；可以导出成世界文件（内容和原来的一字不差）。
 // 这里是规则和存取：规则只经 BackupIo 碰存储，测试换成内存里的（memoryBackupIo）；浏览器里的那一层（browserBackupIo）只有几行。
 // 界面在 ui/maps/backups.ts、BackupsDialog.tsx、shell/BackupBanner.tsx
+//
+// 第九十四轮：这一版的世界也会留在这里——自动保存没存完整（头里写的条数和读出来的对不上，why: 'damaged'）、
+// 上次的世界没能打开或没打开就新建了（'failed' / 'cancelled'）、别的页面里保存的世界被这个页面接过去盖掉之前（'other-page'）、
+// 别的原因被换掉之前（'replaced'）。后面几种是写自动保存的那一边（autosave-io.ts）在盖掉之前挪进来的
 
 export const AUTOSAVE_KEY = 'map2.autosave';
 // IndexedDB 用不了时留在 localStorage 里的：一份一个键
@@ -18,9 +22,12 @@ export interface WorldBackup {
   // 留下来的时间、它最后一次自动保存的时间
   keptAt: number;
   savedAt: number;
-  // 文件里写着的版本号（没写时 null），比这一版旧还是新
+  // 文件里写着的版本号（没写时 null），比这一版旧还是新（current：就是这一版的，为什么留着见 why）
   version: number | null;
-  age: 'older' | 'newer';
+  age: 'older' | 'newer' | 'current';
+  // 第九十四轮：这一版的世界为什么留在这里；error 是没能打开时的原因（原样的一行）
+  why?: BackupWhy;
+  error?: string;
   // 命令的条数
   steps: number;
   // 整个世界文件，和自动保存里的一字不差
@@ -31,6 +38,7 @@ export interface WorldBackup {
   // 提示条关过了（“世界”菜单里照样找得到）
   seen?: true;
 }
+export type BackupWhy = 'damaged' | 'failed' | 'cancelled' | 'other-page' | 'replaced';
 export type BackupInfo = Omit<WorldBackup, 'doc'>;
 export const infoOf = ({ doc: _, ...info }: WorldBackup): BackupInfo => info;
 
@@ -40,6 +48,39 @@ export interface RawAutosave {
   doc: unknown;
   safe?: string;
   mapId?: string;
+  // 第九十四轮：头里写着的命令条数（和读出来的对不上就是没存完整）、谁写的、第几代（见 autosave-io.ts）
+  count?: number;
+  writer?: string;
+  gen?: number;
+}
+
+// 自动保存的头（kv 的 autosave）里除了世界文件本身的那几项
+export interface AutosaveInfo {
+  savedAt: number;
+  count: number;
+  // 安全模式（脚本没有运行）的原因：下次打开时照样用安全模式
+  safe?: string;
+  // 连着“我的地图”里的哪一张；mapSynced：写这份自动保存时那一张已经与它相同
+  mapId?: string;
+  mapSynced?: boolean;
+  // 第九十四轮：写它的页面（每次打开页面一个随机的 id）、第几代（每写一次加一）
+  writer?: string;
+  gen?: number;
+}
+// 把头拆成这几项和世界文件的头（format、version、settings……）：世界文件里不带上面这几项
+export function splitHead<T extends AutosaveInfo>(meta: T): { info: AutosaveInfo; head: Omit<T, keyof AutosaveInfo> } {
+  const { savedAt, count, safe, mapId, mapSynced, writer, gen, ...head } = meta;
+  return {
+    info: {
+      savedAt,
+      count,
+      ...(typeof safe === 'string' ? { safe } : {}),
+      ...(typeof mapId === 'string' ? { mapId, mapSynced: mapSynced === true } : {}),
+      ...(typeof writer === 'string' ? { writer } : {}),
+      ...(typeof gen === 'number' ? { gen } : {}),
+    },
+    head,
+  };
 }
 
 type LocalStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
@@ -62,7 +103,24 @@ export function staleAge(doc: unknown): 'older' | 'newer' | null {
   return age === 'older' || age === 'newer' ? age : null;
 }
 
-function backupOf(a: RawAutosave, age: 'older' | 'newer', now: number, taken: ReadonlySet<string>): WorldBackup {
+// 这一版的自动保存没存完整（第九十四轮）：头里写的条数和读出来的对不上，或者有哪一条不是命令
+export function damaged(a: RawAutosave): boolean {
+  const commands = (a.doc as { commands?: unknown } | null)?.commands;
+  if (!Array.isArray(commands)) return true;
+  if (typeof a.count === 'number' && commands.length !== a.count) return true;
+  return commands.some((c) => c === null || typeof c !== 'object');
+}
+
+// 为什么这一份打不开：旧版本的、更新的版本做的，或者是这一版的但没存完整。能打开时 null
+export function staleWhy(a: RawAutosave): Pick<WorldBackup, 'age' | 'why'> | null {
+  const age = docAge(a.doc);
+  if (age === 'older' || age === 'newer') return { age };
+  return age === 'current' && damaged(a) ? { age, why: 'damaged' } : null;
+}
+
+// 一份自动保存做成留着的一条（编号不和 taken 里的重）
+export function backupFor(a: RawAutosave, kind: Pick<WorldBackup, 'age' | 'why' | 'error'>, now: number, taken: ReadonlySet<string>): WorldBackup {
+  const { age } = kind;
   const savedAt = typeof a.savedAt === 'number' ? a.savedAt : now;
   let id = `b${savedAt}`;
   for (let k = 2; taken.has(id); k++) id = `b${savedAt}-${k}`;
@@ -75,6 +133,8 @@ function backupOf(a: RawAutosave, age: 'older' | 'newer', now: number, taken: Re
     age,
     steps: Array.isArray(commands) ? commands.length : 0,
     doc: a.doc,
+    ...(kind.why ? { why: kind.why } : {}),
+    ...(kind.error ? { error: kind.error } : {}),
     ...(typeof a.safe === 'string' ? { safe: a.safe } : {}),
     ...(typeof a.mapId === 'string' ? { mapId: a.mapId } : {}),
   };
@@ -111,7 +171,7 @@ export async function listBackups(io: BackupIo): Promise<WorldBackup[]> {
   return out.sort((a, b) => b.keptAt - a.keptAt || (a.id < b.id ? 1 : -1));
 }
 
-// 启动时：自动保存（IndexedDB 的和 localStorage 后备的）不是这一版能打开的，原样挪进 backups。返回这一次留下的。
+// 启动时：自动保存（IndexedDB 的和 localStorage 后备的）不是这一版能打开的（第九十四轮：或者没存完整的），原样挪进 backups。返回这一次留下的。
 // 先放进 backups、再去掉原来的：中途出错时原来的还在（下次启动再挪），不会两头都没有
 export async function keepStaleAutosaves(io: BackupIo, now = Date.now()): Promise<WorldBackup[]> {
   const kept: WorldBackup[] = [];
@@ -119,9 +179,10 @@ export async function keepStaleAutosaves(io: BackupIo, now = Date.now()): Promis
   let idbOk = true;
   try {
     const a = await io.idbAutosave();
-    const age = a && staleAge(a.doc);
-    if (a && age) {
-      const b = backupOf(a, age, now, taken);
+    // 第九十四轮：这一版的但没存完整的也算（两个页面混着写、写到一半）
+    const kind = a && staleWhy(a);
+    if (a && kind) {
+      const b = backupFor(a, kind, now, taken);
       await io.idbMove(b);
       taken.add(b.id);
       kept.push(b);
@@ -135,7 +196,7 @@ export async function keepStaleAutosaves(io: BackupIo, now = Date.now()): Promis
     const old = raw ? (JSON.parse(raw) as RawAutosave) : null;
     const age = old && staleAge(old.doc);
     if (raw && old && age) {
-      const b = backupOf(old, age, now, taken);
+      const b = backupFor(old, { age }, now, taken);
       let moved = false;
       if (idbOk) {
         try {
@@ -273,12 +334,7 @@ export function memoryBackupIo(): MemoryBackupIo {
 
 // ---------- 浏览器里的 ----------
 
-interface AutosaveMeta {
-  savedAt: number;
-  count: number;
-  safe?: string;
-  mapId?: string;
-  mapSynced?: boolean;
+interface AutosaveMeta extends AutosaveInfo {
   [k: string]: unknown;
 }
 
@@ -291,8 +347,9 @@ export const browserBackupIo: BackupIo = {
       const meta = await get<AutosaveMeta | undefined>(tx.objectStore('kv').get('autosave'));
       if (!meta || !(meta.count > 0)) return null;
       const commands = await get<unknown[]>(tx.objectStore('autosave').getAll(IDBKeyRange.bound(0, meta.count - 1)));
-      const { savedAt, count: _, safe, mapId, mapSynced: _s, ...head } = meta;
-      return { savedAt, doc: { ...head, commands }, ...(typeof safe === 'string' ? { safe } : {}), ...(typeof mapId === 'string' ? { mapId } : {}) };
+      const { info, head } = splitHead(meta);
+      const { mapSynced: _, ...rest } = info;
+      return { ...rest, doc: { ...head, commands } };
     } finally {
       db.close();
     }

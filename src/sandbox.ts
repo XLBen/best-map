@@ -192,6 +192,19 @@ export class Mirror {
     return this.head ? { ...this.head, commands: this.commands.slice() } : null;
   }
 
+  // 第九十四轮：整份世界连同每一步的编号（关页面的那一下不等 Worker，从这里把没写的尾巴写进自动保存）。
+  // key 认是不是同一个引擎：换了 Worker、换了纪元，编号就不能和以前的比
+  full(): (WorldDoc & { ids: number[]; key: string }) | null {
+    return this.head ? { ...this.head, commands: this.commands.slice(), ids: this.ids.slice(), key: `${this.gen}:${this.epoch}` } : null;
+  }
+
+  // ids 正是这份记录里每一步的编号时，给出这个引擎的 key（不是时 null）
+  keyFor(ids: readonly number[]): string | null {
+    if (!this.head || ids.length !== this.ids.length) return null;
+    for (let k = 0; k < ids.length; k++) if (ids[k] !== this.ids[k]) return null;
+    return `${this.gen}:${this.epoch}`;
+  }
+
   // 同一个 Worker、同一个纪元，步号一模一样（检查点写的正是命令记录里的这个世界）
   matches(gen: number, epoch: number, ids: readonly number[]): boolean {
     if (!this.head || gen !== this.gen || epoch !== this.epoch || ids.length !== this.ids.length) return false;

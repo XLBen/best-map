@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DOC_VERSION } from '../../../core/doc-version';
 import type { BackupInfo } from '../../state';
 import { BACKUP_TEXT } from '../copy';
-import { backupNotice, backupRow, backupWhen, canOpenBackup } from './backups';
+import { backupNotice, backupRow, backupWhen, backupWhyText, canOpenBackup } from './backups';
 
 // 第九十一轮：上次的世界这一版打不开时界面上写什么（一直在的那一条、“留着的旧世界”里的一行）
 
@@ -37,5 +37,32 @@ describe('“留着的旧世界”里的一行', () => {
     expect(canOpenBackup(info())).toBe(false);
     expect(canOpenBackup(info({ version: DOC_VERSION }))).toBe(true);
     expect(backupRow(info({ version: DOC_VERSION, age: 'newer' })).note).toBe(`第 ${DOC_VERSION} 版 · 132 步 · 这一版能打开`);
+  });
+});
+
+// 第九十四轮：这一版的世界也会留着（没存完整、没能打开、没打开就新建了、别的页面里保存的、被换掉的）
+describe('这一版的世界为什么留着', () => {
+  const cur = (why: BackupInfo['why']) => info({ version: DOC_VERSION, age: 'current', why });
+  it('一直在的那一条：各一句，都说清它还留着', () => {
+    const texts = (['damaged', 'failed', 'cancelled', 'other-page', 'replaced'] as const).map((why) => backupNotice([cur(why)])!.text);
+    expect(texts).toEqual([
+      '上次的世界没存完整，打不开。存下的部分还留着',
+      '上次的世界没能打开。它还留着',
+      '上次的世界没有打开。它还留着',
+      '另一个页面里保存的世界和这里的不一样。它还留着',
+      '原来自动保存的世界被换掉了。它还留着',
+    ]);
+    expect(new Set(texts).size).toBe(5);
+    for (const t of texts) expect(t).toContain('还留着');
+    expect(backupWhyText({ age: 'current' })).toBe(BACKUP_TEXT.why.replaced);
+    // 别的版本做的照旧按版本说
+    expect(backupWhyText({ age: 'older', why: 'other-page' })).toBe(BACKUP_TEXT.older);
+  });
+
+  it('列表里的一行写为什么；能打开的照样有“打开”', () => {
+    expect(backupRow(cur('damaged')).note).toBe(`第 ${DOC_VERSION} 版 · 132 步 · 没存完整`);
+    expect(backupRow(cur('failed')).note).toBe(`第 ${DOC_VERSION} 版 · 132 步 · 没能打开`);
+    expect(backupRow(cur('other-page')).note).toBe(`第 ${DOC_VERSION} 版 · 132 步 · 另一个页面里保存的`);
+    expect(canOpenBackup(cur('cancelled'))).toBe(true);
   });
 });

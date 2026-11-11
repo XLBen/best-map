@@ -46,10 +46,11 @@
 ```bash
 npm install
 npm run dev        # 开发服务器，默认 http://localhost:5173（.claude/launch.json 里用 5191）
-npm test           # 全部测试（244 个文件、2768 个；含两分钟左右的“和地球比”慢测试）
+npm test           # 全部测试（252 个文件、2848 个；含两分钟左右的“和地球比”慢测试）
 npm run test:fast  # 改代码时常跑的那部分（跳过最慢的几个文件）
 npm run golden     # 只跑金标准：提速、重构后结果必须逐值不变
 npm run build      # 查类型后打包
+npm run smoke      # 打包后在无头 Chrome 里走一遍：新建、画一笔、刷新后还在、两个页面（约 4 分钟，要装着 Chrome）
 npx tsx tools/generate.ts --seed 3 --out out/seed3   # 命令行批量生成并导出
 npx tsx tools/hash.ts                                 # 各层结果的哈希，核对 Node 与浏览器是否逐值一致
 npx tsx tools/bench.ts --globe                        # 整个星球（新建的类地星球，6.26 万格）加工各步的耗时

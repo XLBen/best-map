@@ -1,0 +1,460 @@
+// 冒烟（第九十四轮）：在无头 Chrome 里把打包好的程序真的走一遍——新建 → 画一笔 → 刷新后还在。
+//   node tools/smoke.mjs [--chrome <Chrome 的路径>] [--keep] [--show] [--shots <目录>]
+//     --keep：留下临时目录（Chrome 的用户目录）；--show：不用无头，看着它跑；
+//     --shots：把几处界面截成图存进那个目录（第二个页面顶上的那一条、“世界”菜单的第一行），给人看排版
+//   要先打包（npm run build）：用的是 dist/。不进 vitest（要 Chrome）。
+//   做法：自己起一个只绑 127.0.0.1、随机空闲端口的静态服务器（跑完就关；不碰 5191 / 5196），Chrome 开在一个临时的用户目录里，
+//   经调试端口（WebSocket，Node 自带的）点页面、拖鼠标、读浏览器里存的自动保存。
+//   走的几步：
+//     1. 新建（#demo 的小世界）→ 等第一次自动保存；
+//     2. 在地图上画一笔陆地 → 等自动保存多一步 → 刷新 → 世界还在、那一笔还在（陆地的数组逐字节相同）；
+//     3. 再画一笔，世界一变就马上刷新（不等 1.5 秒）→ 那一笔还在（关页面时同步写的那一下）；有没存的改动时浏览器先问了一句；
+//     4. 再画一笔，马上把页面关掉、另开一个 → 那一笔还在；
+//     5. 同一个地址再开一个页面 → 它顶上有“这个世界已在另一个页面打开”，原来的页面没有；点“在这里接着做”→ 换过来；
+//        换过来以后这个页面画的存得进去，原来那个页面画的存不进去；写的那个页面关了，接着它存下的那一份做的页面不用点就接着保存；
+//     6. 把存着的一步改成引擎不认识的命令（装“上次的世界打不开”）→ 刷新 → 不进向导，停在“上次的世界没能打开”的问话上（写着原因）；
+//        点“新建”、在向导里建一个新世界 → 原来那一份在“留着的旧世界”里（写着没能打开和原因），顶上有一条说它还留着；
+//     7. 把存着的命令删掉一条（装“没存完整”）→ 刷新 → 不当没有：挪进“留着的旧世界”，向导上面说“没存完整……存下的部分还留着”。
+//   退出码：有没过的 1
+import { spawn } from 'node:child_process';
+import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import { dirname, extname, join, normalize, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const dist = join(root, 'dist');
+const argv = process.argv.slice(2);
+const flag = (name, def) => {
+  const k = argv.indexOf(name);
+  return k >= 0 ? argv[k + 1] : def;
+};
+const chromePath = flag('--chrome', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+const keep = argv.includes('--keep');
+const show = argv.includes('--show');
+const shots = flag('--shots', null);
+if (shots) mkdirSync(shots, { recursive: true });
+
+if (!existsSync(join(dist, 'index.html'))) {
+  console.error('没有 dist/：先 npm run build');
+  process.exit(2);
+}
+if (!existsSync(chromePath)) {
+  console.error(`找不到 Chrome：${chromePath}（用 --chrome 指定）`);
+  process.exit(2);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---------- 静态服务器（只绑 127.0.0.1，端口让系统挑） ----------
+
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png', '.wasm': 'application/wasm' };
+const server = createServer((req, res) => {
+  const path = decodeURIComponent((req.url ?? '/').split('?')[0]);
+  const file = normalize(join(dist, path === '/' ? 'index.html' : path));
+  if (!file.startsWith(dist + sep) || !existsSync(file) || !statSync(file).isFile()) {
+    res.writeHead(404).end('not found');
+    return;
+  }
+  res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-store' });
+  createReadStream(file).pipe(res);
+});
+await new Promise((r) => server.listen(0, '127.0.0.1', r));
+const origin = `http://127.0.0.1:${server.address().port}`;
+
+// ---------- Chrome 与调试端口 ----------
+
+const profile = mkdtempSync(join(tmpdir(), 'map2-smoke-'));
+const chrome = spawn(
+  chromePath,
+  [
+    ...(show ? [] : ['--headless=new']),
+    '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader',
+    '--force-device-scale-factor=1',
+    '--window-size=1280,800',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding',
+    `--user-data-dir=${profile}`,
+    '--remote-debugging-port=0',
+    'about:blank',
+  ],
+  { stdio: 'ignore' },
+);
+
+async function debugUrl() {
+  const file = join(profile, 'DevToolsActivePort');
+  for (let k = 0; k < 200; k++) {
+    if (existsSync(file)) {
+      const [port, path] = readFileSync(file, 'utf8').trim().split('\n');
+      if (port && path) return `ws://127.0.0.1:${port}${path}`;
+    }
+    await sleep(50);
+  }
+  throw new Error('Chrome 没有开起来');
+}
+
+class Cdp {
+  constructor(ws) {
+    this.ws = ws;
+    this.seq = 0;
+    this.waiting = new Map();
+    this.handlers = [];
+    ws.addEventListener('message', (ev) => {
+      const m = JSON.parse(ev.data);
+      if (m.id !== undefined) {
+        const w = this.waiting.get(m.id);
+        this.waiting.delete(m.id);
+        if (m.error) w?.reject(new Error(`${w.method}: ${m.error.message}`));
+        else w?.resolve(m.result);
+        return;
+      }
+      for (const h of this.handlers) h(m);
+    });
+  }
+  send(method, params = {}, sessionId) {
+    const id = ++this.seq;
+    return new Promise((resolve, reject) => {
+      this.waiting.set(id, { resolve, reject, method });
+      this.ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+    });
+  }
+  on(h) {
+    this.handlers.push(h);
+  }
+}
+
+// 一个页面
+class Page {
+  constructor(cdp, targetId, sessionId) {
+    this.cdp = cdp;
+    this.targetId = targetId;
+    this.sessionId = sessionId;
+    // 浏览器问“要离开吗”（有没存的改动时）的次数；都点“离开”
+    this.leaveAsked = 0;
+    this.errors = [];
+    cdp.on((m) => {
+      if (m.sessionId !== sessionId) return;
+      if (m.method === 'Page.javascriptDialogOpening') {
+        if (m.params.type === 'beforeunload') this.leaveAsked++;
+        void this.send('Page.handleJavaScriptDialog', { accept: true }).catch(() => {});
+      }
+      if (m.method === 'Runtime.exceptionThrown') this.errors.push(m.params.exceptionDetails?.exception?.description ?? m.params.exceptionDetails?.text ?? '出错');
+    });
+  }
+  static async open(cdp, url) {
+    const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+    const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
+    const p = new Page(cdp, targetId, sessionId);
+    await p.send('Page.enable');
+    await p.send('Runtime.enable');
+    // 第一次建好世界会弹出上手说明：这里不要它挡着
+    await p.send('Page.addScriptToEvaluateOnNewDocument', { source: "try { localStorage.setItem('map2.seenHelp', '1'); } catch {}" });
+    await p.send('Page.navigate', { url });
+    return p;
+  }
+  send(method, params) {
+    return this.cdp.send(method, params, this.sessionId);
+  }
+  async eval(expression) {
+    const r = await this.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+    return r.result.value;
+  }
+  // 等到 expression 的值是真的；等不到抛错
+  async until(what, expression, ms = 60000) {
+    const t0 = Date.now();
+    let last;
+    while (Date.now() - t0 < ms) {
+      try {
+        last = await this.eval(expression);
+        if (last) return last;
+      } catch (e) {
+        // 页面正在换（刷新中）：再等
+        last = String(e.message ?? e);
+      }
+      await sleep(50);
+    }
+    throw new Error(`等不到：${what}（最后是 ${JSON.stringify(last)}）`);
+  }
+  // 截一张图（给了 --shots 才截）
+  async shot(name) {
+    if (!shots) return;
+    const { data } = await this.send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(join(shots, `${name}.png`), Buffer.from(data, 'base64'));
+  }
+  mouse(type, x, y, buttons = 1) {
+    return this.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1 });
+  }
+}
+
+// ---------- 页面里用的几句 ----------
+
+// 有世界了，而且不在算
+const READY = `(() => { const w = window.__map2 && window.__map2.world(); return !!w && !document.querySelector('.notice .spinner'); })()`;
+// 陆地那个数组的摘要（那一笔画没画上、刷新后是不是同一个世界，看它）
+const LAND = `(() => { const w = window.__map2 && window.__map2.world(); if (!w) return null; const a = new Uint8Array(w.causes.land.buffer, w.causes.land.byteOffset, w.causes.land.byteLength); let h = 2166136261; for (let i = 0; i < a.length; i++) { h ^= a[i]; h = Math.imul(h, 16777619); } return (h >>> 0).toString(16) + ':' + a.length; })()`;
+// 浏览器里存着的自动保存的头（几步、谁写的、第几代）；还没有时 null。库还没建时不去开它（开了会建一个空的）
+const HEAD = `(async () => {
+  const dbs = await indexedDB.databases();
+  if (!dbs.some((d) => d.name === 'map2')) return null;
+  return await new Promise((resolve) => {
+    const open = indexedDB.open('map2');
+    open.onerror = () => resolve(null);
+    open.onsuccess = () => {
+      const db = open.result;
+      db.onversionchange = () => db.close();
+      if (!db.objectStoreNames.contains('kv')) { db.close(); resolve(null); return; }
+      const req = db.transaction('kv', 'readonly').objectStore('kv').get('autosave');
+      req.onsuccess = () => { const m = req.result; db.close(); resolve(m ? { count: m.count, writer: m.writer || null, gen: m.gen || 0 } : null); };
+      req.onerror = () => { db.close(); resolve(null); };
+    };
+  });
+})()`;
+const BANNER = `(() => [...document.querySelectorAll('.notices .notice.banner .notice-text')].map((e) => e.textContent).find((t) => t.includes('另一个页面')) || null)()`;
+const BADGE = `(() => { const b = document.querySelector('.topbar .tb-badge.warn'); return b ? b.getAttribute('title') : null; })()`;
+// 留着的旧世界（backups 表）：每一份为什么留着、几步、原因
+const BACKUPS = `(async () => await new Promise((resolve) => {
+  const open = indexedDB.open('map2');
+  open.onerror = () => resolve([]);
+  open.onsuccess = () => {
+    const db = open.result;
+    db.onversionchange = () => db.close();
+    const req = db.transaction('backups', 'readonly').objectStore('backups').getAll();
+    req.onsuccess = () => { db.close(); resolve(req.result.map((b) => ({ why: b.why || b.age, steps: b.steps, error: b.error || null }))); };
+    req.onerror = () => { db.close(); resolve([]); };
+  };
+}))()`;
+// 改存着的自动保存的一条命令（value 为 null 时删掉这一条）
+const tamper = (index, value) => `(async () => await new Promise((resolve, reject) => {
+  const open = indexedDB.open('map2');
+  open.onerror = () => reject(open.error);
+  open.onsuccess = () => {
+    const db = open.result;
+    db.onversionchange = () => db.close();
+    const tx = db.transaction('autosave', 'readwrite');
+    ${value === null ? `tx.objectStore('autosave').delete(${index});` : `tx.objectStore('autosave').put(${JSON.stringify(value)}, ${index});`}
+    tx.oncomplete = () => { db.close(); resolve(true); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  };
+}))()`;
+const ASK = `(() => { const m = document.querySelector('.modal.ask'); return m ? { title: m.querySelector('h3')?.textContent ?? '', text: m.querySelector('p.muted')?.textContent ?? '', note: m.querySelector('.ask-note')?.textContent ?? '', buttons: [...m.querySelectorAll('.ask-actions button')].map((b) => b.textContent) } : null; })()`;
+const KEPT_NOTE = `(() => [...document.querySelectorAll('.notices .notice.banner .notice-text, .backup-note')].map((e) => e.textContent).find((t) => t.includes('留着')) || null)()`;
+const count = async (p) => (await p.eval(HEAD))?.count ?? 0;
+// 等这个页面自己写过一次自动保存（刚打开时整份重写的那一次：头里“谁写的”换成它）。之后关页面的那一下它才同步写得了
+const ownWrite = (p, prevWriter) => p.until('这个页面自己写过一次', `(${HEAD}).then((h) => (h && h.writer && h.writer !== ${JSON.stringify(prevWriter)} ? h : null))`, 30000);
+
+// 在地图上画一笔陆地：选“地形”一类（默认的工具就是画陆地），从左到右拖过地图中间
+async function stroke(p, row = 0.5) {
+  await p.eval(`(() => { const b = [...document.querySelectorAll('.topbar button.tb-btn')].find((x) => x.title === '地形'); if (!b) throw new Error('找不到“地形”按钮'); b.click(); })()`);
+  const box = await p.eval(`(() => { const c = document.querySelector('canvas'); const r = c.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()`);
+  const y = box.y + box.h * row;
+  const x0 = box.x + box.w * 0.3;
+  const x1 = box.x + box.w * 0.7;
+  await p.mouse('mouseMoved', x0, y, 0);
+  await p.mouse('mousePressed', x0, y);
+  for (let k = 1; k <= 16; k++) {
+    await p.mouse('mouseMoved', x0 + ((x1 - x0) * k) / 16, y);
+    await sleep(15);
+  }
+  await p.mouse('mouseReleased', x1, y, 0);
+}
+
+// ---------- 走一遍 ----------
+
+let failed = 0;
+const pass = (what) => console.log(`  通过  ${what}`);
+const fail = (what, why) => {
+  failed++;
+  console.log(`  没过  ${what}${why ? `：${why}` : ''}`);
+};
+const check = (ok, what, why) => (ok ? pass(what) : fail(what, why));
+
+let ws;
+try {
+  ws = new WebSocket(await debugUrl());
+  await new Promise((resolve, reject) => {
+    ws.addEventListener('open', resolve);
+    ws.addEventListener('error', () => reject(new Error('连不上 Chrome 的调试端口')));
+  });
+  const cdp = new Cdp(ws);
+  const t0 = Date.now();
+
+  console.log(`冒烟：${origin}（dist/，无头 Chrome）`);
+  console.log('1. 新建');
+  let p = await Page.open(cdp, `${origin}/#demo`);
+  await p.until('世界生成好', READY, 120000);
+  const n0 = await p.until('第一次自动保存', `(${HEAD}).then((h) => (h && h.count > 0 ? h.count : 0))`, 30000);
+  const land0 = await p.eval(LAND);
+  check(n0 > 0 && !!land0, `新建了一个世界，自动保存了 ${n0} 步`);
+  check((await p.eval(BADGE)) === null, '顶栏没有“没保存”的记号');
+
+  console.log('2. 画一笔 → 等自动保存 → 刷新');
+  await stroke(p, 0.5);
+  await p.until('这一笔画上了', `(${LAND}) !== ${JSON.stringify(land0)}`, 60000);
+  await p.until('自动保存多了一步', `(${HEAD}).then((h) => !!h && h.count === ${n0 + 1})`, 30000);
+  await p.until('算完', READY, 60000);
+  const land1 = await p.eval(LAND);
+  check(land1 !== land0, '画了一笔：陆地变了');
+  let writer = (await p.eval(HEAD)).writer;
+  const asked1 = p.leaveAsked;
+  await p.send('Page.navigate', { url: `${origin}/` });
+  await p.until('刷新后世界打开', READY, 120000);
+  check(p.leaveAsked === asked1, '都存好了的时候刷新：浏览器没有问“要离开吗”');
+  check((await p.eval(LAND)) === land1, '刷新后世界还在，那一笔还在（陆地逐字节相同）', `刷新前 ${land1}，刷新后 ${await p.eval(LAND)}`);
+  check((await count(p)) === n0 + 1, `存着的还是 ${n0 + 1} 步`, `是 ${await count(p)} 步`);
+
+  console.log('3. 再画一笔，世界一变就马上刷新（不等 1.5 秒）');
+  writer = (await ownWrite(p, writer)).writer;
+  await stroke(p, 0.4);
+  await p.until('这一笔画上了', `(${LAND}) !== ${JSON.stringify(land1)}`, 60000);
+  const changedAt = Date.now();
+  const land2 = await p.eval(LAND);
+  const before2 = await count(p);
+  const asked2 = p.leaveAsked;
+  await p.send('Page.navigate', { url: `${origin}/` });
+  const waited = Date.now() - changedAt;
+  await p.until('刷新后世界打开', READY, 120000);
+  console.log(`     （世界变了以后 ${waited} 毫秒发出刷新；那时存着 ${before2} 步）`);
+  check(before2 === n0 + 1 ? true : before2 === n0 + 2, `刷新之前平常的自动保存还没轮到（存着 ${before2} 步）`);
+  check((await p.eval(LAND)) === land2, '刷新后那一笔还在（关页面时写下的）', `刷新前 ${land2}，刷新后 ${await p.eval(LAND)}`);
+  check((await count(p)) === n0 + 2, `存着 ${n0 + 2} 步`, `是 ${await count(p)} 步`);
+  check(p.leaveAsked > asked2, '有没存的改动时刷新：浏览器先问了“要离开吗”', '没有问（无头 Chrome 里页面没有“用户操作过”时不问）');
+
+  console.log('4. 再画一笔，马上关掉页面、另开一个');
+  writer = (await ownWrite(p, writer)).writer;
+  await stroke(p, 0.6);
+  await p.until('这一笔画上了', `(${LAND}) !== ${JSON.stringify(land2)}`, 60000);
+  const land3 = await p.eval(LAND);
+  // 关页面（照浏览器关标签页那样，会先走 beforeunload）
+  await p.send('Page.close').catch(() => {});
+  await sleep(500);
+  p = await Page.open(cdp, `${origin}/`);
+  await p.until('另开的页面里世界打开', READY, 120000);
+  check((await p.eval(LAND)) === land3, '关掉再开，那一笔还在', `关之前 ${land3}，再开 ${await p.eval(LAND)}`);
+  check((await count(p)) === n0 + 3, `存着 ${n0 + 3} 步`, `是 ${await count(p)} 步`);
+
+  console.log('5. 同一个地址再开一个页面');
+  const head1 = await ownWrite(p, writer);
+  let q = await Page.open(cdp, `${origin}/`);
+  await q.until('第二个页面里世界打开', READY, 120000);
+  const banner = await q.until('第二个页面顶上的那一条', BANNER, 20000).catch(() => null);
+  check(!!banner, `第二个页面说：“${banner}”`, '没有出现');
+  check((await p.eval(BANNER)) === null, '第一个页面没有这一条');
+  check(/另一个页面/.test((await q.eval(BADGE)) ?? ''), `第二个页面顶栏“世界”旁有记号（${await q.eval(BADGE)}）`);
+  await q.shot('第二个页面-顶上的一条');
+  if (shots) {
+    // “世界”菜单的第一行
+    await q.eval(`document.querySelector('.topbar .tb-badge.warn').click()`);
+    await sleep(300);
+    await q.shot('第二个页面-世界菜单');
+    await q.eval(`document.querySelector('.topbar .tb-badge.warn').click()`);
+    await q.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await q.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await sleep(200);
+  }
+  // 第二个页面画一笔：存不进去
+  const landQ0 = await q.eval(LAND);
+  await stroke(q, 0.45);
+  await q.until('第二个页面这一笔画上了', `(${LAND}) !== ${JSON.stringify(landQ0)}`, 60000);
+  await sleep(2500);
+  const head2 = await p.eval(HEAD);
+  check(head2.count === head1.count && head2.writer === head1.writer, '第二个页面画的没有写进自动保存（还是第一个页面的那一份）', JSON.stringify(head2));
+  // “在这里接着做”
+  await q.eval(`(() => { const b = [...document.querySelectorAll('.notices .notice.banner button')].find((x) => x.textContent.includes('在这里接着做')); if (!b) throw new Error('找不到“在这里接着做”'); b.click(); })()`);
+  await q.until('第二个页面的那一条消失', `(${BANNER}) === null`, 20000);
+  const bannerP = await p.until('第一个页面出现那一条', BANNER, 20000).catch(() => null);
+  check(!!bannerP, '点“在这里接着做”：换成第一个页面说“已在另一个页面打开”', '第一个页面没有出现');
+  const head3 = await q.until('第二个页面整份写下', `(${HEAD}).then((h) => (h && h.writer !== ${JSON.stringify(head1.writer)} ? h : null))`, 20000).catch(() => null);
+  check(!!head3 && head3.count === n0 + 4, `自动保存换成了第二个页面的世界（${head3?.count} 步）`, JSON.stringify(head3));
+  // 第一个页面再画：存不进去
+  const landP0 = await p.eval(LAND);
+  await stroke(p, 0.55);
+  await p.until('第一个页面这一笔画上了', `(${LAND}) !== ${JSON.stringify(landP0)}`, 60000);
+  await sleep(2500);
+  const head4 = await q.eval(HEAD);
+  check(head4.count === head3?.count && head4.writer === head3?.writer, '第一个页面画的不再写进自动保存');
+  // 刷新第二个页面：打开的是它自己的世界
+  const landQ1 = await q.eval(LAND);
+  await q.send('Page.navigate', { url: `${origin}/` });
+  await q.until('第二个页面刷新后世界打开', READY, 120000);
+  check((await q.eval(LAND)) === landQ1, '第二个页面刷新后是它自己的世界');
+
+  // 第一个页面的世界和存着的不一样：第二个页面刷新（锁空出来过一下）时它没有自己接过去
+  await sleep(1000);
+  check(!!(await p.eval(BANNER)), '第一个页面（世界不一样）没有趁第二个页面刷新自己接过去，还说着');
+  await p.send('Page.close').catch(() => {});
+  const head5 = await ownWrite(q, head4.writer);
+  // 第三个页面：打开的就是存着的那一份。写的那个页面关了，它不用点就接着保存
+  const r = await Page.open(cdp, `${origin}/`);
+  await r.until('第三个页面里世界打开', READY, 120000);
+  const bannerR = await r.until('第三个页面顶上的那一条', BANNER, 20000).catch(() => null);
+  check(!!bannerR, '第三个页面也说“已在另一个页面打开”');
+  await q.send('Page.close').catch(() => {});
+  const gone = await r.until('第三个页面的那一条消失', `(${BANNER}) === null`, 20000).catch(() => null);
+  check(!!gone, '写的那个页面关了：接着它存下的那一份做的页面不用点就接着保存（那一条消失）');
+  const headR = await ownWrite(r, head5.writer).catch(() => null);
+  check(!!headR && headR.count === head5.count, `第三个页面写下了自己的世界（${headR?.count} 步）`);
+  q = r;
+
+  console.log('6. 上次的世界打不开');
+  let head6 = await ownWrite(q, head4.writer);
+  // 等它写完这一次以后的那一下，再改：把最后一步换成引擎不认识的命令
+  await sleep(500);
+  head6 = await q.eval(HEAD);
+  await q.eval(tamper(head6.count - 1, { op: 'no_such_command' }));
+  await q.send('Page.navigate', { url: `${origin}/` });
+  const asked = await q.until('“上次的世界没能打开”的问话', `(() => { const a = ${ASK}; return a && a.title.includes('没能打开') ? a : null; })()`, 120000).catch(() => null);
+  check(!!asked, `不进向导，先问：“${asked?.title}”（${asked?.buttons.join(' / ')}）`, `没有出现；向导${(await q.eval(`!!document.querySelector('.modal.wizard')`)) ? '开了' : '没开'}`);
+  check(!!asked && asked.note.length > 2 && asked.text.includes('没有丢'), `写着原因：${asked?.note}`);
+  await q.shot('上次的世界没能打开');
+  check((await count(q)) === head6.count, '那一份自动保存还在原处');
+  await q.eval(`(() => { const b = [...document.querySelectorAll('.modal.ask .ask-actions button')].find((x) => x.textContent === '新建'); if (!b) throw new Error('找不到“新建”'); b.click(); })()`);
+  await q.until('向导', `!!document.querySelector('.modal.wizard')`, 20000);
+  await q.until('向导里的小图', `!!document.querySelector('.modal.wizard button.thumb:not([disabled])')`, 120000);
+  check((await count(q)) === head6.count, '到了向导，还没新建：那一份还在原处');
+  await q.eval(`document.querySelector('.modal.wizard button.thumb:not([disabled])').click()`);
+  await q.until('新世界建好', READY, 180000);
+  await ownWrite(q, head6.writer);
+  const kept6 = await q.eval(BACKUPS);
+  check(kept6.length === 1 && kept6[0].why === 'failed' && kept6[0].steps === head6.count && !!kept6[0].error, `新建以后原来那一份在“留着的旧世界”里（${JSON.stringify(kept6)}）`);
+  const note6 = await q.until('顶上说它还留着', KEPT_NOTE, 20000).catch(() => null);
+  check(!!note6 && note6.includes('没能打开'), `顶上一直有一条：“${note6}”`);
+  await q.shot('新建以后-它还留着');
+
+  console.log('7. 自动保存没存完整');
+  const head7 = await q.eval(HEAD);
+  await sleep(500);
+  await q.eval(tamper(1, null));
+  await q.send('Page.navigate', { url: `${origin}/` });
+  await q.until('向导', `!!document.querySelector('.modal.wizard')`, 120000);
+  const kept7 = await q.until('挪进留着的旧世界', `(${BACKUPS}).then((l) => (l.some((b) => b.why === 'damaged') ? l : null))`, 20000).catch(() => null);
+  check(!!kept7 && kept7.length === 2 && kept7.some((b) => b.why === 'damaged' && b.steps === head7.count - 1), `没存完整的那一份不当没有：在“留着的旧世界”里（${JSON.stringify(kept7)}）`);
+  check((await q.eval(HEAD)) === null, '自动保存的位置空出来了');
+  const note7 = await q.until('向导上面说它还留着', KEPT_NOTE, 20000).catch(() => null);
+  check(!!note7 && note7.includes('没存完整'), `向导上面写着：“${note7}”`);
+  await q.shot('没存完整-向导上面');
+
+  const errors = [...p.errors, ...q.errors];
+  check(errors.length === 0, '页面里没有没接住的错', errors.slice(0, 3).join('；'));
+  console.log(`${failed ? `没过 ${failed} 项` : '都通过'}（${((Date.now() - t0) / 1000).toFixed(0)} 秒）`);
+} catch (e) {
+  failed++;
+  console.log(`  没过  ${e.message ?? e}`);
+} finally {
+  try {
+    ws?.close();
+  } catch {
+    // 已经断了
+  }
+  chrome.kill();
+  server.close();
+  await sleep(300);
+  if (keep) console.log(`临时目录：${profile}`);
+  else rmSync(profile, { recursive: true, force: true, maxRetries: 5 });
+}
+process.exit(failed ? 1 : 0);

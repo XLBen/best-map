@@ -5,7 +5,8 @@ import { builtinPacks, worldPartsOf } from '../core/packs/builtin-tree';
 import { importToPack } from '../core/packs/closure';
 import { packImportCommands } from '../core/packs/import';
 import { type LibraryEntry, type Stored, installPack, library, refreshLibrary } from './library';
-import { FLUSH_MS, FLUSH_SOON_MS, type LibBackend, type Wal, copiedPack, copyLibrary, createLibEditor, createLibrary, deleteLibrary, libEdits } from './library-edit';
+import { FLUSH_MS, FLUSH_RETRY_MS, FLUSH_SOON_MS, type LibBackend, type Wal, copiedPack, copyLibrary, createLibEditor, createLibrary, deleteLibrary, libEdits } from './library-edit';
+import { FakeIDB } from './testing/fake-idb';
 import { Engine } from '../core/engine';
 import { humanDigest, meshFor } from '../core/testing/fixtures';
 import { newWorldCommands } from './ui/domain/forms';
@@ -199,6 +200,92 @@ describe('改一项：只查这一项，延迟写入', () => {
   });
 });
 
+// 第九十四轮：整个库没写进存储（满了、不可用）时不当它写成了
+describe('整个库没写进去', () => {
+  function failing() {
+    const store = fakeBackend();
+    let ok = false;
+    const put = store.backend.put;
+    store.backend.put = async (rec) => (ok ? put(rec) : (store.puts.push(rec), false));
+    let list: LibraryEntry[] = [{ key: 'mine', pack: pack(), builtin: false, mine: true, installedAt: 1 }];
+    const fails: string[] = [];
+    const ed = createLibEditor(store.backend, {
+      entries: () => list,
+      publish: (key, p) => {
+        list = list.map((e) => (e.key === key ? { ...e, pack: p } : e));
+      },
+      onStoreFail: (key, p) => fails.push(`${key}:${p.name}`),
+    });
+    return { ...store, ed, fails, allow: (v: boolean) => (ok = v), cur: () => list[0].pack };
+  }
+
+  it('留着“没写”的记号和日志，说一次，过一阵再试；写成了才清掉', async () => {
+    const { ed, wal, packs, puts, fails, allow } = failing();
+    ed.setItem('mine', 'culture', 'c1', c1);
+    expect(wal.get('mine')!.ops.length).toBe(1);
+    await vi.advanceTimersByTimeAsync(FLUSH_MS);
+    expect(puts.length).toBe(1);
+    // 没写进去：记号、日志都在（刷新页面以后日志还能补上这一项）
+    expect(ed.isDirty('mine')).toBe(true);
+    expect(wal.get('mine')!.ops).toEqual([{ section: 'cultures', id: 'c1', item: c1 }]);
+    expect(packs.has('mine')).toBe(false);
+    expect(fails).toEqual(['mine:我的库']);
+    // 过一阵再试，还是不行：不再说第二次
+    await vi.advanceTimersByTimeAsync(FLUSH_RETRY_MS);
+    expect(puts.length).toBe(2);
+    expect(ed.isDirty('mine')).toBe(true);
+    expect(fails.length).toBe(1);
+    // 存储好了：下一次试就写成，记号、日志清掉
+    allow(true);
+    await vi.advanceTimersByTimeAsync(FLUSH_RETRY_MS);
+    expect(ed.isDirty('mine')).toBe(false);
+    expect(wal.has('mine')).toBe(false);
+    expect(culture(packs.get('mine')!.pack, 'c1')!.name).toBe('改过');
+    // 之后又写不进去：再说一次
+    allow(false);
+    ed.setItem('mine', 'culture', 'c1', { ...c1, name: '又改' });
+    await vi.advanceTimersByTimeAsync(FLUSH_MS);
+    expect(fails.length).toBe(2);
+    expect(ed.isDirty('mine')).toBe(true);
+  });
+
+  it('刷新页面：没写进去的那一项从日志里补上', async () => {
+    const { ed, backend } = failing();
+    ed.setItem('mine', 'culture', 'c1', c1);
+    await vi.advanceTimersByTimeAsync(FLUSH_MS);
+    const fresh = createLibEditor(backend, { entries: () => [], publish: () => {} });
+    const p = fresh.adopt({ key: 'mine', pack: pack(), installedAt: 1, mine: true, rev: 1 }, pack());
+    expect(culture(p, 'c1')!.name).toBe('改过');
+  });
+
+  it('马上写的那几种（加、删、改库名）没写进去：也留着记号、过一阵再试；关页面时再试一次', async () => {
+    const { ed, packs, puts, fails, allow } = failing();
+    expect(ed.rename('mine', '新名字')).toEqual({ ok: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(puts.length).toBe(1);
+    expect(ed.isDirty('mine')).toBe(true);
+    expect(fails).toEqual(['mine:新名字']);
+    allow(true);
+    await ed.flushAll();
+    expect(ed.isDirty('mine')).toBe(false);
+    expect(packs.get('mine')!.pack.name).toBe('新名字');
+  });
+
+  it('存储抛错也算没写进去；库删掉以后不再试', async () => {
+    const { ed, backend, puts } = failing();
+    backend.put = async (rec) => {
+      puts.push(rec);
+      throw new Error('存储不可用');
+    };
+    ed.setItem('mine', 'culture', 'c1', c1);
+    await vi.advanceTimersByTimeAsync(FLUSH_MS);
+    expect(ed.isDirty('mine')).toBe(true);
+    ed.forget('mine');
+    await vi.advanceTimersByTimeAsync(FLUSH_RETRY_MS * 2);
+    expect(puts.length).toBe(1);
+  });
+});
+
 describe('真的日志（localStorage）', () => {
   // 一张表当 localStorage
   function fakeStorage() {
@@ -210,6 +297,9 @@ describe('真的日志（localStorage）', () => {
   it('改一项写进 localStorage，只有这一项；写不进去（满了）时很快写整个库', async () => {
     const s = fakeStorage();
     vi.stubGlobal('localStorage', s);
+    // 第九十四轮：整个库要真的写得进去才算写了（以前写没写成都清掉“没写”的记号）——给一个写得进去的 IndexedDB
+    const idb = new FakeIDB();
+    vi.stubGlobal('indexedDB', idb);
     let list: LibraryEntry[] = [{ key: 'mine', pack: pack(), builtin: false, mine: true, installedAt: 1 }];
     const ed = createLibEditor(undefined, { entries: () => list, publish: (_k, p) => void (list = [{ ...list[0], pack: p }]) });
     ed.setItem('mine', 'culture', 'c1', c1);
@@ -231,8 +321,9 @@ describe('真的日志（localStorage）', () => {
     };
     expect(ed.setItem('mine', 'culture', 'c1', { ...c1, name: '满了也改' })).toEqual({ ok: true });
     expect(culture(list[0].pack, 'c1')!.name).toBe('满了也改');
-    await vi.advanceTimersByTimeAsync(FLUSH_SOON_MS);
+    await vi.advanceTimersByTimeAsync(FLUSH_SOON_MS + 50);
     expect(ed.isDirty('mine')).toBe(false);
+    expect(culture((idb.data.get('packs')!.get('mine') as Stored).pack, 'c1')!.name).toBe('满了也改');
   });
 
   it('日志里不合格式的一项（版本变了）不补，别的照补', () => {
