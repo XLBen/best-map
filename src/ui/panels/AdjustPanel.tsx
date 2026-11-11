@@ -52,6 +52,8 @@ function AdjustRow({ def, w }: { def: AdjustmentDef; w: World }) {
       changed={draft !== null && draft !== now}
       pos={toPos(def, v, range) / RES}
       text={avail ? def.format(v) : '—'}
+      textAt={(p) => (def.typed ?? String)(at(p))}
+      entry={(def.typed ?? String)(v)}
       note={
         (def.note || previewNote) && (
           <>
@@ -108,7 +110,7 @@ function FieldsBox({ w }: { w: World }) {
   return (
     <section>
       <h5>自定义场</h5>
-      <p class="hint">如“魔力”“文明度”，可在生态的“高级”条件里用</p>
+      <p class="hint">如“魔力”“文明度”，可在生态“更多设置”的条件里用</p>
       {names.map((f) => (
         <div class="item">
           <span class="grow ellipsis">{f}</span>

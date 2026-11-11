@@ -71,6 +71,7 @@ export const ADJUSTMENTS: AdjustmentDef[] = [
   {
     ...planet('riverThreshold', '河流多少', '往右河越多', [0, 1], 0.01, (p) => `${level(p, ['很少', '较少', '较多', '很多'])} · ≥ ${riverThr(p)} m³/s`),
     read: (w: World) => riverPos(w.small.planet.riverThreshold),
+    typed: (p: number) => String(riverThr(p)),
     command: (_w: World, p: number) => ({ op: 'set_planet', patch: { riverThreshold: riverThr(p) } }),
     busyLabel: '正在计算…',
   },

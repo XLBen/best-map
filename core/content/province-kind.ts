@@ -26,9 +26,9 @@ const FIELDS: readonly FieldDesc[] = [
     ],
     hint: '海永远单独成省',
   },
-  { key: 'seaByDistance', label: '近海小、远洋大', type: 'bool', hint: '海省离岸越远越大' },
-  { key: 'riverCost', label: '沿河', type: 'number', min: 0, max: 20, step: 0.5, hint: '越大，省界越贴着河' },
-  { key: 'ridgeCost', label: '沿山脊', type: 'number', min: 0, max: 20, step: 0.5, hint: '越大，省界越贴着山脊' },
+  { key: 'seaByDistance', more: true, label: '近海小、远洋大', type: 'bool', hint: '海省离岸越远越大' },
+  { key: 'riverCost', more: true, label: '沿河', type: 'number', min: 0, max: 20, step: 0.5, hint: '越大，省界越贴着河' },
+  { key: 'ridgeCost', more: true, label: '沿山脊', type: 'number', min: 0, max: 20, step: 0.5, hint: '越大，省界越贴着山脊' },
 ];
 
 const worldRules = (content: ContentStore | undefined): ProvinceRules[] => Object.values(content?.provinceRules ?? {}) as ProvinceRules[];

@@ -1,6 +1,8 @@
 import type { Command } from '../../../core/commands';
 import { type ContentKind, type FieldDesc, kindOf } from '../../../core/content/registry';
-import { type Era, worldEra } from '../../../core/human';
+import { type Era, defaultTotalPop, worldEra } from '../../../core/human';
+import { popText } from '../../../core/human/city-archive';
+import type { World } from '../../../core/world';
 import type { ProvinceRules } from '../../../core/province-rules';
 import type { PackWorld } from '../../../core/packs';
 import type { Obj } from './fields';
@@ -64,6 +66,39 @@ export function genSummary(p: GenPage): string {
   if (e) parts.push(`人口 ${e.popDensity} 人/km²`);
   if (p.provinces) parts.push(`省 ${p.provinces.item.size} 格`);
   return parts.join(' · ');
+}
+
+// ---------- 每一项下面的一句（第九十三轮）：现在是什么样、调了会怎样 ----------
+
+export interface GenNotes {
+  // 国家大小：现在几个国家
+  countryKm2: string;
+  // 人口密度：按这个密度一共多少人
+  popDensity: string;
+  // 城市化率：其中城里多少人
+  urbanization: string;
+}
+
+// 按密度算的总人口要走一遍陆地的格：按世界和密度记着（拖滑块松手才换时代，一次一算）
+const totals = new WeakMap<object, { density: number; total: number }>();
+function totalPop(w: World, era: Era): number {
+  const hit = totals.get(w);
+  if (hit && hit.density === era.popDensity) return hit.total;
+  const total = defaultTotalPop(w, w.derived, era);
+  totals.set(w, { density: era.popDensity, total });
+  return total;
+}
+
+// 生成设置里时代那几项下面各写一句。w 要是完整的世界（有推导）；没有时只写方向
+export function genNotes(w: PackWorld, era: Era): GenNotes {
+  const n = Object.keys(w.small.countries ?? {}).length;
+  const full = (w as Partial<World>).derived && (w as Partial<World>).mesh ? (w as World) : null;
+  const total = full ? totalPop(full, era) : null;
+  return {
+    countryKm2: n ? `现在 ${n} 个国家；调小，国家更多` : '调小，国家更多',
+    popDensity: total === null ? '陆地上平均每平方千米几个人' : `按这个密度一共约 ${popText(total)} 人`,
+    urbanization: total === null ? '住在城里的人占几成' : `城里约 ${popText(total * era.urbanization)} 人`,
+  };
 }
 
 const areaText = (km2: number): string => (km2 >= 1e4 ? `${Number((km2 / 1e4).toPrecision(3))} 万 km²` : `${km2} km²`);

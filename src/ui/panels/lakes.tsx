@@ -116,6 +116,7 @@ function LakeSizeSlider({ w, l }: { w: World; l: LakeSpec }) {
       label="直径"
       pos={clamp01(Math.log(cur / lo) / Math.log(hi / lo))}
       text={`${km(cur * 2)} km`}
+      textAt={(p) => `${km(at(p) * 2)} km`}
       title="湖有多大；松手后重挖湖盆"
       onDraft={(p) => {
         const v = at(p);

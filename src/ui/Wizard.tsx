@@ -144,6 +144,7 @@ function TerrainRow({ s, value, base, onChange }: { s: TerrainSlider; value: num
       changed={Math.abs(v - base) >= s.step / 2}
       pos={toPos(s, v, s.range) / RES}
       text={s.format(v)}
+      textAt={(p) => s.format(at(p))}
       onDraft={(p) => setDraft(at(p))}
       onCommit={(p) => {
         setDraft(null);

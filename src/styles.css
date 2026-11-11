@@ -461,6 +461,54 @@ button.link-btn:hover:not(:disabled) {
 .slider-note {
   grid-area: note;
 }
+/* 第九十三轮：右边的数能点开打字（slider-entry.ts）；超出范围时浮出一句 */
+.slider {
+  position: relative;
+}
+.slider-value.can-type {
+  cursor: text;
+  border-radius: var(--r-sm);
+}
+.slider-value.can-type:hover,
+.slider-value.can-type:focus-visible {
+  background-image: linear-gradient(var(--hover), var(--hover));
+  outline: none;
+}
+input.slider-entry {
+  width: 4.5em;
+  min-width: 0;
+  height: 20px;
+  padding: 0 var(--sp-1);
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--accent-line);
+  outline: none;
+}
+.slider.stacked input.slider-entry {
+  grid-area: value;
+  justify-self: end;
+  width: 6em;
+  text-align: right;
+}
+.slider-entry-note {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  z-index: 2;
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+}
 .slider-note-line {
   display: block;
 }
@@ -1717,15 +1765,6 @@ select.ed-add {
 /* ---------- 面板里的东西 ---------- */
 .river-more .row {
   margin: var(--sp-2) 0;
-}
-/* 列表里展开的一种（河流类型、湖泊类型、岛的种类）的编辑 */
-.river-type-editor {
-  padding: var(--sp-2) var(--sp-1) var(--sp-3) var(--sp-3);
-  border-left: 2px solid var(--line);
-  margin: 2px 0 var(--sp-2) var(--sp-2);
-}
-.river-type-editor h5 {
-  margin: var(--sp-3) 0 2px;
 }
 /* 生态编辑器的“允许的水系”：两列勾 */
 .biome-picks {

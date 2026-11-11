@@ -72,7 +72,8 @@
 - `rng.ts` 随机数与噪声（按位置取，与格数无关）；`digest.ts` 64 位哈希；`errors.ts`、`type-id.ts`、`world-types.ts` 为避免循环引用拆出来的小文件
 
 ## 内容与资源包
-- `content/registry.ts` 内容种类的登记表（`ContentKind`、`allKinds`、`kindOf`）；编辑器的字段表 `FieldDesc`（第四十五轮：`ref` / `keyRef` 引用什么，`tuple`、`tuples`、`title`、`titleList`、`tendencies` 几种成块的字段）；`content/kinds.ts` 现有的种类在这里登记（登记的先后有意义）；`content/province-kind.ts` 省份划分（第七十八轮，一个世界一份，改了湖的归属马上整理）
+- `effect-ranges.ts`（第九十三轮）同一个数一套范围和单位：生态的强弱、变暖变冷、变湿变干（存指数、写降水的百分之几：`RAIN_SCALE`、`rainText`、`percentOfDp` / `dpOfPercent`）、影响的范围、侵占的力度、图案的三项、河的粗细、星球形态的陆地多少等——生态编辑器、向导、星球形态编辑器的滑块和字段表都引用它；只是滑块的范围，不参与计算，不引用别的模块
+- `content/registry.ts` 内容种类的登记表（`ContentKind`、`allKinds`、`kindOf`）；编辑器的字段表 `FieldDesc`（第四十五轮：`ref` / `keyRef` 引用什么，`tuple`、`tuples`、`title`、`titleList`、`tendencies` 几种成块的字段；第九十三轮：`more` 收在“更多设置”里、`show` 这个数在滑块上怎么写（`expPercent`、`flow`）、`pick` / `keyPick` 从现成的表里选（不是引用，引用表不看）、`keyLabel` map 的键怎么叫——都只管界面，不影响格式、导入）；`content/kinds.ts` 现有的种类在这里登记（登记的先后有意义）；`content/province-kind.ts` 省份划分（第七十八轮，一个世界一份，改了湖的归属马上整理）
 - `content/links.ts` 内容之间的引用表（第四十九轮）：由字段表推出，一项引用了什么、谁引用它、依赖的闭包（`hard` / `auto` / `strip` / `gate`，`gate` 是“限谁用”，全部落空就不能导入）、改名时跟着改（`renameLinks`）、去掉引用（`stripLinks`）；第七十三轮字段表多了 `follow`（去得掉的引用导入时也跟着带：时代的国家格局）；`content/link-rules.ts` 每种内容一条补充；`content/pack-tree.ts` 走包的树（`packs.ts` 照旧导出）
 - `content/arrange.ts` 融入（第六十轮）：库的 `arrange`（下级 → 上级，只改显示）、讲得通的组合 `RELATIONS`（怎么读出下面有哪些、加和移出改哪一项）、预设 `PRESET_ARRANGE`、`childrenOf`、`parentsOf`、`looseItems`
 - `content/refs.ts` 引用的底层：脚本字面量的位置、两项是不是一模一样（`sameItem`、`sameContent`）；`content/usage.ts` 内容用在哪里；`content/unused.ts`（第五十轮起也看文化、文化组、地名风格、时代）哪里都没用到的；`content/cleanable.ts`（第六十二轮）生成后没用到的：面板上变淡的、“清理没用到的”清的都是它，生态、河、湖、画风不算；`content/origin.ts` 每项来自哪个包、改名前的 id；`content/missing.ts` 缺了什么

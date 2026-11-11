@@ -1,13 +1,14 @@
 import { findScripts } from '../../core/script';
-import { safeMode, scriptEditor, setSpeciesVisualOverride, world, worldEpoch } from '../state';
+import { openPanel, safeMode, scriptEditor, setSpeciesVisualOverride, waterTypeEditor, world, worldEpoch } from '../state';
 import { forgetDrafts, trustDraft } from '../trust';
 import { type CommittedScript, openScriptEditor, registerScriptCommitted, registerVisualOverride } from './editor-hooks';
+import { openWaterType } from './ecology/open';
 
 // 第三批几处各自做好的口子在这里接上（main.tsx 一开始引用一次）：
 // - 生态编辑器拖花纹、发光滑块：画面那边在主线程上临时换掉这种生态的外观，地图立即重画（state.ts 的 visualOverrides）；
 // - 脚本框提交的脚本：记进信任列表（trust.ts），同一步里被换掉的中间版本去掉；
 // - 顶部“「X」的脚本出错了”的“编辑”：打开资源库里这种生态的页面、展开“高级”、光标放进那个脚本框
-//   （河流类型的规则由 state.ts 的 editScript 打开“水系 ⋯”里那种河，星球形态的脚本没有“编辑”）
+//   （第九十三轮：河流、湖泊类型的规则也是——打开资源库里那种河的页面、展开“规则”一段；星球形态的脚本没有“编辑”）
 
 registerVisualOverride(setSpeciesVisualOverride);
 
@@ -31,3 +32,7 @@ export function scriptCommitted(c: CommittedScript): Promise<void> {
 registerScriptCommitted((c) => void scriptCommitted(c));
 
 scriptEditor.open = openScriptEditor;
+waterTypeEditor.open = (kind, id) => {
+  openPanel.value = null;
+  openWaterType(kind, id, 'scripts');
+};

@@ -2,15 +2,14 @@ import type { Command } from '../../../core/commands';
 import type { IslandType } from '../../../core/island-types';
 import { type MapStyle, styleRgba } from '../../../core/map-style';
 import { packFileName } from '../../../core/packs';
-import { type NoteAction, askUser, download, execAdjust, knowIsolation, openPanel, openWaterTypeEditor } from '../../state';
+import { type NoteAction, askUser, download, execAdjust, knowIsolation } from '../../state';
 import { trustScripts, untrustedScripts } from '../../trust';
 import { scriptTrustText } from '../copy';
-import { category, setTool } from '../defs/tools';
-import { islandSwatch, requestIslandTypeEditor } from '../panels/island-types';
+import { islandSwatch } from '../domain/island-swatch';
 import { type ItemRow, itemPack } from './rows';
 import { isolationNote } from './script-trust';
 
-// 面板里一行的样子（色块、示例名字）和按钮做的事（先问脚本、存进资源库、导出、打开详细编辑）
+// 面板里一行的样子（色块、示例名字）和按钮做的事（先问脚本、存进资源库、导出）
 
 // 没信任过的脚本先问，然后做这条命令
 export async function runTrusted(cmd: Command, busy: string, note?: { head?: string; action?: NoteAction }): Promise<boolean> {
@@ -79,19 +78,3 @@ export const exportRow = (row: ItemRow) => {
   const pack = itemPack(row);
   download(packFileName(pack), JSON.stringify(pack, null, 2), 'application/json');
 };
-
-// 生态、河、湖、岛的详细编辑（图表、脚本检查；改的是世界里的那一项）
-export function openDedicated(row: ItemRow) {
-  const wid = row.status.worldId ?? row.id;
-  switch (row.kind.id) {
-    case 'riverType':
-    case 'lakeType':
-      openWaterTypeEditor(row.kind.id === 'riverType' ? 'river' : 'lake', wid);
-      return;
-    case 'islandType':
-      if (category.value !== 'terrain') setTool('island');
-      requestIslandTypeEditor(wid);
-      openPanel.value = 'cat:terrain';
-      return;
-  }
-}

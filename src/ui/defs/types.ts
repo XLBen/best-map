@@ -143,6 +143,8 @@ export interface AdjustmentDef {
   scale?: 'log' | 'linear';
   step: number;
   format(v: number): string;
+  // 第九十三轮：点数值打字时这个值写成什么数（省略时就是值本身；河流多少存的是位置，打的是门槛的流量）
+  typed?(v: number): string;
   command(w: World, v: number): Command;
   // 'terrain'：拖动时实时预览陆海变化；'world'：停下后在副本上算出将来的世界（生态、雪、河、风），地图直接画它
   preview?: 'terrain' | 'world';

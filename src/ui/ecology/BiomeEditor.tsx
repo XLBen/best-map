@@ -1,13 +1,13 @@
 import { useEffect, useLayoutEffect, useState } from 'preact/hooks';
 import { kindOf } from '../../../core/content/registry';
-import { CONDITIONS, type ConditionId, HEIGHT_MARGIN, HEIGHT_MAX, M_RANGE, type Species, T_RANGE, elevationTolerances, speciesConditions, speciesRect } from '../../../core/species';
-import { askUser, download, exec, options, tool, world } from '../../state';
-import { packFileName } from '../../../core/packs';
+import { COMPETITION as COMPETITION_RANGE } from '../../../core/effect-ranges';
+import { CONDITIONS, type ConditionId, HEIGHT_MARGIN, HEIGHT_RANGE, M_RANGE, type Species, T_RANGE, elevationTolerances, speciesConditions, speciesRect } from '../../../core/species';
+import { tool, world } from '../../state';
 import { Seg } from '../common';
 import { RangeSliders } from '../components/RangeSliders';
 import { Slider, linear } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
-import { paintWith, setTool } from '../defs/tools';
+import { setTool } from '../defs/tools';
 import { FieldsBox } from '../packs/ContentEditor';
 import type { Obj } from '../packs/fields';
 import { BiomeWaterSegment } from '../packs/PageEcology';
@@ -20,14 +20,16 @@ import { rangePick } from '../tools/public';
 import { BiomeAdvanced } from './BiomeAdvanced';
 import { BiomeChart } from './BiomeChart';
 import { EDITOR_VIEWS, editorOpened, shownEditorView, showEditorView } from './base-map';
-import { alpinePatch, biomesPack, conditionPatch, copySpeciesCommand, elevationPatch, elevationText, heightOf, heightPatch, isAlpine, newSpeciesCommand, rangeText, rectPatch } from './biome-edit';
+import { alpinePatch, conditionPatch, elevationPatch, elevationText, heightOf, heightPatch, isAlpine, rangeText, rectPatch } from './biome-edit';
 import { type BiomeTarget, biomeTarget } from './biome-target';
 import { biomeShares, fmtM, fmtShare, fmtT } from './chart';
 
 // 生态编辑器（第七十二轮）：生态抽屉（ClimateChart.tsx + SpeciesAdvanced.tsx）和资源库里生态的通用表单合成这一个，
 // 就是资源库里一种生态的页面（本世界、我的库、内置的库都是它；内置的只读）。字段的叫法照生态抽屉的。
-// 上面是气候图（这一份里的全部生态），下面是这一种：名字颜色、强势程度、长在哪里、水系、人文、高级。
-// 改了就存：本世界是 update_species（和抽屉同一条命令、同一个撤销），我的库换掉这一项（这个库的撤销），见 biome-target.ts
+// 上面是气候图（这一份里的全部生态），下面是这一种：名字颜色、强弱、高度范围、只长在……、雨季、长在哪里；
+// 水系、人文和别的在“更多设置”里（第九十三轮以前叫“高级”，水系、人文在外面）。
+// 改了就存：本世界是 update_species（和抽屉同一条命令、同一个撤销），我的库换掉这一项（这个库的撤销），见 biome-target.ts。
+// 第九十三轮：这一页自己的一排按钮（用它涂、复制、新建生态、导出、删除）去掉了——和别的种类同一排（PageItem.tsx 的 Actions），新建在列表上
 
 const RAIN: [string, ConditionId | null][] = [
   ['不限', null],
@@ -37,7 +39,8 @@ const RAIN: [string, ConditionId | null][] = [
 // 海拔只在高度范围里设（“只长在高山上”是它旁边的按钮）
 const PLACES: ConditionId[] = ['coast', 'river', 'flat', 'wetland'];
 
-const COMPETITION = linear(0.5, 10, 0.1);
+// 强弱的范围和通用表单的字段表是同一处（core/effect-ranges.ts）
+const COMPETITION = linear(COMPETITION_RANGE.min, COMPETITION_RANGE.max, COMPETITION_RANGE.step);
 
 export interface BiomeEditorProps {
   sp: Species;
@@ -75,13 +78,14 @@ export function BiomeEditor({ sp, src, ctx, onSelect }: BiomeEditorProps) {
       <fieldset class="lp-fields" disabled={!!t.readonly}>
         <Basics sp={sp} t={t} />
         <Where sp={sp} t={t} />
-        <h5>水系</h5>
-        <BiomeWaterSegment src={src} ctx={ctx} sp={sp} />
-        <h5>人文</h5>
-        <FieldsBox fields={kindOf('biome')!.fields.filter((f) => f.key === 'habitability' || f.key === 'movement')} value={sp as unknown as Obj} onChange={(next) => void t.replace(sp.id, next)} issues={[]} />
-        <BiomeAdvanced sp={sp} t={t} ctx={ctx} />
+        {/* 只读的库里也能点开看（summary 不是表单控件，不跟着 fieldset 变灰） */}
+        <BiomeAdvanced sp={sp} t={t} ctx={ctx}>
+          <h5>水系</h5>
+          <BiomeWaterSegment src={src} ctx={ctx} sp={sp} />
+          <h5>人文</h5>
+          <FieldsBox fields={kindOf('biome')!.fields.filter((f) => f.key === 'habitability' || f.key === 'movement')} value={sp as unknown as Obj} onChange={(next) => void t.replace(sp.id, next)} issues={[]} />
+        </BiomeAdvanced>
       </fieldset>
-      <Buttons sp={sp} t={t} onSelect={onSelect} />
     </div>
   );
 }
@@ -125,6 +129,7 @@ function Basics({ sp, t }: { sp: Species; t: BiomeTarget }) {
         label="强弱"
         pos={COMPETITION.pos(competition ?? sp.competition)}
         text={(competition ?? sp.competition).toFixed(1)}
+        textAt={(p) => COMPETITION.at(p).toFixed(1)}
         changed={competition !== null && competition !== sp.competition}
         note="都能长时，强的占上风"
         onDraft={(p) => setCompetition(COMPETITION.at(p))}
@@ -154,7 +159,7 @@ function Where({ sp, t }: { sp: Species; t: BiomeTarget }) {
           只长在高山上
         </button>
       </div>
-      <RangeSliders lo={0} hi={HEIGHT_MAX} step={100} unit="m" value={heightOf(sp)} onCommit={(h) => void t.edit(sp.id, heightPatch(h), '正在计算…')} />
+      <RangeSliders lo={HEIGHT_RANGE.min} hi={HEIGHT_RANGE.max} step={HEIGHT_RANGE.step} unit={HEIGHT_RANGE.unit} value={heightOf(sp)} onCommit={(h) => void t.edit(sp.id, heightPatch(h), '正在计算…')} />
       {elevation.map((x) => (
         <p class="hint warn">
           另有海拔条件 {elevationText(x)}
@@ -240,65 +245,5 @@ function Range({ sp, t }: { sp: Species; t: BiomeTarget }) {
         </>
       )}
     </>
-  );
-}
-
-// 本世界：用它涂、复制、删除、新建（和以前的生态抽屉一样）；都有：导出这一份的全部生态（资源包）
-function Buttons({ sp, t, onSelect }: { sp: Species; t: BiomeTarget; onSelect: (id: string) => void }) {
-  const w = world.value;
-  const painting = options.value.biome === sp.id && tool.value === 'biome';
-  const exportAll = () => {
-    const pack = biomesPack(t.inWorld ? '这张地图的生态' : '生态', t.all, t.inWorld);
-    download(packFileName(pack), JSON.stringify(pack, null, 2), 'application/json');
-  };
-  return (
-    <div class="row wrap lp-item-actions">
-      {t.inWorld && w && (
-        <>
-          <button class="small" onClick={() => paintWith(sp.id)} disabled={painting}>
-            {painting ? '正在涂' : '用它涂'}
-          </button>
-          <button
-            class="small"
-            onClick={async () => {
-              const { id, cmd } = copySpeciesCommand(w, sp);
-              if (await exec(cmd)) onSelect(id);
-            }}
-          >
-            复制
-          </button>
-          <button
-            class="small"
-            onClick={async () => {
-              const { id, cmd } = newSpeciesCommand(w);
-              if (await exec(cmd)) onSelect(id);
-            }}
-          >
-            新建生态
-          </button>
-        </>
-      )}
-      <button class="small" title="这一份的全部生态，存成文件" onClick={exportAll}>
-        导出
-      </button>
-      {t.inWorld && (
-        <button
-          class="small danger"
-          onClick={async () => {
-            const v = await askUser({
-              title: `删除生态“${sp.name}”？`,
-              text: '长它的地方会换成别的生态',
-              choices: [
-                { value: 'delete', label: '删除', primary: true },
-                { value: 'cancel', label: '取消' },
-              ],
-            });
-            if (v === 'delete') void exec({ op: 'remove_species', id: sp.id }, '正在计算…');
-          }}
-        >
-          删除
-        </button>
-      )}
-    </div>
   );
 }

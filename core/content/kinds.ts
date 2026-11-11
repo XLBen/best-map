@@ -1,15 +1,16 @@
 import { z } from 'zod';
-import { type IslandType, ISLAND_HEIGHTS, ISLAND_LOOKS, ISLAND_SHAPES, islandTypeSchema, islandTypesOf } from '../island-types';
+import { type IslandType, ISLAND_HEIGHTS, ISLAND_HEIGHT_INFO, ISLAND_ROCK_RANGE, ISLAND_SHAPES, ISLAND_SHAPE_INFO, islandTypeSchema, islandTypesOf } from '../island-types';
 import { LAKE_STYLES, LAKE_STYLE_LABEL, type LakeType, lakeTypeSchema, lakeTypesOf } from '../lake-types';
 import { FEATURE_INFO, type FeatureType } from '../features';
 import { type NameStyle, nameStyleSchema, sampleNames, styleInUse, styleNotes, styleProblems, worldStyles } from '../name-styles';
 import { type PlanetForm, planetFormSchema } from '../planet-form';
 import { DEFAULT_LOOK, HAND_OFF, type MapStyle, mapStyleSchema, worldMapStyles } from '../map-style';
 import { RIVER_STYLES, RIVER_STYLE_LABEL, type RiverType, riverTypeSchema, riverTypesOf } from '../river-types';
-import { HEIGHT_MAX, PATTERNS, PATTERN_LABEL, type Species, elevationAsHeight, freshSpecies, speciesSchema } from '../species';
+import { HEIGHT_RANGE, PATTERNS, PATTERN_LABEL, type Species, elevationAsHeight, freshSpecies, speciesSchema } from '../species';
 import { type LakeWhenKey, LAKE_WHEN_KEYS, WHEN_KEYS, WHEN_RANGE } from '../water-types';
 import { CommandError } from '../errors';
 import { BIOME_TERRAINS } from '../export-terrain';
+import { BANK_RADIUS, BANK_RADIUS_DEFAULT, BELT_WIDTH, BIOME_RADIUS, COMPETITION, EFFECT_DP, EFFECT_DT, INVADE_STRENGTH, ISLAND_AMOUNT, LAND_FRACTION, RIVER_WIDTH, VISUAL_AMOUNT, VISUAL_GLOW, VISUAL_SIZE } from '../effect-ranges';
 import { registerHumanKinds } from '../human/kinds';
 import { registerProvinceKind } from './province-kind';
 import { type ContentWorld, type FieldDesc, type PackContext, builtinOf, isBuiltinCopy, registerKind } from './registry';
@@ -60,10 +61,11 @@ const NAMES_FIELD: FieldDesc = {
   label: '起名模板',
   type: 'list',
   optional: true,
+  more: true,
   hint: '{词表} 用地名风格的词表',
   of: [
     { key: 'p', label: '模板', type: 'text' },
-    { key: 'w', label: '权重', type: 'number', optional: true, min: 0.01 },
+    { key: 'w', label: '多少', type: 'number', optional: true, min: 0.01 },
   ],
 };
 
@@ -72,14 +74,15 @@ const whenField = (keys: readonly LakeWhenKey[]): FieldDesc => ({
   label: '条件',
   type: 'json',
   optional: true,
+  more: true,
   hint: '河按每格看，湖按整个湖；到两头是不限',
-  of: keys.map((k) => ({ key: k, label: WHEN_RANGE[k].label, type: 'range' as const, optional: true, min: WHEN_RANGE[k].lo, max: WHEN_RANGE[k].hi, step: WHEN_RANGE[k].step, unit: WHEN_RANGE[k].unit })),
+  of: keys.map((k) => ({ key: k, label: WHEN_RANGE[k].label, type: 'range' as const, optional: true, min: WHEN_RANGE[k].lo, max: WHEN_RANGE[k].hi, step: WHEN_RANGE[k].step, unit: WHEN_RANGE[k].unit, ...(k === 'flow' ? { show: 'flow' as const } : {}) })),
 });
 const WATER_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
   { key: 'color', label: '颜色', type: 'color' },
-  { key: 'atlasColor', label: '另一种颜色', type: 'color', optional: true, hint: '地图册画风用；空着同颜色' },
+  { key: 'atlasColor', label: '另一种颜色', type: 'color', optional: true, more: true, hint: '地图册画风用；空着同颜色' },
   { key: 'natural', label: '自然生成', type: 'bool', optional: true, default: true },
   { key: 'biomes', label: '只在这些生态里', type: 'tags', optional: true, ref: 'biome', dep: 'auto' },
   whenField(WHEN_KEYS),
@@ -88,14 +91,16 @@ const WATER_FIELDS: readonly FieldDesc[] = [
     label: '岸边的影响',
     type: 'json',
     optional: true,
+    more: true,
+    // 第九十三轮：范围、单位和生态“对周围的影响”同一处定义（core/effect-ranges.ts）
     of: [
-      { key: 'radiusKm', label: '范围', type: 'number', min: 10, max: 1000, step: 10, hint: 'km；越近越强' },
-      { key: 'dT', label: '变暖变冷', type: 'number', optional: true, min: -10, max: 10, step: 0.5, hint: '°C' },
-      { key: 'dP', label: '变湿变干', type: 'number', optional: true, min: -1.5, max: 1.5, step: 0.05, hint: '降水乘以 e 的这么多次方' },
+      { key: 'radiusKm', label: '范围', type: 'number', ...BANK_RADIUS, default: BANK_RADIUS_DEFAULT, hint: '越近影响越大' },
+      { key: 'dT', label: '变暖变冷', type: 'number', optional: true, ...EFFECT_DT },
+      { key: 'dP', label: '变湿变干', type: 'number', optional: true, ...EFFECT_DP, show: 'expPercent', hint: '降水多、少百分之几' },
     ],
   },
   NAMES_FIELD,
-  { key: 'scripts', label: '脚本', type: 'script', optional: true },
+  { key: 'scripts', label: '规则', type: 'script', optional: true, more: true },
 ];
 
 // ---------- 生态 ----------
@@ -136,19 +141,20 @@ registerKind<Species>({
     { key: 'name', label: '名字', type: 'text' },
     { key: 'color', label: '颜色', type: 'color' },
     // 第七十一轮：以前叫“地形类别”，和地形类别那一层（平原、丘陵……）撞名；选项写中文，存的是 id
-    { key: 'terrain', label: '导出用的地形', type: 'enum', options: BIOME_TERRAINS.map((t) => ({ value: t.id, label: t.label })), hint: '导出的地形图按它着色' },
-    { key: 'competition', label: '强弱', type: 'number', min: 0, max: 100, step: 0.5, hint: '都能长时强的占上风' },
+    { key: 'terrain', label: '导出用的地形', type: 'enum', more: true, options: BIOME_TERRAINS.map((t) => ({ value: t.id, label: t.label })), hint: '导出的地形图按它着色' },
+    { key: 'competition', label: '强弱', type: 'number', ...COMPETITION, hint: '都能长时强的占上风' },
     { key: 'natural', label: '自然生成', type: 'bool', optional: true, default: true },
-    { key: 'habitability', label: '宜居度', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '0–1；空着时按气候估' },
-    { key: 'movement', label: '通行难度', type: 'number', optional: true, min: 0.1, max: 20, step: 0.05, hint: '草原为 1；空着时按生态估' },
-    { key: 'height', label: '高度范围', type: 'range', optional: true, min: 0, max: HEIGHT_MAX, step: 100, unit: 'm', hint: '海拔；空着时不看高度' },
-    { key: 'plainRiver', label: '允许普通河', type: 'bool', optional: true },
-    { key: 'plainLake', label: '允许普通湖', type: 'bool', optional: true },
+    { key: 'habitability', label: '宜居度', type: 'number', optional: true, more: true, min: 0, max: 1, step: 0.05, hint: '0–1；空着时按气候估' },
+    { key: 'movement', label: '通行难度', type: 'number', optional: true, more: true, min: 0.1, max: 20, step: 0.05, hint: '草原为 1；空着时按生态估' },
+    { key: 'height', label: '高度范围', type: 'range', optional: true, ...HEIGHT_RANGE, hint: '海拔；空着时不看高度' },
+    { key: 'plainRiver', label: '允许普通河', type: 'bool', optional: true, more: true },
+    { key: 'plainLake', label: '允许普通湖', type: 'bool', optional: true, more: true },
     {
       key: 'waterBlock',
       label: '水系不允许时',
       type: 'enum',
       optional: true,
+      more: true,
       hint: '断流：河在这里消失',
       options: [
         { value: 'swap', label: '换类型' },
@@ -159,6 +165,7 @@ registerKind<Species>({
       key: 'tolerances',
       label: '更精细的条件',
       type: 'list',
+      more: true,
       hint: '偏低到偏高最好，到两头降到 0',
       of: [
         { key: 'field', label: '条件', type: 'text', ref: 'tolerance' },
@@ -173,12 +180,13 @@ registerKind<Species>({
       label: '图案',
       type: 'json',
       optional: true,
+      more: true,
       of: [
         { key: 'pattern', label: '花纹', type: 'enum', options: PATTERNS.map((p) => ({ value: p, label: PATTERN_LABEL[p] })) },
         { key: 'color2', label: '第二种颜色', type: 'color', optional: true },
-        { key: 'amount', label: '明显', type: 'number', optional: true, min: 0, max: 1, step: 0.05 },
-        { key: 'size', label: '花纹大小', type: 'number', optional: true, min: 0.1, max: 4, step: 0.1, hint: '以格为单位' },
-        { key: 'glow', label: '发光', type: 'number', optional: true, min: 0, max: 1, step: 0.05 },
+        { key: 'amount', label: '明显', type: 'number', optional: true, ...VISUAL_AMOUNT },
+        { key: 'size', label: '花纹大小', type: 'number', optional: true, ...VISUAL_SIZE },
+        { key: 'glow', label: '发光', type: 'number', optional: true, ...VISUAL_GLOW },
         { key: 'glowColor', label: '光的颜色', type: 'color', optional: true },
       ],
     },
@@ -187,6 +195,7 @@ registerKind<Species>({
       label: '对周围的影响',
       type: 'json',
       optional: true,
+      more: true,
       of: [
         {
           key: 'climate',
@@ -194,9 +203,9 @@ registerKind<Species>({
           type: 'json',
           optional: true,
           of: [
-            { key: 'radiusKm', label: '范围', type: 'number', min: 20, max: 3000, step: 10, hint: 'km' },
-            { key: 'dT', label: '变暖变冷', type: 'number', optional: true, min: -10, max: 10, step: 0.5, hint: '°C' },
-            { key: 'dP', label: '变湿变干', type: 'number', optional: true, min: -1.5, max: 1.5, step: 0.05 },
+            { key: 'radiusKm', label: '范围', type: 'number', ...BIOME_RADIUS, hint: '越远影响越小' },
+            { key: 'dT', label: '变暖变冷', type: 'number', optional: true, ...EFFECT_DT },
+            { key: 'dP', label: '变湿变干', type: 'number', optional: true, ...EFFECT_DP, show: 'expPercent', hint: '降水多、少百分之几' },
           ],
         },
         {
@@ -206,7 +215,7 @@ registerKind<Species>({
           optional: true,
           of: [
             { key: 'targets', label: '目标', type: 'tags', ref: 'biome' },
-            { key: 'strength', label: '力度', type: 'number', min: 0, max: 10, step: 0.1 },
+            { key: 'strength', label: '力度', type: 'number', ...INVADE_STRENGTH },
           ],
         },
       ],
@@ -216,9 +225,10 @@ registerKind<Species>({
       label: '地名',
       type: 'json',
       optional: true,
+      more: true,
       of: [{ key: 'label', label: '类型名', type: 'text', hint: '“晶林”' }, { ...NAMES_FIELD, label: '起名模板' }],
     },
-    { key: 'scripts', label: '脚本', type: 'script', optional: true },
+    { key: 'scripts', label: '脚本', type: 'script', optional: true, more: true },
   ],
   pack: {
     key: 'biomes',
@@ -281,7 +291,7 @@ registerKind<RiverType>({
   disable: (id) => ({ op: 'remove_river_type', id }),
   // 第九十轮：新建的自然生成开着（写了生态、条件或规则就按它出现）
   blank: () => ({ id: 'my-river', name: '新的河', color: '#2a7fbf', natural: true }),
-  fields: [...WATER_FIELDS, { key: 'width', label: '粗细', type: 'number', optional: true, min: 0.3, max: 3, step: 0.1 }, { key: 'style', label: '画法', type: 'enum', optional: true, options: RIVER_STYLES.map((s) => ({ value: s, label: RIVER_STYLE_LABEL[s] })) }],
+  fields: [...WATER_FIELDS, { key: 'width', label: '粗细', type: 'number', optional: true, ...RIVER_WIDTH, hint: '比普通的河粗多少，只影响画法' }, { key: 'style', label: '画法', type: 'enum', optional: true, options: RIVER_STYLES.map((s) => ({ value: s, label: RIVER_STYLE_LABEL[s] })) }],
   pack: {
     key: 'riverTypes',
     max: 64,
@@ -336,11 +346,12 @@ registerKind<IslandType>({
   fields: [
     { key: 'id', label: 'id', type: 'text' },
     { key: 'name', label: '名字', type: 'text' },
-    { key: 'shape', label: '形状', type: 'enum', options: ISLAND_SHAPES.map((s) => ({ value: s, label: s })) },
-    { key: 'height', label: '高低', type: 'enum', options: ISLAND_HEIGHTS.map((s) => ({ value: s, label: s })) },
-    { key: 'color', label: '颜色', type: 'text', optional: true, hint: `#rrggbb、${ISLAND_LOOKS.join('、')}` },
-    { key: 'rock', label: '岩石', type: 'number', optional: true },
-    { key: 'province', label: '归哪种省', type: 'enum', options: [{ value: 'land', label: '陆地' }, { value: 'sea', label: '海省' }] },
+    // 第九十三轮：选项写中文（以前是 rugged、hilly……），颜色是几个里选一个（界面按种类画，见 ContentEditor.tsx 的 IslandColor）
+    { key: 'shape', label: '形状', type: 'enum', options: ISLAND_SHAPES.map((s) => ({ value: s, label: ISLAND_SHAPE_INFO[s].name })), hint: '环礁、一格、碎的岛总是平的' },
+    { key: 'height', label: '高低', type: 'enum', options: ISLAND_HEIGHTS.map((s) => ({ value: s, label: ISLAND_HEIGHT_INFO[s].name })) },
+    { key: 'color', label: '颜色', type: 'text', optional: true, hint: '白沙、沙洲是现成的样子' },
+    { key: 'rock', label: '岩石', type: 'number', optional: true, more: true, min: ISLAND_ROCK_RANGE[0], max: ISLAND_ROCK_RANGE[1], step: 0.05, hint: '小的硬、留得高；不写同周围' },
+    { key: 'province', label: '归哪种省', type: 'enum', more: true, options: [{ value: 'land', label: '陆地省' }, { value: 'sea', label: '海省' }], hint: '碎的岛总是归海省' },
     NAMES_FIELD,
   ],
   pack: {
@@ -375,15 +386,15 @@ registerKind<PlanetForm>({
     { key: 'id', label: 'id', type: 'text' },
     { key: 'name', label: '名字', type: 'text' },
     { key: 'hint', label: '说明', type: 'text', optional: true },
-    { key: 'base', label: '从哪种星球改起', type: 'text' },
+    { key: 'base', label: '从哪种星球改起', type: 'text', more: true },
     {
       key: 'profile',
       label: '配方',
       type: 'json',
       optional: true,
       of: [
-        { key: 'landFraction', label: '陆地多少', type: 'number', optional: true, min: 0, max: 0.85, step: 0.01 },
-        { key: 'islands', label: '岛多少', type: 'number', optional: true, min: 0, max: 1, step: 0.05 },
+        { key: 'landFraction', label: '陆地多少', type: 'number', optional: true, ...LAND_FRACTION },
+        { key: 'islands', label: '岛多少', type: 'number', optional: true, ...ISLAND_AMOUNT },
         { key: 'plates', label: '板块数', type: 'tuple', optional: true, items: PAIR(2, 40, 1) },
         { key: 'blocks', label: '大陆块数', type: 'tuple', optional: true, items: PAIR(0, 60, 1) },
         { key: 'radius', label: '大陆块大小', type: 'tuple', optional: true, items: PAIR(0.02, 0.6, 0.01) },
@@ -401,15 +412,16 @@ registerKind<PlanetForm>({
       label: '微调',
       type: 'json',
       optional: true,
+      more: true,
       of: [
-        { key: 'beltWidth', label: '山带宽窄', type: 'number', optional: true, min: 0.3, max: 3, step: 0.05 },
+        { key: 'beltWidth', label: '山带宽窄', type: 'number', optional: true, ...BELT_WIDTH },
         { key: 'ridge', label: '洋中脊', type: 'number', optional: true, min: 0, max: 3, step: 0.05 },
         { key: 'trench', label: '海沟', type: 'number', optional: true, min: 0, max: 3, step: 0.05 },
         { key: 'rift', label: '裂谷', type: 'number', optional: true, min: 0, max: 3, step: 0.05 },
         { key: 'hills', label: '丘陵', type: 'number', optional: true, min: 0, max: 3, step: 0.05 },
       ],
     },
-    { key: 'scripts', label: '脚本', type: 'script', optional: true },
+    { key: 'scripts', label: '脚本', type: 'script', optional: true, more: true },
   ],
   pack: {
     key: 'planetForms',
@@ -452,12 +464,12 @@ const PHONETIC = { key: 'kind', is: 'phonetic' } as const;
 const TEMPLATE = { key: 'kind', is: 'template' } as const;
 const PATTERN_FIELDS: readonly FieldDesc[] = [
   { key: 'p', label: '写法', type: 'text' },
-  { key: 'w', label: '权重', type: 'number', optional: true, min: 0.01 },
+  { key: 'w', label: '多少', type: 'number', optional: true, min: 0.01 },
 ];
 const PHONETIC_PATTERN_FIELDS: readonly FieldDesc[] = [
   { key: 'p', label: '外文写法', type: 'text', hint: '{root} 是词根，{表名} 换成词' },
   { key: 'zh', label: '中文', type: 'text', optional: true, hint: '{name} 是音译；空着整个音译' },
-  { key: 'w', label: '权重', type: 'number', optional: true, min: 0.01 },
+  { key: 'w', label: '多少', type: 'number', optional: true, min: 0.01 },
 ];
 
 registerKind<NameStyle>({
@@ -490,29 +502,33 @@ registerKind<NameStyle>({
       key: 'kind',
       label: '写法',
       type: 'enum',
+      more: true,
       options: [
         { value: 'template', label: '模板' },
         { value: 'phonetic', label: '音译' },
       ],
     },
     // 模板式
-    { key: 'lists', label: '词表', type: 'map', when: TEMPLATE, value: { key: '', label: '词', type: 'tags' } },
+    { key: 'lists', label: '词表', type: 'map', when: TEMPLATE, keyLabel: '词表的名字', value: { key: '', label: '词', type: 'tags' }, hint: '模板里写 {名字} 就从这张表里挑' },
     {
       key: 'types',
       label: '各类地物',
       type: 'map',
+      more: true,
+      keyPick: 'featureType',
       when: TEMPLATE,
       of: [
         { key: 'patterns', label: '模板', type: 'list', of: PATTERN_FIELDS },
-        { key: 'byTag', label: '按情境', type: 'map', optional: true, value: { key: '', label: '模板', type: 'list', of: PATTERN_FIELDS } },
+        { key: 'byTag', label: '按情境', type: 'map', optional: true, keyLabel: '情境', value: { key: '', label: '模板', type: 'list', of: PATTERN_FIELDS } },
       ],
     },
-    { key: 'readings', label: '读音表', type: 'map', optional: true, when: TEMPLATE, value: { key: '', label: '原文', type: 'text' }, hint: '汉字 → 原文，读得出整个名字时才有原文' },
+    { key: 'readings', label: '读音表', type: 'map', optional: true, more: true, when: TEMPLATE, keyLabel: '汉字', value: { key: '', label: '原文', type: 'text' }, hint: '汉字 → 原文，读得出整个名字时才有原文' },
     // 音译式
     {
       key: 'syllables',
       label: '音节',
       type: 'json',
+      more: true,
       when: PHONETIC,
       of: [
         { key: 'onsets', label: '声母', type: 'weighted' },
@@ -526,27 +542,30 @@ registerKind<NameStyle>({
       key: 'length',
       label: '音节数',
       type: 'tuples',
+      more: true,
       when: PHONETIC,
       items: [
         { key: 'n', label: '音节数', type: 'number', min: 1, max: 6, step: 1 },
-        { key: 'w', label: '权重', type: 'number', min: 0.01, step: 0.1 },
+        { key: 'w', label: '多少', type: 'number', min: 0.01, step: 0.1 },
       ],
     },
-    { key: 'lists', label: '词缀', type: 'map', optional: true, when: PHONETIC, value: { key: '', label: '词', type: 'weighted' } },
-    { key: 'forbid', label: '不许的写法', type: 'tags', optional: true, when: PHONETIC, hint: '^ 开头，$ 结尾' },
+    { key: 'lists', label: '词缀', type: 'map', optional: true, when: PHONETIC, keyLabel: '词缀表的名字', value: { key: '', label: '词', type: 'weighted' }, hint: '写法里写 {名字} 就从这张表里挑' },
+    { key: 'forbid', label: '不许的写法', type: 'tags', optional: true, more: true, when: PHONETIC, hint: '^ 开头，$ 结尾' },
     {
       key: 'types',
       label: '各类地物',
       type: 'map',
+      more: true,
+      keyPick: 'featureType',
       when: PHONETIC,
       of: [
         { key: 'patterns', label: '写法', type: 'list', of: PHONETIC_PATTERN_FIELDS },
-        { key: 'byTag', label: '按情境', type: 'map', optional: true, value: { key: '', label: '写法', type: 'list', of: PHONETIC_PATTERN_FIELDS } },
+        { key: 'byTag', label: '按情境', type: 'map', optional: true, keyLabel: '情境', value: { key: '', label: '写法', type: 'list', of: PHONETIC_PATTERN_FIELDS } },
       ],
     },
-    { key: 'translit', label: '音译表', type: 'map', when: PHONETIC, value: { key: '', label: '汉字', type: 'text' }, hint: '罗马字 → 汉字，取最长的一段' },
-    { key: 'vowels', label: '元音字母', type: 'text', optional: true, when: PHONETIC },
-    { key: 'fallback', label: '没有的字母写成', type: 'text', optional: true, when: PHONETIC },
+    { key: 'translit', label: '音译表', type: 'map', more: true, when: PHONETIC, keyLabel: '罗马字', value: { key: '', label: '汉字', type: 'text' }, hint: '罗马字 → 汉字，取最长的一段' },
+    { key: 'vowels', label: '元音字母', type: 'text', optional: true, more: true, when: PHONETIC },
+    { key: 'fallback', label: '没有的字母写成', type: 'text', optional: true, more: true, when: PHONETIC },
   ],
   pack: {
     key: 'nameStyles',
@@ -572,7 +591,7 @@ registerHumanKinds();
 
 const TIERS = { key: 'sea', is: 'tiers' } as const;
 const TINTED = { key: 'landShade', is: 'tinted' } as const;
-const STYLE_HINT = '#rrggbb、rgb()、rgba()';
+// 第九十三轮：颜色字段下面以前写“#rrggbb、rgb()、rgba()”——颜色用取色器选；带不透明度的写法（rgba）照旧认，取色器旁边有框
 const withDefaults = (fields: FieldDesc[]): FieldDesc[] => fields.map((f) => (f.key in DEFAULT_LOOK ? { ...f, default: DEFAULT_LOOK[f.key as keyof typeof DEFAULT_LOOK] } : f));
 
 registerKind<MapStyle>({
@@ -592,20 +611,21 @@ registerKind<MapStyle>({
     { key: 'id', label: 'id', type: 'text' },
     { key: 'name', label: '名字', type: 'text' },
     { key: 'description', label: '说明', type: 'longtext', optional: true },
-    { key: 'landTint', label: '陆地底色', type: 'color', hint: STYLE_HINT },
+    { key: 'landTint', label: '陆地底色', type: 'color' },
     { key: 'landTintAmount', label: '底色的比例', type: 'number', min: 0, max: 1, step: 0.05, hint: '0 不混底色' },
     {
       key: 'landShade',
       label: '山影',
       type: 'enum',
+      more: true,
       options: [
         { value: 'plain', label: '平常' },
         { value: 'tinted', label: '着色' },
       ],
       hint: '着色：暗处、亮处各乘一种颜色',
     },
-    { key: 'shadeDark', label: '山影的暗色', type: 'color', when: TINTED },
-    { key: 'shadeLight', label: '山影的亮色', type: 'color', when: TINTED, hint: 'rgb 里可写到 510，亮处更亮' },
+    { key: 'shadeDark', more: true, label: '山影的暗色', type: 'color', when: TINTED },
+    { key: 'shadeLight', more: true, label: '山影的亮色', type: 'color', when: TINTED, hint: 'rgb 里可写到 510，亮处更亮' },
     {
       key: 'sea',
       label: '海',
@@ -618,31 +638,32 @@ registerKind<MapStyle>({
     },
     { key: 'seaShade', label: '海的明暗', type: 'number', min: 0, max: 1, step: 0.01, hint: '海底的坡画出多少明暗（0 平的）' },
     { key: 'tier1', label: '第一层（浅海）', type: 'color', when: TIERS },
-    { key: 'depth2', label: '第二层从多深起（m）', type: 'number', min: 1, max: 20000, step: 10, when: TIERS },
+    { key: 'depth2', more: true, label: '第二层从多深起（m）', type: 'number', min: 1, max: 20000, step: 10, when: TIERS },
     { key: 'tier2', label: '第二层', type: 'color', when: TIERS },
-    { key: 'depth3', label: '第三层从多深起（m）', type: 'number', min: 1, max: 20000, step: 10, when: TIERS },
+    { key: 'depth3', more: true, label: '第三层从多深起（m）', type: 'number', min: 1, max: 20000, step: 10, when: TIERS },
     { key: 'tier3', label: '第三层', type: 'color', when: TIERS },
-    { key: 'depth4', label: '第四层从多深起（m）', type: 'number', min: 1, max: 20000, step: 10, when: TIERS },
+    { key: 'depth4', more: true, label: '第四层从多深起（m）', type: 'number', min: 1, max: 20000, step: 10, when: TIERS },
     { key: 'tier4', label: '第四层（深海）', type: 'color', when: TIERS },
-    { key: 'isobath', label: '等深线', type: 'color', when: TIERS },
-    { key: 'isobathAmount', label: '等深线的浓淡', type: 'number', min: 0, max: 1, step: 0.05, when: TIERS },
-    { key: 'tierShade', label: '分层的海的明暗', type: 'number', min: 0, max: 1, step: 0.01, when: TIERS },
-    { key: 'glow', label: '生态发光', type: 'number', min: 0, max: 2, step: 0.05 },
+    { key: 'isobath', more: true, label: '等深线', type: 'color', when: TIERS },
+    { key: 'isobathAmount', more: true, label: '等深线的浓淡', type: 'number', min: 0, max: 1, step: 0.05, when: TIERS },
+    { key: 'tierShade', more: true, label: '分层的海的明暗', type: 'number', min: 0, max: 1, step: 0.01, when: TIERS },
+    { key: 'glow', more: true, label: '生态发光', type: 'number', min: 0, max: 2, step: 0.05 },
     { key: 'coastLine', label: '海岸线', type: 'color' },
     { key: 'coastAmount', label: '海岸线的浓淡', type: 'number', min: 0, max: 1, step: 0.05 },
     { key: 'provinceLine', label: '省界', type: 'color' },
     { key: 'countryLine', label: '国界', type: 'color' },
-    { key: 'river', label: '河', type: 'color', hint: STYLE_HINT },
-    { key: 'riverBank', label: '河岸', type: 'color' },
-    { key: 'road', label: '大道（道路工具里）', type: 'color' },
-    { key: 'roadMinor', label: '小路（道路工具里）', type: 'color' },
+    { key: 'river', label: '河', type: 'color' },
+    { key: 'riverBank', more: true, label: '河岸', type: 'color' },
+    { key: 'road', more: true, label: '大道（道路工具里）', type: 'color' },
+    { key: 'roadMinor', more: true, label: '小路（道路工具里）', type: 'color' },
     { key: 'quietRoad', label: '大道', type: 'color' },
-    { key: 'quietRoadMinor', label: '小路', type: 'color' },
+    { key: 'quietRoadMinor', more: true, label: '小路', type: 'color' },
     { key: 'countryLabel', label: '国名', type: 'color' },
     {
       key: 'typeColors',
       label: '河湖的种类用',
       type: 'enum',
+      more: true,
       options: [
         { value: 'color', label: '颜色' },
         { value: 'atlasColor', label: '另一种颜色' },
@@ -650,15 +671,15 @@ registerKind<MapStyle>({
     },
     // 第八十七轮：手绘的几项（可以不写；不写时都关着）
     { key: 'paper', label: '纸的纹理', type: 'number', min: 0, max: 1, step: 0.05, optional: true, default: HAND_OFF.paper, hint: '纸的纹理与四周的暗角（0 不画）' },
-    { key: 'paperColor', label: '纸的颜色', type: 'color', optional: true, default: HAND_OFF.paperColor },
+    { key: 'paperColor', more: true, label: '纸的颜色', type: 'color', optional: true, default: HAND_OFF.paperColor },
     { key: 'wash', label: '水彩的晕染', type: 'number', min: 0, max: 1, step: 0.05, optional: true, default: HAND_OFF.wash, hint: '陆地上一片片深浅不匀的颜色（0 不画）' },
     { key: 'ripples', label: '岸外的水纹', type: 'number', min: 0, max: 4, step: 1, optional: true, default: HAND_OFF.ripples, hint: '海岸外几道细线（0 不画）' },
-    { key: 'rippleColor', label: '水纹的颜色', type: 'color', optional: true, default: HAND_OFF.rippleColor },
+    { key: 'rippleColor', more: true, label: '水纹的颜色', type: 'color', optional: true, default: HAND_OFF.rippleColor },
     { key: 'mountains', label: '山画成符号', type: 'bool', optional: true, default: HAND_OFF.mountains, hint: '山与丘陵画成小山头（一块地区）' },
     { key: 'forests', label: '森林画成符号', type: 'bool', optional: true, default: HAND_OFF.forests, hint: '森林画成一丛丛小树（一块地区）' },
-    { key: 'ink', label: '符号的墨色', type: 'color', optional: true, default: HAND_OFF.ink },
-    { key: 'labelFont', label: '地名的字体', type: 'text', optional: true, hint: 'CSS 的字体名；不写时照旧' },
-    { key: 'exportDecor', label: '导出时加装饰', type: 'bool', optional: true, default: HAND_OFF.exportDecor, hint: '导出时默认加罗盘、标题、边框、图例' },
+    { key: 'ink', more: true, label: '符号的墨色', type: 'color', optional: true, default: HAND_OFF.ink },
+    { key: 'labelFont', more: true, label: '地名的字体', type: 'text', optional: true, hint: 'CSS 的字体名；不写时照旧' },
+    { key: 'exportDecor', more: true, label: '导出时加装饰', type: 'bool', optional: true, default: HAND_OFF.exportDecor, hint: '导出时默认加罗盘、标题、边框、图例' },
   ]),
   pack: {
     key: 'mapStyles',

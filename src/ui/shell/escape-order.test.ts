@@ -139,6 +139,28 @@ describe('Esc 的先后（第六十九轮）', () => {
     expect(input.blur).toHaveBeenCalledTimes(2);
   });
 
+  // 第九十三轮：资源库面板里的下拉（标题的来源下拉、右上角的“⋯”）开着时，Esc 先关它，面板还在（以前这一下把整个面板关了）
+  it('资源库的下拉开着：先关下拉，再按一次才轮到面板', () => {
+    world.value = {} as never;
+    libPanel.value = { source: WORLD_SOURCE, stack: [HOME] };
+    let menu = true;
+    const off = pushEscape(ESC_RANK.libMenu, () => {
+      if (!menu) return false;
+      menu = false;
+      return true;
+    });
+    esc();
+    expect(menu).toBe(false);
+    expect(libPanel.value).not.toBeNull();
+    esc();
+    expect(libPanel.value).toBeNull();
+    off();
+    // 正在面板的搜索框里写时也一样：先关下拉
+    expect(ESC_RANK.libMenu).toBeGreaterThan(ESC_RANK.input);
+    expect(ESC_RANK.libMenu).toBeGreaterThan(ESC_RANK.library);
+    expect(ESC_RANK.libMenu).toBeLessThan(ESC_RANK.openPanel);
+  });
+
   it('没有世界时向导关不上，Esc 也不往下传', () => {
     wizardOpen.value = true;
     openPanel.value = 'layers';

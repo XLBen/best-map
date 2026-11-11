@@ -1,3 +1,5 @@
+import { useEffect } from 'preact/hooks';
+import { ESC_RANK, useEscape } from '../shell/escape';
 import { addNow } from './pick-add';
 import type { PageCtx, SourceRef } from './pages';
 import { closeSide } from './panel-store';
@@ -9,6 +11,19 @@ import { shownPick } from './pick-view';
 //   回车     打开这一行（能勾的库里在右栏打开）
 //   Esc      先清搜索，再收起右栏（“从别的库加”开着时先收它）；之后照旧一层层返回（shell/keys.ts）
 //   ⌘回车    添加（清单上的“添加 N 项”；“从别的库加”的右栏里自己处理，LibOther.tsx）
+// 面板里开着的下拉（标题的来源下拉、右上角的“⋯”，第九十三轮）：开着时 Esc 先关它——在 shell/escape.ts 的栈里排在“资源库”那一层上面；
+// 下面的 panelKeys 这时不接 Esc（不然先清了搜索、收了右栏），让它传到栈里。以前这一下把整个面板关了
+let menus = 0;
+export const libMenuOpen = (): boolean => menus > 0;
+export function useLibMenu(open: boolean, close: () => void): void {
+  useEscape(() => (close(), true), ESC_RANK.libMenu, { on: open });
+  useEffect(() => {
+    if (!open) return;
+    menus++;
+    return () => void menus--;
+  }, [open]);
+}
+
 export function panelKeys(e: KeyboardEvent, body: HTMLElement | null, src: SourceRef, ctx: PageCtx, hasSide: boolean): void {
   const t = e.target as HTMLElement;
   const done = () => {
@@ -17,6 +32,7 @@ export function panelKeys(e: KeyboardEvent, body: HTMLElement | null, src: Sourc
   };
   const search = t instanceof HTMLInputElement && t.type === 'search' ? t : null;
   if (e.key === 'Escape') {
+    if (libMenuOpen()) return;
     if (search?.value) {
       search.value = '';
       search.dispatchEvent(new Event('input', { bubbles: true }));

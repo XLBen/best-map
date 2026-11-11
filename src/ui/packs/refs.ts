@@ -2,7 +2,10 @@ import { type ContentKind, itemId, itemName, kindOf } from '../../../core/conten
 import { CATEGORY_NAMES } from '../../../core/human/government';
 import { type PackWorld, packItems } from '../../../core/packs';
 import { BUILTIN_FIELDS } from '../../../core/species';
+import { BIOME_TERRAINS } from '../../../core/export-terrain';
+import { FEATURE_INFO } from '../../../core/features-base';
 import type { LibraryEntry } from '../../library';
+import { EMBLEM_NAMES, LAYOUT_NAMES } from '../domain/flag-names';
 
 // 编辑器里的引用（第四十五轮）：文化组、地名风格、维度、取值、取值组、政体、国家等级……从带搜索的下拉里选，不再手写 id。
 // 能选的是本世界里的、资源库里（内置的、我的、装上的）的，同一个 id 只列一次（本世界的在前）。
@@ -80,6 +83,29 @@ function build(ref: string, ctx: RefCtx): RefOption[] {
       }
       return [...Object.entries(CATEGORY_NAMES).map(([id, label]) => ({ id, label })), ...extra.map((id) => ({ id, label: id }))];
     }
+    // 第九十三轮：生态的地形（地形类别、资源的规则里“生态的地形”）：从那张表里选，不再手打 forest、desert。
+    // 库里的生态写了表外的地形时也列出来（照写它的字）
+    case 'biomeTerrain': {
+      const biome = kindOf('biome');
+      const seen = new Set<string>(BIOME_TERRAINS.map((t) => t.id));
+      const extra: string[] = [];
+      for (const b of biome ? kindItems(biome, ctx) : []) {
+        const t = str((b as { terrain?: unknown }).terrain);
+        if (t && !seen.has(t)) {
+          seen.add(t);
+          extra.push(t);
+        }
+      }
+      return [...BIOME_TERRAINS.map((t) => ({ id: t.id, label: t.label })), ...extra.map((id) => ({ id, label: id }))];
+    }
+    // 地物的类别（地名风格“各类地物”的键）：省份在前，之后按地物的先后
+    case 'featureType':
+      return [{ id: 'province', label: '省份' }, ...Object.entries(FEATURE_INFO).map(([id, info]) => ({ id, label: info.label }))];
+    // 旗的纹章、样式（政体）：页面上画成带小图的格子（field-controls.tsx 的 FlagPick），这里只给收起时那一句用的中文名
+    case 'flagEmblem':
+      return Object.entries(EMBLEM_NAMES).map(([id, label]) => ({ id, label }));
+    case 'flagLayout':
+      return Object.entries(LAYOUT_NAMES).map(([id, label]) => ({ id, label }));
     case 'tolerance': {
       const out: RefOption[] = BUILTIN_FIELDS.map((f) => ({ id: f.id, label: f.label, ...(f.unit ? { hint: f.unit } : {}) }));
       for (const [kindId, prefix, noun] of [
@@ -180,6 +206,18 @@ export function searchRefs(opts: readonly RefOption[], query: string, limit = 80
   }
   const all = [...head, ...rest];
   return { list: all.slice(0, limit), more: Math.max(0, all.length - limit) };
+}
+
+// 能新加一个的引用（第九十三轮）：政体的类别。它没有另外的 id——存的就是这个名字（格式收 16 个字以内的任何字），
+// 所以新加时只要写名字。别的引用指的是一项内容，没有的要先去建
+const NEW_MAX: Readonly<Record<string, number>> = { govCategory: 16 };
+export const refNewMax = (ref: string): number | null => NEW_MAX[ref] ?? null;
+// 新加的名字行不行：行时是收拾好的名字，不行时 null（空的、太长的、已经有了的）
+export function newRefName(ref: string, text: string, opts: readonly RefOption[]): string | null {
+  const max = refNewMax(ref);
+  const name = text.trim();
+  if (max === null || !name || name.length > max) return null;
+  return opts.some((o) => o.id === name || o.label === name) ? null : name;
 }
 
 // 一个 id 怎么写：选项里有时写名字，没有时照写 id

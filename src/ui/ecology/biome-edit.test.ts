@@ -40,7 +40,8 @@ vi.mock('../packs/page-actions', () => ({
 }));
 vi.mock('../packs/panel-store', () => ({ pageCtx: () => ctx }));
 
-const { alpinePatch, applyPatch, biomesPack, conditionPatch, copySpeciesCommand, elevationPatch, heightPatch, newSpeciesCommand, rectPatch, shownTolerances, tolerancesPatch } = await import('./biome-edit');
+const { alpinePatch, applyPatch, biomesPack, conditionPatch, elevationPatch, heightPatch, rectPatch, shownTolerances, tolerancesPatch } = await import('./biome-edit');
+const { blankItem, copyItem } = await import('../packs/fields');
 const { biomeTarget } = await import('./biome-target');
 
 // ---------- 以前的写法（ClimateChart.tsx，第七十一轮），不要改它 ----------
@@ -98,31 +99,23 @@ describe('补丁和以前的生态抽屉一样', () => {
     for (const next of [[], [extra, { ...extra, field: 'precip' }]]) expect(upd(withExtra, tolerancesPatch(withExtra, next))).toEqual(OLD.tolerances(withExtra, next));
   });
 
-  // 第九十轮（有意改的）：新建的自然生成开着，副本原样；别的和以前一字不差
-  it('新建、复制：和以前只差“自然生成”——新建的开着，副本照原来的', () => {
-    const was = OLD.addNew(w) as Extract<Command, { op: 'add_species' }>;
-    expect(newSpeciesCommand(w).cmd).toEqual({ ...was, species: { ...was.species, natural: true } });
-    // 副本的“自然生成”照原来的：开着的开着，关着的关着，没写的也不写（以前一律写成关着）
-    const copy = OLD.copy(w, taiga) as Extract<Command, { op: 'add_species' }>;
-    const { natural: _, ...same } = copy.species as Species & { natural?: boolean };
-    for (const natural of [true, false]) {
-      const made = copySpeciesCommand(w, { ...taiga, natural }).cmd as typeof copy;
-      expect(made).toEqual({ ...copy, species: { ...same, natural } });
-    }
+  // 第九十三轮（有意改的）：生态页自己的“新建生态”“复制”去掉了，和别的种类走同一条路——列表上的“新建”（blankItem）、页面上的“复制”（copyItem）。
+  // 第九十轮定的照旧：新建的自然生成开着（强弱 3、有气候范围），副本的“自然生成”照原来的
+  it('新建、复制走通用的一条路：新建的自然生成开着，副本照原来的', () => {
+    const kind = kindOf('biome')!;
+    const taken = new Set(w.small.species.map((x) => x.id));
+    const made = blankItem(kind, taken) as unknown as Species;
+    expect(kind.schema.safeParse(made).success).toBe(true);
+    expect(made.id).toBe('my-biome');
+    expect(made.natural).toBe(true);
+    expect(made.competition).toBe(3);
+    expect(made.tolerances.map((t) => t.field)).toEqual(['tMean', 'moisture']);
+    // 第二个：id、名字都带编号
+    const second = blankItem(kind, new Set([...taken, 'my-biome']))!;
+    expect([second.id, second.name]).toEqual(['my-biome-2', `${made.name} 2`]);
+    for (const natural of [true, false]) expect(copyItem(kind, { ...taiga, natural }, taken)).toEqual({ ...taiga, natural, id: `${taiga.id}-2`, name: `${taiga.name} 2` });
     const { natural: _n, ...unwritten } = taiga;
-    const bare = copySpeciesCommand(w, unwritten as Species).cmd as typeof copy;
-    expect(bare).toEqual({ ...copy, species: same });
-    expect('natural' in bare.species).toBe(false);
-  });
-
-  it('两处新建一样：资源库列表上的“新建”和生态页上的“新建生态”只差 id、名字、颜色', () => {
-    const blank = kindOf('biome')!.blank!() as Species;
-    const made = (newSpeciesCommand(w).cmd as Extract<Command, { op: 'add_species' }>).species as Species;
-    const bare = ({ id: _i, name: _n, color: _c, ...rest }: Species) => rest;
-    expect(bare(made)).toEqual(bare(blank));
-    expect(blank.natural).toBe(true);
-    expect(blank.competition).toBe(3);
-    expect(blank.tolerances.map((t) => t.field)).toEqual(['tMean', 'moisture']);
+    expect('natural' in copyItem(kind, unwritten, taken)).toBe(false);
   });
 
   it('“只长在高山上”只动高度范围的下限；海拔条件不再单独列', () => {

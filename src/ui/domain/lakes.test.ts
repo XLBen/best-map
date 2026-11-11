@@ -72,7 +72,8 @@ describe('点中的湖、给湖选类型', () => {
     setOptions({ lakeType: PLAIN_LAKE });
     expect(chosenLakeType(w)).toEqual({});
     setOptions({ lakeType: '' });
-    expect(newWaterType(w, 'lake').id).toBe('lake-type-1');
+    // 第九十三轮（有意改的）：id 和资源库列表上的“新建”同一种起法（以前是 lake-type-1）
+    expect(newWaterType(w, 'lake').id).toBe('my-lake');
   });
 });
 

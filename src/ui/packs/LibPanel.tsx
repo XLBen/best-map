@@ -23,7 +23,7 @@ import { dragView } from './page-drag';
 import { LibOther } from './LibOther';
 import { LibSide } from './LibSide';
 import { closeFile, installFile, openFile } from './lib-file';
-import { panelKeys } from './lib-keys';
+import { panelKeys, useLibMenu } from './lib-keys';
 import { rememberFrom } from './pick-other';
 import { pickCount } from './pick-store';
 import { RegenBar as RegenBarRaw } from './RegenBar';
@@ -83,6 +83,8 @@ const SourcePicker = memo(function SourcePicker({ src, ctx, picking, canAdd }: {
     window.addEventListener('pointerdown', off, true);
     return () => window.removeEventListener('pointerdown', off, true);
   }, [open]);
+  // 第九十三轮：下拉开着时 Esc 先关它（lib-keys.ts 的 useLibMenu），面板不动
+  useLibMenu(open, () => setOpen(false));
   const file = useRef<HTMLInputElement>(null);
   const v = sourceMenuView(sourceMenu(src, ctx), { all: showAllSources(), picking, canPick: canAdd, hasWorld: !!ctx.world });
   const moreOpen = more ?? v.moreOpen;
@@ -219,6 +221,7 @@ const MoreMenu = memo(function MoreMenu({ src, ctx }: { src: SourceRef; ctx: Pag
     window.addEventListener('pointerdown', off, true);
     return () => window.removeEventListener('pointerdown', off, true);
   }, [open]);
+  useLibMenu(open, () => setOpen(false));
   const k = sourceKind(src, ctx);
   const e = entryOf(src, ctx);
   const item = (label: string, title: string, run: () => void) => (

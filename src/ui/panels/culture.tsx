@@ -484,6 +484,8 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
           label="总人口"
           pos={popPos(draft ?? total, def)}
           text={popText(draft ?? total)}
+          textAt={(p) => String(popAt(p, def))}
+          entry={String(Math.round(draft ?? total))}
           changed={draft !== null}
           note={`约 ${densityText((draft ?? total) / Math.max(1e-9, def / Math.max(1e-9, era?.popDensity ?? 1)))}`}
           onDraft={(p) => setDraft(popAt(p, def))}

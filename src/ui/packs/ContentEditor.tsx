@@ -4,6 +4,7 @@ import { useContext, useEffect, useState } from 'preact/hooks';
 import { iconOf } from '../../render/settle-draw';
 import { CityGlyph } from '../panels/settlements';
 import { ICON_LABELS, IMAGE_MAX_CHARS, iconChoices, isImageUrl } from '../domain/settlements';
+import { flowScale } from '../domain/flow-scale';
 import { showToast } from '../../state';
 import type { FieldDesc } from '../../../core/content/registry';
 import { FEATURE_INFO, type FeatureType } from '../../../core/features';
@@ -11,9 +12,13 @@ import { Seg } from '../common';
 import { RangeSliders } from '../components/RangeSliders';
 import { Slider } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
-import { type EditorIssue, type Obj, addedValue, colorHex, isTitleField, plainHex, withHex, defaultValue, isSparse, isObj, issuesAt, moveItem, newKey, objectOf, parseTags, renameKey, setField, shownFields, sliderScale, sparseSplit, tagsText, valueText } from './fields';
+import { type EditorIssue, type Obj, addedValue, colorHex, isTitleField, plainHex, withHex, defaultValue, isSparse, isObj, issuesAt, moveItem, objectOf, parseTags, renameKey, setField, shownFields, sliderScale, sparseSplit, tagsText, valueText } from './fields';
 import { Draft, Errors, type Path } from './editor-parts';
 import { Grip, OneRef, TagRefs, TitleEditor, TitleListEditor, TupleEditor, TuplesEditor, WeightTable, WeightedEditor, useDragSort } from './editors';
+import { FlagPick, IslandColor, MapAdd } from './field-controls';
+import { showAllSettings } from './lib-prefs';
+import { useRefOptions } from './RefPicker';
+import { refLabel } from './refs';
 import { TendencyEditor } from './TendencyEditor';
 
 // 通用编辑器：按登记表的字段表（FieldDesc）画出来。text / longtext / number / bool / color / enum / tags / weighted /
@@ -21,6 +26,8 @@ import { TendencyEditor } from './TendencyEditor';
 // 一组字、带权重的、键都在框里写完、离开框时才换上（打字时不被重新排版打断）。
 // 第四十五轮：写了 ref 的从带搜索的下拉里选（RefPicker），tuple / tuples / title / titleList / tendencies 各有成块的控件
 // （editors.tsx、TendencyEditor.tsx），可以不写的对象没写时是一个“添加”，列表能拖动换先后；不再有原样的 JSON 框
+// 第九十三轮：不用手打英文的记号——旗的纹章与样式是带小图的选择，岛的颜色是几个里选一个，键 → 值的表新加一项先写名字
+// （或从列表里选，field-controls.tsx）；图标的下拉只写中文名
 
 
 interface Props {
@@ -112,9 +119,7 @@ function IconSelect({ kindId, value, onChange, optional }: { kindId: string; val
         {optional && <option value="">（不写）</option>}
         {v && !keys.includes(v) && <option value={v}>{v}</option>}
         {keys.map((k) => (
-          <option value={k}>
-            {ICON_LABELS[k] ?? k} · {k}
-          </option>
+          <option value={k}>{showAllSettings() && ICON_LABELS[k] ? `${ICON_LABELS[k]} · ${k}` : (ICON_LABELS[k] ?? k)}</option>
         ))}
       </select>
     </span>
@@ -190,6 +195,28 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
           <Hint f={f} />
           <Errors issues={issues} path={path} />
         </div>
+      </div>
+    );
+  }
+  // 第九十三轮：旗的纹章、样式（政体）、岛的颜色——从现成的里面选
+  const flag = kindId === 'government' && path.length === 1 && (f.key === 'emblems' || f.key === 'layouts') ? f.key : null;
+  if (flag) {
+    return (
+      <div class={`ed-group ${bad ? 'bad' : ''}`}>
+        <div class="ed-label">{f.label}</div>
+        <Hint f={f} />
+        <FlagPick part={flag} value={value} onChange={onChange} />
+        <Errors issues={issues} path={path} />
+      </div>
+    );
+  }
+  if (kindId === 'islandType' && path.length === 1 && f.key === 'color') {
+    return (
+      <div class={`ed-group ${bad ? 'bad' : ''}`}>
+        <div class="ed-label">{f.label}</div>
+        <IslandColor value={value} onChange={onChange} />
+        <Hint f={f} />
+        <Errors issues={issues} path={path} />
       </div>
     );
   }
@@ -299,6 +326,7 @@ function NumberSlider({ f, value, onChange }: { f: FieldDesc; value: unknown; on
         label={f.label}
         pos={cur === null ? 0 : scale.pos(cur)}
         text={cur === null ? '不写' : valueText(f, cur)}
+        textAt={(p) => valueText(f, scale.at(p))}
         onDraft={(p) => setDraft(scale.at(p))}
         onCommit={(p) => {
           const v = scale.at(p);
@@ -347,7 +375,7 @@ function JsonInput({ value, onChange }: { value: unknown; onChange: (v: unknown)
 export function Control({ f, value, onChange, path, issues }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void; path: Path; issues: readonly EditorIssue[] }) {
   switch (f.type) {
     case 'text':
-      if (f.ref) return <OneRef refKind={f.ref} value={value} optional={f.optional} onChange={onChange} />;
+      if (f.ref ?? f.pick) return <OneRef refKind={(f.ref ?? f.pick)!} value={value} optional={f.optional} onChange={onChange} />;
       return <Draft text={typeof value === 'string' ? value : ''} onCommit={(t) => onChange(t)} />;
     case 'longtext':
       return <Draft multi text={typeof value === 'string' ? value : ''} onCommit={(t) => onChange(t)} />;
@@ -393,7 +421,7 @@ export function Control({ f, value, onChange, path, issues }: { f: FieldDesc; va
       );
     }
     case 'tags':
-      if (f.ref) return <TagRefs refKind={f.ref} value={value} onChange={onChange} />;
+      if (f.ref ?? f.pick) return <TagRefs refKind={(f.ref ?? f.pick)!} value={value} onChange={onChange} />;
       return <Draft text={tagsText(value)} placeholder="空格隔开" onCommit={(t) => onChange(parseTags(t))} />;
     case 'weighted':
       return <WeightedEditor value={value} onChange={onChange} />;
@@ -404,7 +432,7 @@ export function Control({ f, value, onChange, path, issues }: { f: FieldDesc; va
       const lo = f.min ?? 0;
       const hi = f.max ?? 0;
       // 两头都不限时不写这个字段（和没写过一样）
-      return <RangeSliders lo={lo} hi={hi} step={f.step ?? 1} unit={f.unit ?? 'm'} value={{ low: Number(r.low), high: Number(r.high) }} onCommit={(v) => onChange(v.low <= lo && v.high >= hi ? undefined : v)} />;
+      return <RangeSliders lo={lo} hi={hi} step={f.step ?? 1} unit={f.unit ?? 'm'} scale={f.show === 'flow' ? flowScale : undefined} value={{ low: Number(r.low), high: Number(r.high) }} onCommit={(v) => onChange(v.low <= lo && v.high >= hi ? undefined : v)} />;
     }
     case 'tuple':
       return <TupleEditor f={f} value={value} onChange={onChange} />;
@@ -458,7 +486,19 @@ function ListEditor({ f, value, onChange, path, issues }: { f: FieldDesc; value:
 // map 的键是地物类型时旁边写中文
 const keyLabel = (k: string): string | undefined => (k === 'province' ? '省份' : FEATURE_INFO[k as FeatureType]?.label);
 
-// 键在框里改（离开框时换上，已有的键不换），值按 value（或 of 的一组字段）
+// 键从现成的表里选的（各类地物，字段表的 keyPick）：写中文名，不能改成别的字
+function MapKeyName({ keyRef, k }: { keyRef: string | readonly string[]; k: string }) {
+  const opts = useRefOptions(keyRef);
+  const label = refLabel(opts, k);
+  return (
+    <b class="ed-key-name" title={showAllSettings() && label !== k ? k : undefined}>
+      {label}
+    </b>
+  );
+}
+
+// 键在框里改（离开框时换上，已有的键不换），值按 value（或 of 的一组字段）。
+// 第九十三轮：新加一项先写名字（MapAdd），不再先起一个叫 new 的键；键从 keyRef 里选的写中文名
 export function MapEditor({ f, value, onChange, path, issues }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void; path: Path; issues: readonly EditorIssue[] }) {
   const obj = isObj(value) ? value : {};
   const put = (k: string, v: unknown) => onChange({ ...obj, [k]: v });
@@ -468,8 +508,8 @@ export function MapEditor({ f, value, onChange, path, issues }: { f: FieldDesc; 
       {Object.entries(obj).map(([k, v]) => (
         <div class="ed-entry">
           <div class="ed-key">
-            <Draft text={k} onCommit={(t) => onChange(renameKey(obj, k, t.trim()))} />
-            {keyLabel(k) && <span class="hint">{keyLabel(k)}</span>}
+            {f.keyPick ? <MapKeyName keyRef={f.keyPick} k={k} /> : <Draft text={k} onCommit={(t) => onChange(renameKey(obj, k, t.trim()))} />}
+            {!f.keyPick && keyLabel(k) && <span class="hint">{keyLabel(k)}</span>}
             <button
               class="small icon ghost"
               title="删除" aria-label="删除"
@@ -494,9 +534,7 @@ export function MapEditor({ f, value, onChange, path, issues }: { f: FieldDesc; 
           </div>
         </div>
       ))}
-      <button class="small" onClick={() => put(newKey(obj), blank())}>
-        <Plus /> 添加
-      </button>
+      <MapAdd f={f} obj={obj} onAdd={(k) => put(k, blank())} />
     </div>
   );
 }

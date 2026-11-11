@@ -54,13 +54,14 @@ export const RULE_FIELDS: readonly FieldDesc[] = [
   ...range('moist', '湿润程度', '降水 ÷ 蒸散'),
   ...range('wet', '地形湿度', ''),
   ...range('lat', '纬度', '°（绝对值）'),
-  { key: 'terrain', label: '生态的地形', type: 'tags', optional: true, hint: 'forest、desert、marsh…' },
+  // 第九十三轮：从生态的地形里选（森林、荒漠、沼泽……），不再手打 forest、desert
+  { key: 'terrain', label: '生态的地形', type: 'tags', optional: true, pick: 'biomeTerrain', hint: '生态“导出用的地形”是这几种之一' },
   { key: 'biomes', label: '生态', type: 'tags', optional: true, ref: 'biome' },
   { key: 'coast', label: '挨着海', type: 'bool', optional: true },
   { key: 'river', label: '有河', type: 'bool', optional: true },
   { key: 'lake', label: '挨着湖', type: 'bool', optional: true },
 ];
-export const RESOURCE_RULE_FIELDS: readonly FieldDesc[] = [{ key: 'classes', label: '地形类别', type: 'tags', optional: true, ref: 'terrainClass', hint: '只管起伏：plains、hills…' }, ...RULE_FIELDS];
+export const RESOURCE_RULE_FIELDS: readonly FieldDesc[] = [{ key: 'classes', label: '地形类别', type: 'tags', optional: true, ref: 'terrainClass', hint: '只管起伏：平原、丘陵、山地……' }, ...RULE_FIELDS];
 
 // 每格的输入：一次算好，规则只查表
 export interface CellInputs {

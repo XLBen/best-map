@@ -150,7 +150,8 @@ const WORLD_TIMING: Record<string, Record<string, Timing>> = {
   nameStyle: { basic: 'instant', words: 'instant' },
   terrainClass: { basic: 'instant', rules: 'instant', traits: 'instant', export: 'instant' },
   resource: { basic: 'instant', rules: 'instant', spread: 'instant' },
-  mapStyle: { basic: 'instant', land: 'instant', sea: 'instant', lines: 'instant', water: 'instant', text: 'instant' },
+  // 第九十三轮（有意改的）：画风的“基本”分开了——手绘的几项、很少动的两项各成一段（都是画法，即时）
+  mapStyle: { basic: 'instant', land: 'instant', sea: 'instant', lines: 'instant', water: 'instant', text: 'instant', hand: 'instant', other: 'instant' },
   provinceRules: { basic: 'instant', size: 'regen', water: 'instant', borders: 'regen' },
   era: { basic: 'regen', dims: 'instant', people: 'regen', state: 'regen', relations: 'instant' },
   valueGroup: { basic: 'regen' },

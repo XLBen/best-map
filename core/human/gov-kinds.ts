@@ -23,24 +23,24 @@ const ONLY_FIELDS: readonly FieldDesc[] = NAME_RULE_FIELDS.filter((f) => f.key !
 const GOV_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
-  { key: 'category', label: '类别', type: 'tags', ref: 'govCategory', hint: 'monarchy、republic……' },
-  { key: 'factions', label: '有哪些派系', type: 'tags', optional: true, ref: 'faction', dep: 'auto', hint: '只选有哪些，比重在国家档案里' },
+  { key: 'category', more: true, label: '类别', type: 'tags', ref: 'govCategory', hint: '君主制、共和制……；旗的纹章、地标按它挑' },
+  { key: 'factions', more: true, label: '有哪些派系', type: 'tags', optional: true, ref: 'faction', dep: 'auto', hint: '只选有哪些，比重在国家档案里' },
   { key: 'color', label: '颜色', type: 'color', optional: true },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'titles', label: '国家称号', type: 'title', keyRef: 'countryTier', dep: 'strip', hint: '按等级；没写的用最近的一级' },
   { key: 'rulers', label: '统治者称号', type: 'title', optional: true, keyRef: 'countryTier', dep: 'strip', hint: '写法同国家称号' },
-  { key: 'names', label: '换说法', type: 'list', optional: true, of: NAME_RULE_FIELDS, dep: 'strip', hint: '按文化、宗教换；第一条起作用' },
-  { key: 'only', label: '限谁用', type: 'list', optional: true, of: ONLY_FIELDS, dep: 'gate', hint: '满足一条才能用；空着谁都能用' },
+  { key: 'names', more: true, label: '换说法', type: 'list', optional: true, of: NAME_RULE_FIELDS, dep: 'strip', hint: '按文化、宗教换；第一条起作用' },
+  { key: 'only', more: true, label: '限谁用', type: 'list', optional: true, of: ONLY_FIELDS, dep: 'gate', hint: '满足一条才能用；空着谁都能用' },
   { key: 'weight', label: '多少', type: 'number', optional: true, min: 0, max: 100, step: 0.1, hint: '省略为 1' },
   { key: 'size', label: '国土', type: 'number', min: 0.05, max: 10, step: 0.05, hint: '1 是平均' },
   { key: 'expansion', label: '扩张性', type: 'number', min: 0, max: 1, step: 0.05, hint: '越大越多吞进异族的地方' },
-  { key: 'coastal', label: '偏海岸', type: 'number', min: 0, max: 1, step: 0.05 },
-  { key: 'urbanization', label: '城市化', type: 'number', min: 0, max: 5, step: 0.1, hint: '首都一带人多多少，1 是平常' },
-  { key: 'cohesion', label: '紧凑', type: 'number', min: 0, max: 1, step: 0.05, hint: '越大越不跨海' },
-  { key: 'vassals', label: '收附庸', type: 'number', min: 0, max: 1, step: 0.05 },
-  { key: 'nomadic', label: '游牧', type: 'number', min: 0, max: 1, step: 0.05, hint: '能占荒凉的地方' },
-  { key: 'emblems', label: '旗上的纹章', type: 'tags', optional: true },
-  { key: 'layouts', label: '旗的样式', type: 'tags', optional: true },
+  { key: 'coastal', more: true, label: '偏海岸', type: 'number', min: 0, max: 1, step: 0.05 },
+  { key: 'urbanization', more: true, label: '城市化', type: 'number', min: 0, max: 5, step: 0.1, hint: '首都一带人多多少，1 是平常' },
+  { key: 'cohesion', more: true, label: '紧凑', type: 'number', min: 0, max: 1, step: 0.05, hint: '越大越不跨海' },
+  { key: 'vassals', more: true, label: '收附庸', type: 'number', min: 0, max: 1, step: 0.05 },
+  { key: 'nomadic', more: true, label: '游牧', type: 'number', min: 0, max: 1, step: 0.05, hint: '能占荒凉的地方' },
+  { key: 'emblems', label: '旗上的纹章', type: 'tags', optional: true, pick: 'flagEmblem', hint: '点一下选上；不选时按类别挑' },
+  { key: 'layouts', label: '旗的样式', type: 'tags', optional: true, pick: 'flagLayout', hint: '点一下选上；不选时随便挑' },
 ];
 
 const DRIVER_FIELDS: readonly FieldDesc[] = [
@@ -72,7 +72,7 @@ const FACTION_FIELDS: readonly FieldDesc[] = [
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'amount', label: '多少', type: 'number', min: 0, max: 10, step: 0.05, hint: '不算人口时占多少' },
-  { key: 'drivers', label: '来自人口', type: 'list', optional: true, of: DRIVER_FIELDS, dep: 'strip', hint: '这部分人越多，影响力越大' },
+  { key: 'drivers', label: '来自人口', more: true, type: 'list', optional: true, of: DRIVER_FIELDS, dep: 'strip', hint: '这部分人越多，影响力越大' },
 ];
 
 // 由 human/kinds.ts 在第二十二轮的四种之后调用

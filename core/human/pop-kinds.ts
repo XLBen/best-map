@@ -14,7 +14,7 @@ const changed = <T>(kind: string, items: Record<string, T>): T[] => notBuiltin(k
 
 // 偏好：按格的条件加一个倍数
 export const PREF_FIELDS: readonly FieldDesc[] = [{ key: 'factor', label: '倍数', type: 'number', min: 0, max: 20, step: 0.1, hint: '满足时宜居度乘以它' }, ...RESOURCE_RULE_FIELDS];
-const PREFS: FieldDesc = { key: 'prefs', label: '喜欢的地方', type: 'list', optional: true, of: PREF_FIELDS, dep: 'strip', hint: '满足条件时宜居度乘以倍数' };
+const PREFS: FieldDesc = { key: 'prefs', label: '喜欢的地方', type: 'list', optional: true, more: true, of: PREF_FIELDS, dep: 'strip', hint: '满足条件时宜居度乘以倍数' };
 
 const ERA_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
@@ -25,7 +25,8 @@ const ERA_FIELDS: readonly FieldDesc[] = [
     key: 'dimensions',
     label: '变量',
     type: 'list',
-    hint: `文化之外的，最多 ${MAX_DIMENSIONS} 维`,
+    more: true,
+    hint: `文化之外的，最多 ${MAX_DIMENSIONS} 个`,
     of: [
       { key: 'id', label: 'id', type: 'text' },
       { key: 'label', label: '名字', type: 'text', hint: '宗教、种族……' },
@@ -33,24 +34,26 @@ const ERA_FIELDS: readonly FieldDesc[] = [
     ],
   },
   { key: 'popDensity', label: '人口密度', type: 'number', min: 0.001, max: 10000, step: 0.1, unit: '人/km²', hint: '每平方千米陆地几个人' },
-  { key: 'sparsity', label: '聚居', type: 'number', min: 0.5, max: 5, step: 0.1, hint: '越大人越挤在好地方' },
+  { key: 'sparsity', more: true, label: '聚居', type: 'number', min: 0.5, max: 5, step: 0.1, hint: '越大人越挤在好地方' },
   { key: 'urbanization', label: '城市化率', type: 'number', min: 0, max: 1, step: 0.01, unit: '%', hint: '住在城里的人' },
   {
     key: 'unclaimed',
     label: '无主地',
     type: 'json',
+    more: true,
     of: [
       { key: 'minHabitability', label: '宜居度下限', type: 'number', min: 0, max: 1, step: 0.01, hint: '低于它的地方人少' },
       { key: 'nomads', label: '游牧', type: 'number', min: 0, max: 1, step: 0.05, unit: '%', hint: '那些地方的人口是几成' },
       { key: 'bandKm', label: '划进国家', type: 'number', optional: true, min: 0, max: 5000, step: 10, unit: 'km', hint: '国境外这么宽划进国家' },
     ],
   },
-  { key: 'seaClaimKm', label: '领海', type: 'number', min: 0, max: 2000, step: 10, unit: 'km', hint: '0 是海不归国家' },
+  { key: 'seaClaimKm', more: true, label: '领海', type: 'number', min: 0, max: 2000, step: 10, unit: 'km', hint: '0 是海不归国家' },
   { key: 'countryKm2', label: '国家大小', type: 'number', optional: true, min: 1000, max: 1e9, step: 10000, unit: 'km²', hint: '一国平均占的能住人的地' },
   {
     key: 'years',
     label: '年份',
     type: 'tuple',
+    more: true,
     optional: true,
     hint: '建国年份在这里面',
     items: [
@@ -85,6 +88,7 @@ const ERA_FIELDS: readonly FieldDesc[] = [
     key: 'relations',
     label: '集团的称号',
     type: 'json',
+    more: true,
     optional: true,
     of: [
       {
@@ -106,9 +110,9 @@ const ERA_FIELDS: readonly FieldDesc[] = [
 
 const VALUE_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
-  { key: 'dimension', label: '变量', type: 'text', ref: 'dimension', hint: '时代里的变量：宗教……' },
+  { key: 'dimension', label: '变量', type: 'text', more: true, ref: 'dimension', hint: '时代里的变量：宗教……' },
   { key: 'name', label: '名字', type: 'text' },
-  { key: 'orig', label: '外文名', type: 'text', optional: true },
+  { key: 'orig', label: '外文名', type: 'text', optional: true, more: true },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'group', label: '组', type: 'text', optional: true, ref: 'valueGroup', hint: '取值组：同组是异端，不同组是异教' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
@@ -118,27 +122,27 @@ const VALUE_FIELDS: readonly FieldDesc[] = [
 // 取值组（第四十三轮）：宗教组……
 const VALUE_GROUP_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
-  { key: 'dimension', label: '变量', type: 'text', ref: 'dimension', hint: '时代里的变量：宗教……' },
+  { key: 'dimension', label: '变量', type: 'text', more: true, ref: 'dimension', hint: '时代里的变量：宗教……' },
   { key: 'name', label: '名字', type: 'text' },
-  { key: 'orig', label: '外文名', type: 'text', optional: true },
+  { key: 'orig', label: '外文名', type: 'text', optional: true, more: true },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
 ];
 
 // 倾向（第四十三轮起文化组也有）：不分时代的、按时代的
 // 第四十五轮起资源库里画成一张表（行是维度，每行是取值与权重），表上面选时代
-const TENDENCIES: FieldDesc = { key: 'tendencies', label: '倾向', type: 'tendencies', optional: true, dep: 'strip', hint: '每一维更可能是哪些取值（政体也算一维）' };
-const ERA_TENDENCIES: FieldDesc = { key: 'eraTendencies', label: '按时代的倾向', type: 'tendencies', byEra: true, optional: true, dep: 'strip', hint: '写了的那几维换掉不分时代的' };
+const TENDENCIES: FieldDesc = { key: 'tendencies', label: '倾向', type: 'tendencies', optional: true, more: true, dep: 'strip', hint: '每个变量更可能是哪些取值；政体也算' };
+const ERA_TENDENCIES: FieldDesc = { key: 'eraTendencies', label: '按时代的倾向', type: 'tendencies', byEra: true, optional: true, more: true, dep: 'strip', hint: '写了的变量换掉不分时代的' };
 
 const GROUP_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
-  { key: 'orig', label: '外文名', type: 'text', optional: true },
+  { key: 'orig', label: '外文名', type: 'text', optional: true, more: true },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'nameStyle', label: '地名风格', type: 'text', optional: true, ref: 'nameStyle', dep: 'auto', hint: '组里文化默认的地名风格' },
   { key: 'weight', label: '多少', type: 'number', optional: true, min: 0, max: 1000, step: 0.1, hint: '各组占多少；0 不参与' },
-  { ...TENDENCIES, hint: '组里文化默认的倾向（政体也算一维）' },
+  { ...TENDENCIES, hint: '组里文化默认的倾向；政体也算' },
   ERA_TENDENCIES,
   PREFS,
 ];
@@ -147,12 +151,12 @@ const CULTURE_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'group', label: '文化组', type: 'text', ref: 'cultureGroup' },
   { key: 'name', label: '名字', type: 'text' },
-  { key: 'orig', label: '外文名', type: 'text', optional: true },
+  { key: 'orig', label: '外文名', type: 'text', optional: true, more: true },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'nameStyle', label: '地名风格', type: 'text', optional: true, ref: 'nameStyle', dep: 'auto', hint: '空着时用文化组的' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'weight', label: '多少', type: 'number', optional: true, min: 0, max: 1000, step: 0.1, hint: '在组里占多少；省略为 1' },
-  { ...TENDENCIES, hint: '只写与文化组不同的维度' },
+  { ...TENDENCIES, hint: '只写与文化组不同的变量' },
   ERA_TENDENCIES,
   PREFS,
 ];

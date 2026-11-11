@@ -101,6 +101,20 @@ export interface FieldDesc {
   // 第七十三轮：缺了能去掉的引用（有 drop）导入时照样跟着带（时代的国家格局：加时代时带上它用的格局；
   // 勾选清单里去掉它时只去掉时代里那一条）。只写在 ref 的字段上
   follow?: boolean;
+  // ---------- 第九十三轮：常用 / 更多设置 ----------
+  // 不是新手第一次打开最想改的：资源库里收在“更多设置”下面（一段里折叠着；一段的字段全是它时整段收进页面底下的“更多设置”）。
+  // 只管显示在哪，不影响格式、导入、引用；哪些算常用见 docs/dev/history/第93轮.md 的表
+  more?: true;
+  // 这个数在滑块上怎么写。'expPercent'：存的是指数（降水乘以 e 的这么多次方），滑块上写成降水的百分之几（core/effect-ranges.ts）；
+  // 'flow'（range）：流量，滑块按对数走
+  show?: 'expPercent' | 'flow';
+  // 从一张现成的表里选（text、tags 的值；keyPick 是 map 的键）：'biomeTerrain' 生态的地形（森林、荒漠……）、
+  // 'featureType' 地物的类别（地名风格“各类地物”的键）、'flagEmblem' / 'flagLayout' 旗的纹章、样式（页面上另画成带小图的格子）。和 ref / keyRef 一样画成下拉，但不是内容之间的引用：
+  // 引用表（links.ts）不看它，导入、改名、“谁用到它”都不受影响——以前这两处是手打英文
+  pick?: string;
+  keyPick?: string;
+  // map：键怎么叫（“词表的名字”“汉字”）。新加一项时先问这个名字（不再先起一个 new）；写了 keyRef / keyPick 的从那里面选
+  keyLabel?: string;
 }
 
 export type ContentWorld = Pick<World, 'small' | 'causes'>;

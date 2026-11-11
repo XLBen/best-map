@@ -17,6 +17,8 @@ export interface Segment {
   custom?: 'biomeWater' | 'waterBiomes' | 'samples' | 'eraDims' | 'eraPatterns' | 'patternTip';
   // 写在这一段里的一句说明（断流、按多数显示的类型……）
   hint?: string;
+  // 第九十三轮：这一段整个算“更多设置”（收进页面底下）。省略时从字段推：有字段、而且全是 more 的（more-settings.ts 的 segmentIsMore）
+  more?: boolean;
 }
 // 第九十轮：改了什么时候用上不在这里手标（第八十一轮只标了省份划分的“湖”），每一段从 timing.ts 推
 
@@ -26,6 +28,7 @@ interface SegDef {
   keys: readonly string[];
   custom?: Segment['custom'];
   hint?: string;
+  more?: boolean;
 }
 
 const BASIC = '基本';
@@ -126,13 +129,16 @@ const TABLE: Record<string, readonly SegDef[]> = {
     { id: 'words', title: '写法', keys: ['lists', 'types', 'readings', 'syllables', 'length', 'forbid', 'translit', 'vowels', 'fallback'] },
     { id: 'samples', title: '示例', keys: [], custom: 'samples' },
   ],
+  // 第九十三轮：“基本”以前有 13 个字段（没写到的手绘十项都落在第一段）；手绘的另成一段，很少动的两项成一段（整段是“更多设置”）
   mapStyle: [
-    { id: 'basic', title: BASIC, keys: ['name', 'description', 'typeColors'] },
+    { id: 'basic', title: BASIC, keys: ['name', 'description'] },
     { id: 'land', title: '陆地', keys: ['landTint', 'landTintAmount', 'landShade', 'shadeDark', 'shadeLight', 'glow'] },
-    { id: 'sea', title: '海', keys: ['sea', 'seaShade', 'tier1', 'depth2', 'tier2', 'depth3', 'tier3', 'depth4', 'tier4', 'isobath', 'isobathAmount', 'tierShade'] },
+    { id: 'sea', title: '海', keys: ['sea', 'seaShade', 'tier1', 'tier2', 'tier3', 'tier4', 'depth2', 'depth3', 'depth4', 'isobath', 'isobathAmount', 'tierShade'] },
     { id: 'lines', title: '线', keys: ['coastLine', 'coastAmount', 'provinceLine', 'countryLine'] },
-    { id: 'water', title: '河与路', keys: ['river', 'riverBank', 'road', 'roadMinor', 'quietRoad', 'quietRoadMinor'] },
-    { id: 'text', title: '字', keys: ['countryLabel'] },
+    { id: 'water', title: '河与路', keys: ['river', 'quietRoad', 'riverBank', 'quietRoadMinor', 'road', 'roadMinor'] },
+    { id: 'text', title: '字', keys: ['countryLabel', 'labelFont'] },
+    { id: 'hand', title: '手绘', keys: ['paper', 'wash', 'ripples', 'mountains', 'forests', 'paperColor', 'rippleColor', 'ink'] },
+    { id: 'other', title: '导出与河湖', keys: ['typeColors', 'exportDecor'] },
   ],
   // 第七十八轮：省份划分（core/content/province-kind.ts）。湖的归属改了马上整理（即时）；别的改了以后底下“重新生成”（第八十一轮；标记从 timing.ts 推）
   provinceRules: [
@@ -175,7 +181,7 @@ export function segmentsOf(kind: ContentKind): Segment[] {
     // 字段的先后按这一段写的
     const sorted = [...fields].sort((a, b) => d.keys.indexOf(a.key) - d.keys.indexOf(b.key));
     const shown = (k === 0 ? [...sorted, ...rest] : sorted).filter((f) => !HIDDEN[kind.id]?.includes(f.key));
-    return { id: d.id, title: d.title, fields: shown, ...(d.custom ? { custom: d.custom } : {}), ...(d.hint ? { hint: d.hint } : {}) };
+    return { id: d.id, title: d.title, fields: shown, ...(d.custom ? { custom: d.custom } : {}), ...(d.hint ? { hint: d.hint } : {}), ...(d.more !== undefined ? { more: d.more } : {}) };
   });
   memo.set(kind.id, { fields: kind.fields, segs });
   return segs;
@@ -196,7 +202,7 @@ export function fieldBrief(f: FieldDesc, v: unknown, labelOf: LabelOf = plainLab
   if (v === undefined || v === null || v === '') return '';
   switch (f.type) {
     case 'text':
-      return typeof v === 'string' ? short(f.ref ? labelOf(f.ref, v) : v) : '';
+      return typeof v === 'string' ? short((f.ref ?? f.pick) ? labelOf((f.ref ?? f.pick)!, v) : v) : '';
     case 'longtext':
       return typeof v === 'string' ? short(v) : '';
     case 'number':
@@ -210,7 +216,7 @@ export function fieldBrief(f: FieldDesc, v: unknown, labelOf: LabelOf = plainLab
     case 'tags': {
       const list = Array.isArray(v) ? v.map(String) : [];
       if (!list.length) return '';
-      const names = list.slice(0, 2).map((x) => (f.ref ? labelOf(f.ref, x) : x));
+      const names = list.slice(0, 2).map((x) => ((f.ref ?? f.pick) ? labelOf((f.ref ?? f.pick)!, x) : x));
       return list.length > 2 ? `${names.join('、')} 等 ${list.length} 个` : names.join('、');
     }
     case 'weighted':

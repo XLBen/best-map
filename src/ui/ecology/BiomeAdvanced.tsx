@@ -1,7 +1,9 @@
 import { X } from 'lucide-preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
+import { useContext, useEffect, useRef, useState } from 'preact/hooks';
 import { kindOf } from '../../../core/content/registry';
 import { BIOME_TERRAINS } from '../../../core/export-terrain';
+import { BIOME_RADIUS, EFFECT_DP, EFFECT_DT, INVADE_STRENGTH, type NumRange, RAIN_SCALE, VISUAL_AMOUNT, VISUAL_GLOW, VISUAL_SIZE, percentOfDp, rainText } from '../../../core/effect-ranges';
 import { SCRIPT_KIND_LABEL } from '../../../core/script';
 import { BUILTIN_FIELDS, PATTERNS, PATTERN_LABEL, type Pattern, SPECIES_SCRIPT_KINDS, type Species, type Tolerance, type Visual } from '../../../core/species';
 import { world, worldEpoch } from '../../state';
@@ -9,15 +11,19 @@ import { ScriptBox } from '../ScriptBox';
 import { Slider, linear } from '../components/Slider';
 import { previewVisual, scriptEditorRequest, showCell } from '../editor-hooks';
 import { FieldsBox } from '../packs/ContentEditor';
+import { MoreCtx } from '../packs/editor-parts';
+import { showAllSettings } from '../packs/lib-prefs';
+import { MORE_ID } from '../packs/more-settings';
 import type { Obj } from '../packs/fields';
 import { type PageCtx, waterLists } from '../packs/pages';
-import { type ClimateChange, DEFAULT_INVADE_STRENGTH, DEFAULT_RADIUS_KM, MAX_LABEL, clip, cleanVisual, darker, dpOfPercent, effectsPatch, featurePatch, lighter, namesProblem, pct, percentOfDp, signed, toggleTarget, visualPatch, withClimate, withInvade } from './advanced';
+import { type ClimateChange, DEFAULT_INVADE_STRENGTH, DEFAULT_RADIUS_KM, MAX_LABEL, clip, cleanVisual, darker, effectsPatch, featurePatch, lighter, namesProblem, pct, signed, toggleTarget, visualPatch, withClimate, withInvade } from './advanced';
 import { shownTolerances, tolerancesPatch } from './biome-edit';
 import type { BiomeTarget } from './biome-target';
 import { type SpeciesScriptKind, applySpeciesScript, settleSpeciesEdits, speciesEditsSettled, speciesIssue } from './species-scripts';
 
-// 生态编辑器里收起来的“高级”（第七十二轮从 SpeciesAdvanced.tsx、ClimateChart.tsx 的“更精细的条件”合来）：
-// 更精细的条件、导出用的地形、图案与发光、对周围的影响、侵占、地名、脚本。
+// 生态编辑器里收起来的“更多设置”（第九十三轮以前叫“高级”；第七十二轮从 SpeciesAdvanced.tsx、ClimateChart.tsx 的“更精细的条件”合来）：
+// 水系、人文（第九十三轮从外面挪进来）、更精细的条件、导出用的地形、图案与发光、对周围的影响、侵占、地名、脚本、id。
+// 第九十三轮：滑块的范围、步子、单位来自 core/effect-ranges.ts，和通用表单的字段表是同一处定义（以前这里变暖变冷 ±5、范围写“千米”）。
 // 滑块松手才提交（一步撤销）；本世界里拖图案、发光的滑块时地图上立即换上（画面那边装上了 previewVisual 时）；
 // 脚本停一下就用到地图上（见 ScriptBox）。本世界里每次提交都排进队里、按那时世界上最新的这种生态做补丁（species-scripts.ts）
 
@@ -39,17 +45,19 @@ function useLocal<T>(spId: string): [T | null, (v: T | null) => void, (job: Prom
   return [local, setLocal, track, () => jobs.current > 0];
 }
 
-// 滑块（界面上同一种 Slider）：拖动时 onLive，松手时值变了 onDone，最后 onEnd（值没变、取消时只有 onEnd）
-function Knob(p: { label: string; min: number; max: number; step: number; value: number; text: string; onLive?: (v: number) => void; onDone: (v: number) => void; onEnd?: () => void }) {
+// 滑块（界面上同一种 Slider）：拖动时 onLive，松手时值变了 onDone，最后 onEnd（值没变、取消时只有 onEnd）。
+// range：范围和步子（core/effect-ranges.ts）；scale：不是等间距的刻度（变湿变干）；typed：点数值打字时这个值写成什么数（省略时是值本身）
+function Knob(p: { label: string; range: NumRange; scale?: { pos: (v: number) => number; at: (p: number) => number }; value: number; text: string; typed?: (v: number) => string; onLive?: (v: number) => void; onDone: (v: number) => void; onEnd?: () => void }) {
   // 按下时的值：松手时和它比，没变就不提交
   const start = useRef<number | null>(null);
-  const scale = linear(p.min, p.max, p.step);
+  const scale = p.scale ?? linear(p.range.min, p.range.max, p.range.step);
   return (
     <Slider
       stacked
       label={p.label}
       pos={scale.pos(p.value)}
       text={p.text}
+      textAt={(pos) => (p.typed ?? String)(scale.at(pos))}
       onDraft={(pos) => {
         start.current ??= p.value;
         p.onLive?.(scale.at(pos));
@@ -180,11 +188,11 @@ function LookSection({ sp, t }: Props) {
       </div>
       {v.pattern !== 'none' && (
         <>
-          <Knob label="明显程度" min={0} max={1} step={0.05} value={v.amount ?? 0.6} text={pct(v.amount ?? 0.6)} onLive={(x) => live({ amount: x })} onDone={(x) => save({ amount: x })} onEnd={end} />
-          <Knob label="大小" min={0.1} max={4} step={0.05} value={v.size ?? 0.5} text={`${(v.size ?? 0.5).toFixed(2)} 格`} onLive={(x) => live({ size: x })} onDone={(x) => save({ size: x })} onEnd={end} />
+          <Knob label="明显程度" range={VISUAL_AMOUNT} value={v.amount ?? 0.6} text={pct(v.amount ?? 0.6)} typed={pct} onLive={(x) => live({ amount: x })} onDone={(x) => save({ amount: x })} onEnd={end} />
+          <Knob label="大小" range={VISUAL_SIZE} value={v.size ?? 0.5} text={`${(v.size ?? 0.5).toFixed(2)} 格`} onLive={(x) => live({ size: x })} onDone={(x) => save({ size: x })} onEnd={end} />
         </>
       )}
-      <Knob label="发光" min={0} max={1} step={0.05} value={glow} text={glow > 0 ? pct(glow) : '不发光'} onLive={(x) => live({ glow: x })} onDone={(x) => save({ glow: x })} onEnd={end} />
+      <Knob label="发光" range={VISUAL_GLOW} value={glow} text={glow > 0 ? pct(glow) : '不发光'} typed={pct} onLive={(x) => live({ glow: x })} onDone={(x) => save({ glow: x })} onEnd={end} />
       {glow > 0 && (
         <label class="inline">
           发光的颜色
@@ -203,7 +211,6 @@ function ClimateSection({ sp, t }: Props) {
   const dT = local?.dT ?? c?.dT ?? 0;
   const dP = local?.dP ?? c?.dP ?? 0;
   const r = local?.radiusKm ?? c?.radiusKm ?? DEFAULT_RADIUS_KM;
-  const p = percentOfDp(dP);
   const live = (change: ClimateChange) => setLocal({ ...local, ...change });
   const save = (change: ClimateChange) => {
     live(change);
@@ -212,9 +219,10 @@ function ClimateSection({ sp, t }: Props) {
   return (
     <>
       <h5>对周围的影响</h5>
-      <Knob label="变暖变冷" min={-5} max={5} step={0.5} value={dT} text={signed(dT, ' °C')} onLive={(x) => live({ dT: x })} onDone={(x) => save({ dT: x })} onEnd={end} />
-      <Knob label="变湿变干" min={-50} max={100} step={5} value={p} text={p === 0 ? '不变' : `降水 ${signed(p, '%')}`} onLive={(x) => live({ dP: dpOfPercent(x) })} onDone={(x) => save({ dP: dpOfPercent(x) })} onEnd={end} />
-      {(dT !== 0 || dP !== 0) && <Knob label="范围" min={50} max={1500} step={10} value={r} text={`${r} 千米`} onLive={(x) => live({ radiusKm: x })} onDone={(x) => save({ radiusKm: x })} onEnd={end} />}
+      <Knob label="变暖变冷" range={EFFECT_DT} value={dT} text={signed(dT, ` ${EFFECT_DT.unit}`)} onLive={(x) => live({ dT: x })} onDone={(x) => save({ dT: x })} onEnd={end} />
+      {/* 存的是指数，滑块上写降水多、少百分之几（RAIN_SCALE：按指数等间距，停在 5% 的整数倍上） */}
+      <Knob label="变湿变干" range={EFFECT_DP} scale={RAIN_SCALE} value={dP} text={rainText(dP)} typed={(x) => String(percentOfDp(x))} onLive={(x) => live({ dP: x })} onDone={(x) => save({ dP: x })} onEnd={end} />
+      {(dT !== 0 || dP !== 0) && <Knob label="范围" range={BIOME_RADIUS} value={r} text={`${r} ${BIOME_RADIUS.unit}`} onLive={(x) => live({ radiusKm: x })} onDone={(x) => save({ radiusKm: x })} onEnd={end} />}
       <p class="hint">越远影响越小，到范围边上为零。</p>
     </>
   );
@@ -247,7 +255,7 @@ function InvadeSection({ sp, t }: Props) {
         ))}
       </div>
       {targets.length > 0 && (
-        <Knob label="力度" min={0} max={5} step={0.1} value={strength} text={strength.toFixed(1)} onLive={(x) => setLocal({ targets, strength: x })} onDone={(x) => save({ strength: x })} onEnd={() => !saving() && setLocal(null)} />
+        <Knob label="力度" range={INVADE_STRENGTH} value={strength} text={strength.toFixed(1)} onLive={(x) => setLocal({ targets, strength: x })} onDone={(x) => save({ strength: x })} onEnd={() => !saving() && setLocal(null)} />
       )}
     </>
   );
@@ -338,24 +346,38 @@ function ScriptsSection({ sp, t }: Props) {
   );
 }
 
-// 收着时里面的东西不画（脚本框要加载 acorn）。别处要求打开脚本框时自己展开
-export function BiomeAdvanced({ sp, t, ctx }: Props & { ctx: PageCtx }) {
+// 收着时里面的东西不画（脚本框要加载 acorn）。别处要求打开脚本框时自己展开。
+// 第九十三轮：叫“更多设置”（和别的种类同一个说法）；展开过在这次打开页面期间记着（和别的种类页面底下的那一层同一个键）；
+// “更多设置都摊开”（lib-prefs.ts 的 showAllSettings）时一直展开着。children：最上面的几段（水系、人文，由生态编辑器给）
+export function BiomeAdvanced({ sp, t, ctx, children }: Props & { ctx: PageCtx; children?: ComponentChildren }) {
   const req = scriptEditorRequest.value;
-  const [open, setOpen] = useState(false);
+  const more = useContext(MoreCtx);
+  const all = showAllSettings();
+  const [own, setOwn] = useState(false);
+  const open = all || (more ? more.isOpen(MORE_ID) : own);
+  const set = (on: boolean) => {
+    if (on === open) return;
+    if (more) more.toggle(MORE_ID);
+    else setOwn(on);
+  };
   useEffect(() => {
-    if (req?.species === sp.id && t.inWorld) setOpen(true);
+    if (req?.species === sp.id && t.inWorld) set(true);
   }, [req, sp.id]);
   return (
-    <details class="species-advanced" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>高级</summary>
+    <details class="species-advanced" open={open} onToggle={(e) => set((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary>更多设置</summary>
       {open && (
         <>
+          {children}
           <TolerancesSection sp={sp} t={t} ctx={ctx} />
           <LookSection sp={sp} t={t} />
           <ClimateSection sp={sp} t={t} />
           <InvadeSection sp={sp} t={t} />
           <NamesSection sp={sp} t={t} />
           <ScriptsSection sp={sp} t={t} />
+          <p class="hint lp-id-line">
+            id：<code>{sp.id}</code>　别的内容按它找到这一种，建好后不改
+          </p>
         </>
       )}
     </details>

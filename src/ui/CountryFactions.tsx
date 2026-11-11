@@ -60,6 +60,7 @@ export function FactionSection({ w, m }: { w: World; m: CountryMeta }) {
             text={shareText(f.influence)}
             disabled={shown.length < 2}
             changed={draft?.id === f.id}
+            textAt={(p) => shareText(Math.round(p * 100) / 100)}
             onDraft={(p) => setDraft({ id: f.id, v: Math.round(p * 100) / 100 })}
             onCommit={(p) => {
               setDraft(null);

@@ -9,7 +9,7 @@
 npx tsc --noEmit                 # 查类型
 npx vitest run                   # 全部测试（约 1700 个，几分钟）
 npm run test:fast                # 跳过最慢的几个文件
-npx vitest run core/foo.test.ts  # 单个文件；机器忙时 core/sizing 的“滑块最小值命令都接受”会超时，单独重跑
+npx vitest run core/foo.test.ts  # 单个文件；机器忙时 core/sizing 的“滑块最小值命令都接受”会超时，单独重跑；整套里 `tools/realism.test.ts` 的“类地星球”、`src/ui/speed-r80.test.ts` 的“一串编辑”也常超时，这两个文件单独重跑
 npm run golden                   # 只跑金标准
 npm run build                    # 查类型后打包
 node tools/bench-median.mjs 5 --against <提交> --           # 一块地区的加工各步与旧提交对照，五次中位数（结尾的 -- 不能省：省了只测星球）
@@ -53,6 +53,10 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 | 画风 | `core/map-style.ts`、`core/packs/map-styles.ts`、`src/render/style-uniforms.ts` 的 `styleUniforms` |
 | 地名风格 | `core/name-styles.ts`、`core/packs/names/*.json` |
 | 资源库里找东西：首页搜索、文化的卡片、地图上点到的东西直达库里那一项、档案里直接改名字颜色 | `src/ui/packs/page-search.ts`、`page-layout.ts` 的 `WORLD_OWN_CARDS`、`open-item.ts`、`src/ui/shell/LibItemLine.tsx`、`panel-store.ts` 的 `openWorldItem`；设计见 `docs/dev/history/第92轮.md` |
+| 一项的页面平时露哪些字段（常用 / 更多设置） | 字段表的 `more`（`core/content/kinds.ts`、`core/human/*-kinds.ts`）、分段 `src/ui/packs/page-segments.ts`、规则 `more-settings.ts`、要不要都摊开 `lib-prefs.ts` 的 `showAllSettings`；整张表钉在 `lib-form.test.ts` 的 `COMMON`；设计见 `docs/dev/history/第93轮.md` |
+| 滑块的范围、单位（同一个数只写一处）、点数值打字 | `core/effect-ranges.ts`（字段表、生态编辑器、向导都引用）；`src/ui/components/Slider.tsx`、`slider-entry.ts`（新滑块要给 `textAt`） |
+| 表单里“从现成的里面选”（不让手打英文） | 内容之间的引用写 `ref` / `keyRef`；现成的表写 `pick` / `keyPick`（引用表不看），选项在 `src/ui/packs/refs.ts`；带图的选择、新加键 `field-controls.tsx` |
+| 一项页面底下的一排按钮、删除的规矩；河、湖、岛的编辑 | `src/ui/packs/pages.ts` 的 `itemActions`、`item-delete.ts`、`PageItem.tsx` 的 `Actions`；河湖岛只在资源库那一项的页面改，“⋯”里是列表（`panels/waterTypes.tsx`、`islandTypes.tsx`），规则脚本框 `packs/WaterScript.tsx` |
 | 改的是哪一份、来源下拉、存到我的库 | `src/ui/packs/source-view.ts`、`lib-prefs.ts`（`showAllSources`：“完整界面”开关接这里）、`save-mine.ts`（去向、怎么存，纯函数）、`save-mine-run.ts`（写入、提示、撤销）；旧的“我的资源”在 `src/library.ts` 的 `MY_PACK_KEY` / `shownPack`；挑选时的人话 `pick-help.ts`；样式 `lib-find.css` |
 | 国名、称号跟着资源库变 | 每条命令之后的重算 `core/human/retitle.ts`（`core/commands.ts` 的 `applyCommand` 调）；称号怎么挑 `core/human/government.ts` 的 `govTitles`；称号编辑器旁的示例、“换说法盖过”、“都换掉” `src/ui/packs/title-help.ts`；设计见 `docs/dev/history/第91轮.md` |
 | 世界文件的格式 | `core/world.ts`；改了就把 `core/doc-version.ts` 的 `DOC_VERSION` 加一，同时改 `src/checkpoint-store.ts` 的 `CURRENT_VERSION`、测试夹具里的 `version:`、`core/raster-identity.test.ts` 的四个 `world.json`（先把版本写回旧的，核对别的一项没变） |

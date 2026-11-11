@@ -1,5 +1,6 @@
 import { FLAG_EMBLEMS, FLAG_LAYOUTS, type FlagSpec, cityList, makeFlag } from '../../../core/human';
 import type { World } from '../../../core/world';
+import { EMBLEM_NAMES, LAYOUT_NAMES } from '../domain/flag-names';
 import { type Obj, titleRows } from './fields';
 import type { PageCtx, SourceRef } from './page-source';
 import { refLabel, refOptionsOf } from './refs';
@@ -13,6 +14,8 @@ import { refLabel, refOptionsOf } from './refs';
 
 // 写法里能用的词（core/human/landmarks.ts 的 token）；不认识的词按当地的小地名
 export const LANDMARK_TOKENS = ['city', 'country', 'river', 'range', 'peak', 'lake', 'place', 'culture'] as const;
+// 每个词换成什么（第九十三轮：写在示例下面，不用猜英文）
+export const LANDMARK_TOKEN_NAMES: Record<(typeof LANDMARK_TOKENS)[number], string> = { city: '城市', country: '国家', river: '河', range: '山脉', peak: '山峰', lake: '湖', place: '当地的小地名', culture: '文化' };
 type Word = { zh: string; orig?: string };
 // 没有世界（看的是库）、地图上没有这样东西时用的名字
 const SAMPLE_WORDS: Record<string, Word> = {
@@ -102,3 +105,42 @@ export function flagPreview(gov: Obj, seed: number, n = 6): FlagPreview {
 
 // 能写的纹章、样式（写在预览下面）
 export const FLAG_WORDS = { emblems: FLAG_EMBLEMS as readonly string[], layouts: FLAG_LAYOUTS as readonly string[] };
+
+// ---------- 旗的纹章、样式：带小图的选择（第九十三轮：以前手打 crown lion tower、bicolor-h） ----------
+
+export type FlagPart = 'emblems' | 'layouts';
+export interface FlagChoice {
+  id: string;
+  // 中文名（王冠、横二色）
+  label: string;
+  // 画出来的小图：样式是那种样式的一面旗，纹章是纯色底上的那个纹章
+  flag: FlagSpec;
+}
+
+const CHOICE_COLORS = ['#1f4f9a', '#f4f1e8', '#b8202a'];
+const cache = new Map<FlagPart, FlagChoice[]>();
+export function flagChoices(part: FlagPart): FlagChoice[] {
+  let list = cache.get(part);
+  if (!list) {
+    list =
+      part === 'layouts'
+        ? FLAG_LAYOUTS.map((id) => ({ id, label: LAYOUT_NAMES[id] ?? id, flag: { layout: id, colors: [...CHOICE_COLORS] } }))
+        : FLAG_EMBLEMS.map((id) => ({ id, label: EMBLEM_NAMES[id] ?? id, flag: { layout: 'plain', colors: [CHOICE_COLORS[0]], emblem: id, emblemColor: CHOICE_COLORS[1] } }));
+    cache.set(part, list);
+  }
+  return list;
+}
+
+// 点了一个：有就去掉，没有就加上（按那张表的先后；表里没有的照旧留在后面）。一个都没有时 undefined（这个字段可以不写）
+export function toggleFlagWord(part: FlagPart, value: unknown, id: string): string[] | undefined {
+  const cur = strings(value);
+  const order = flagChoices(part).map((c) => c.id);
+  const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...order.filter((o) => o === id || cur.includes(o)), ...cur.filter((x) => !order.includes(x))];
+  return next.length ? next : undefined;
+}
+
+// 写了但表里没有的（以前手打错的）：照旧列出来，能点掉
+export const unknownFlagWords = (part: FlagPart, value: unknown): string[] => {
+  const known = new Set(flagChoices(part).map((c) => c.id));
+  return strings(value).filter((x) => !known.has(x));
+};

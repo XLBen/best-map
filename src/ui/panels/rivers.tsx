@@ -113,6 +113,10 @@ function FlowSlider({ w, g }: { w: World; g: Guide }) {
       text={`${cur === null ? '顺其自然' : `${riverSizeName(cur)} ${fmtFlow(cur * thr)} m³/s`}${split > 0 ? ` · 分出 ${Math.round(split * 100)}%` : ''}`}
       title={`河的总水量，最左是顺其自然${split > 0 ? `；按分出 ${Math.round(split * 100)}% 之前算` : ''}`}
       detent={DETENT}
+      textAt={(p) => {
+        const v = valueAt(p);
+        return v === null ? '' : fmtFlow(v * thr);
+      }}
       onDraft={draftTo}
       onCommit={(p) => void commit(p)}
       onCancel={done}
@@ -153,6 +157,7 @@ function WidthSlider({ w, g }: { w: World; g: Guide }) {
       label="粗细"
       pos={clamp01(Math.log(cur / WLO) / Math.log(WHI / WLO))}
       text={`${Math.round(cur * 100)}%`}
+      textAt={(p) => `${Math.round(valueAt(p) * 100)}%`}
       title="只改画出来的粗细，水量不变"
       onDraft={(p) => {
         const v = valueAt(p);
@@ -251,6 +256,7 @@ function ShareSlider({ w, g }: { w: World; g: Guide }) {
       label="分水"
       pos={clamp01((cur - SLO) / (SHI - SLO))}
       text={`${Math.round(cur * 100)}%`}
+      textAt={(p) => `${Math.round(valueAt(p) * 100)}%`}
       title="从干流分出多少水"
       onDraft={(p) => {
         const v = valueAt(p);

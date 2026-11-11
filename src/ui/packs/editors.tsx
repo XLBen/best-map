@@ -5,7 +5,8 @@ import type { FieldDesc } from '../../../core/content/registry';
 import { Draft } from './editor-parts';
 import { type Obj, type TitleRow, defaultValue, isObj, moveItem, titleRows, titleValue, weightedRows, weightedValue } from './fields';
 import { RefGo, RefPicker, useRefOptions } from './RefPicker';
-import { DEFAULT_KEY, type RefOption, refItem, refLabel } from './refs';
+import { DEFAULT_KEY, type RefOption, refItem, refLabel, refNewMax } from './refs';
+import { showAllSettings } from './lib-prefs';
 import type { TitleField, TitleHelp } from './title-help';
 import { ShareBar } from '../components/ShareBar';
 import { library } from '../../library';
@@ -307,14 +308,14 @@ export function TagRefs({ refKind, value, onChange }: { refKind: string; value: 
   return (
     <span class="ed-tags">
       {list.map((id) => (
-        <span class="ed-tag" title={id}>
+        <span class="ed-tag" title={showAllSettings() ? id : undefined}>
           <RefText go={go?.(refKind, id) ?? null} text={refLabel(opts, id)} />
           <button class="small icon ghost" title="删除" aria-label="删除" onClick={() => onChange(list.filter((x) => x !== id))}>
             <X />
           </button>
         </span>
       ))}
-      <RefPicker add options={opts} exclude={set} onPick={(id) => onChange([...list, id])} />
+      <RefPicker add options={opts} exclude={set} onPick={(id) => onChange([...list, id])} newFor={refNewMax(refKind) ? refKind : undefined} />
     </span>
   );
 }

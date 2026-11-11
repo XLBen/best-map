@@ -3,10 +3,13 @@ import { type ComponentChildren, createContext } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { library } from '../../library';
 import { world } from '../../state';
-import { type RefOption, refLabel, refOptionsOf, searchRefs } from './refs';
+import { showAllSettings } from './lib-prefs';
+import { type RefOption, newRefName, refLabel, refOptionsOf, searchRefs } from './refs';
 
 // 带搜索的下拉（第四十五轮）：编辑器里选文化组、地名风格、维度、取值、政体、国家等级……。
-// 点开后先列全部（多了只列前面的），输入几个字筛；方向键挑、回车选、Esc 关。列表里没有的 id 也能照写（“用 xxx”）。
+// 点开后先列全部（多了只列前面的），输入几个字筛；方向键挑、回车选、Esc 关。
+// 第九十三轮：平时每一行只写名字（不带英文的 id），也不能照写一个列表里没有的 id——那是“更多设置都摊开”（lib-prefs.ts 的 showAllSettings）时才有的。
+// 能新加一个的（政体的类别，newFor）：搜索框里写名字，最下面一行“新加‘X’”
 // 弹框不超出外面滚动的那一层（第六十八轮）
 
 // 引用点过去（第五十九轮）：资源库面板给这个函数：这个引用点了做什么（这一份里没有它时 null）。别处不给，引用就不能点
@@ -37,9 +40,11 @@ interface Props {
   placeholder?: string;
   title?: string;
   children?: ComponentChildren;
+  // 能新加一个的引用（refs.ts 的 refNewMax 认的那几种）：写名字就能加
+  newFor?: string;
 }
 
-export function RefPicker({ options, value, add, onPick, onClear, exclude, placeholder, title, children }: Props) {
+export function RefPicker({ options, value, add, onPick, onClear, exclude, placeholder, title, children, newFor }: Props) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [hi, setHi] = useState(0);
@@ -75,7 +80,10 @@ export function RefPicker({ options, value, add, onPick, onClear, exclude, place
   const pool = useMemo(() => (exclude?.size ? options.filter((o) => !exclude.has(o.id)) : options), [options, exclude]);
   const { list, more } = useMemo(() => searchRefs(pool, q), [pool, q]);
   const free = q.trim();
-  const canFree = !!free && /^[\w-]+$/.test(free) && !options.some((o) => o.id === free);
+  const full = showAllSettings();
+  const fresh = newFor ? newRefName(newFor, q, options) : null;
+  // 照写一个列表里没有的 id：只在都摊开时
+  const canFree = full && !fresh && !!free && /^[\w-]+$/.test(free) && !options.some((o) => o.id === free);
   const pick = (id: string) => {
     setOpen(false);
     setQ('');
@@ -87,7 +95,7 @@ export function RefPicker({ options, value, add, onPick, onClear, exclude, place
     <span class="ref-pick" ref={box}>
       <button
         class={`ref-btn ${add ? 'small' : ''} ${open ? 'open' : ''}`}
-        title={title ?? (value && shown !== value ? value : undefined)}
+        title={title ?? (full && value && shown !== value ? value : undefined)}
         onClick={() => {
           setOpen(!open);
           setHi(0);
@@ -109,7 +117,7 @@ export function RefPicker({ options, value, add, onPick, onClear, exclude, place
           <input
             ref={input}
             type="search"
-            placeholder="搜索"
+            placeholder={newFor ? '搜索，或写一个新的名字' : '搜索'}
             value={q}
             onInput={(e) => {
               setQ((e.target as HTMLInputElement).value);
@@ -125,6 +133,7 @@ export function RefPicker({ options, value, add, onPick, onClear, exclude, place
               } else if (e.key === 'Enter') {
                 e.preventDefault();
                 if (list[hi]) pick(list[hi].id);
+                else if (fresh) pick(fresh);
                 else if (canFree) pick(free);
               } else if (e.key === 'Escape') {
                 e.stopPropagation();
@@ -138,12 +147,18 @@ export function RefPicker({ options, value, add, onPick, onClear, exclude, place
                 {o.color && <span class="swatch" style={{ background: o.color }} />}
                 <span class="grow item-text">
                   {o.label}
-                  <span class="hint">{o.hint ? `${o.hint} · ${o.id}` : o.id}</span>
+                  {(o.hint || full) && <span class="hint">{full ? (o.hint ? `${o.hint} · ${o.id}` : o.id) : o.hint}</span>}
                 </span>
               </button>
             ))}
-            {!list.length && !canFree && <p class="hint">没有对上的</p>}
+            {!list.length && !canFree && !fresh && <p class="hint">没有对上的</p>}
             {more > 0 && <p class="hint">还有 {more} 个，再输入几个字</p>}
+            {fresh && (
+              <button class="item" onClick={() => pick(fresh)}>
+                <Plus />
+                <span class="grow item-text">新加“{fresh}”</span>
+              </button>
+            )}
             {canFree && (
               <button class="item" onClick={() => pick(free)}>
                 <span class="grow item-text">用“{free}”</span>

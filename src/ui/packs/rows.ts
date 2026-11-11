@@ -12,8 +12,7 @@ import type { LibraryEntry } from '../../library';
 // 资源库面板列表里的一行（第六十三轮从旧面板的 repo.ts 留下来的）：这一项在这一份里、在这个世界里是什么状态，
 // 移出本世界、设为默认是哪条命令，用在哪里，单独导出的样子。添加到本世界走 core/packs/closure.ts 的闭包（pick-add.ts）。不碰界面，测试直接调
 
-// 有自己的详细编辑器的几种：河湖岛的脚本检查（世界里的一项有“详细编辑”）。第七十二轮：生态的编辑器就是它在面板里的页面，不再另开
-export const DEDICATED: ReadonlySet<string> = new Set(['riverType', 'lakeType', 'islandType']);
+// 第九十三轮：河湖岛不再有另开的“详细编辑”（以前的 DEDICATED）：编辑器就是它在面板里的页面，和生态一样
 
 export interface RowStatus {
   // 在这个世界里
@@ -134,6 +133,11 @@ export function rowUsage(row: ItemRow, world: UsageWorld | null): ContentUsage |
 // 移出世界默认的地名风格时默认一起换回内置中文，移出在用的画风时一起不选（按剩下的第一种画）
 export function removeCommand(row: ItemRow, world: UsageWorld): Command | null {
   if (!row.status.on || row.status.locked || rowUsage(row, world)) return null;
+  return removeBatch(row, world);
+}
+
+// 删这一项的那一步，不看在不在用（第九十三轮：在用时删不删得掉、要不要先问由 item-delete.ts 定）
+export function removeBatch(row: ItemRow, world: UsageWorld): Command {
   const off = kindDisable(row.kind, row.status.worldId ?? row.id, world);
   const unset: Command[] = !row.status.isDefault ? [] : [row.kind.id === 'mapStyle' ? { op: 'set_map_style', id: null } : { op: 'set_name_style', id: null }];
   return { op: 'batch', label: `删除${quoted(row)}`, commands: [...unset, off] };

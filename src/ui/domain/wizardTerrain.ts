@@ -1,3 +1,4 @@
+import { ISLAND_AMOUNT, LAND_FRACTION } from '../../../core/effect-ranges';
 import type { Command } from '../../../core/commands';
 import { type WorldgenInput, resolvedParams, worldgenSchema } from '../../../core/generate';
 import { resolvedPlanetParams } from '../../../core/planet-gen';
@@ -23,8 +24,9 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 const level = (v: number, words: [string, string, string, string]) => (v < 0.25 ? words[0] : v < 0.5 ? words[1] : v < 0.8 ? words[2] : words[3]);
 
 export const TERRAIN_SLIDERS: TerrainSlider[] = [
-  { key: 'landFraction', label: '陆地多少', hint: '升降海平面', range: [0.03, 0.7], step: 0.01, format: pct },
-  { key: 'islands', label: '岛多少', hint: '增减小岛，不动大陆的海岸', range: [0, 1], step: 0.01, format: (v) => level(v, ['很少', '较少', '较多', '很多']) },
+  // 第九十三轮：这两项的范围和星球形态编辑器、资源库里星球形态的字段表是同一处（core/effect-ranges.ts）
+  { key: 'landFraction', label: '陆地多少', hint: '升降海平面', range: [LAND_FRACTION.min, LAND_FRACTION.max], step: LAND_FRACTION.step, format: pct },
+  { key: 'islands', label: '岛多少', hint: '增减小岛，不动大陆的海岸', range: [ISLAND_AMOUNT.min, ISLAND_AMOUNT.max], step: ISLAND_AMOUNT.step, format: (v) => level(v, ['很少', '较少', '较多', '很多']) },
   { key: 'mountains', label: '山多高', hint: '整体缩放造山带', range: [0, 2], step: 0.01, format: pct },
   {
     key: 'coast',

@@ -154,19 +154,22 @@ describe('别的口子', () => {
     expect(state.canEditScript(form)).toBe(false);
   });
 
-  it('出错提示的“编辑”：河流类型的规则打开“水系 ⋯”里那种河；类型删掉了就没有“编辑”', () => {
+  // 第九十三轮（有意改的）：河湖的编辑器并进了资源库里这一种的页面（以前打开“水系 ⋯”里另一个编辑器、换到画河工具）
+  it('出错提示的“编辑”：河流类型的规则打开资源库里那种河的页面、展开“规则”；类型删掉了就没有“编辑”', async () => {
     state.world.value = { ...w0, small: { ...w0.small, riverTypes: [{ id: 'blood', name: '血河', color: '#8f1414', scripts: { match: { api: 1, src: 'return o.x;' } } }] } };
     const issue: ScriptIssue = { kind: 'match', owner: '血河', id: 'blood', reason: 'runtime', text: '没有变量 o', raw: 'o is not defined', message: '「血河」的脚本：没有变量 o' };
     expect(state.canEditScript(issue)).toBe(true);
     const tool = state.tool.value;
+    state.openPanel.value = 'cat:water';
     state.editScript(issue);
-    expect(state.tool.value).toBe('river');
-    expect(state.waterTypeEditorRequest.value).toEqual({ kind: 'river', id: 'blood' });
-    expect(state.openPanel.value).toBe('cat:water');
+    const { libPanel } = await import('./packs/panel-store');
+    expect(libPanel.value?.source).toEqual({ t: 'world' });
+    expect(libPanel.value?.stack.at(-1)).toEqual({ p: 'item', kind: 'riverType', id: 'blood', seg: 'scripts' });
+    // 不换工具；开着的“⋯”收起（面板在它下面）
+    expect(state.tool.value).toBe(tool);
+    expect(state.openPanel.value).toBeNull();
     expect(state.canEditScript({ ...issue, id: 'gone' })).toBe(false);
-    state.waterTypeEditorRequest.value = null;
-    state.openPanel.value = null;
-    state.tool.value = tool;
+    libPanel.value = null;
   });
 
   it('世界上还用着的不去掉：在用的星球形态里的脚本也算', async () => {

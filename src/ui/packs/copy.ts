@@ -85,7 +85,10 @@ export const GEN_TITLE = '生成设置';
 export const GEN_CARD_NOTE = '国家大小、人口、省份大小';
 export const GEN_OPEN_TIP = '国家大小、人口、省份大小';
 export const GEN_NO_ERA = '还没有生成人文';
-export const GEN_POP_NOTE = '总人口 = 人口密度 × 陆地面积';
+// 第九十三轮：国家等级的比例下面的一句（以前的“统一 ↔ 分裂”滑块第七十七轮去掉了，现在调的就是这条比例和国家大小）
+export const GEN_TIERS_NOTE = '帝国、王国占得多，大国就多；小国占得多，更分裂';
+export const GEN_REGEN_NOTE = '这几项改完要点底下的“重新生成”';
+export const genMore = (what: string) => `${what}的更多设置`;
 export const GEN_AFTER_CREATE = '建好后打开生成设置';
 // “文化 ⋯”的总人口滑块下面：它和时代的人口密度的关系
 export const popDensityNote = (density: number) => `默认按人口密度 ${density} 人/km²；改密度在生成设置`;

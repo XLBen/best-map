@@ -53,9 +53,8 @@ export function withClimate(effects: Effects | undefined, change: ClimateChange)
   return Object.keys(out).length ? out : null;
 }
 
-// 降水的百分比（滑块）与 dP 互换
-export const percentOfDp = (dP: number) => Math.round((Math.exp(dP) - 1) * 100);
-export const dpOfPercent = (p: number) => Math.max(-1.5, Math.min(1.5, Math.round(Math.log(1 + p / 100) * 1e4) / 1e4));
+// 降水的百分比（滑块）与 dP 互换（第九十三轮搬到 core/effect-ranges.ts：通用表单的字段表也用，照旧从这里导出）
+export { dpOfPercent, percentOfDp } from '../../../core/effect-ranges';
 
 export const effectsPatch = (cur: Species, next: Effects | null): Patch | null => (same(next, cur.effects) ? null : { effects: next });
 

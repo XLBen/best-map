@@ -132,6 +132,8 @@ export function biomeGroupOf(sp: Pick<Species, 'group' | 'terrain'>): BiomeGroup
 // low、high 是最适合的范围，外面各留 HEIGHT_MARGIN 的过渡；low 为 0 不限下限，high 到 HEIGHT_MAX 不限上限。
 // 和气温、湿度一样是耐受曲线，乘进适宜度（见 heightTolerance），所以高度的边界和气候的边界一样是渐变的
 export const HEIGHT_MAX = 9000;
+// 高度范围的滑块（第九十三轮：生态编辑器和通用表单的字段表用同一处）
+export const HEIGHT_RANGE = { min: 0, max: HEIGHT_MAX, step: 100, unit: 'm' } as const;
 export const HEIGHT_MARGIN = 300;
 export const heightSchema = z
   .object({ low: z.number().min(0).max(HEIGHT_MAX), high: z.number().min(0).max(HEIGHT_MAX) })

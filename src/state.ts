@@ -148,9 +148,9 @@ function scriptOfIssue(issue: ScriptIssue): { id: string; kind: SpeciesScriptKin
   const sp = world.value?.small.species.find((s) => (issue.id !== undefined ? s.id === issue.id : speciesOwner(s) === issue.owner));
   return sp && { id: sp.id, kind };
 }
-// 河流、湖泊类型的 match 脚本（第三批、第九轮）：出错时“编辑”打开“水系 ⋯”里“水体类型”这一种的编辑（见 ui/panels/waterTypes.tsx）。
-// “新建类型…”之后也用它打开新的那一种
-export const waterTypeEditorRequest = signal<{ kind: 'river' | 'lake'; id: string } | null>(null);
+// 河流、湖泊类型的 match 脚本（第三批、第九轮）：出错时“编辑”打开这一种的编辑。
+// 第九十三轮：编辑器是资源库里这张地图的这一种的页面（以前是“水系 ⋯”里另一个编辑器）：界面把打开方法放在 open 上（ui/connect.ts 接上），和生态的一样
+export const waterTypeEditor: { open: ((kind: 'river' | 'lake', id: string) => void) | null } = { open: null };
 function waterTypeOfIssue(issue: ScriptIssue): { kind: 'river' | 'lake'; id: string } | undefined {
   if (issue.kind !== 'match' || issue.id === undefined) return undefined;
   const small = world.value?.small;
@@ -160,12 +160,6 @@ function waterTypeOfIssue(issue: ScriptIssue): { kind: 'river' | 'lake'; id: str
   if (lake && (!river || (lake.name === issue.owner && river.name !== issue.owner))) return { kind: 'lake', id: lake.id };
   return river ? { kind: 'river', id: river.id } : undefined;
 }
-// 打开“水系 ⋯”里这一种的编辑
-export function openWaterTypeEditor(kind: 'river' | 'lake', id: string) {
-  if (tool.value !== 'river' && tool.value !== 'lake' && tool.value !== 'unwater') switchTool(kind === 'lake' ? 'lake' : 'river');
-  waterTypeEditorRequest.value = { kind, id };
-  openPanel.value = 'cat:water';
-}
 // 有没有地方可以打开它（没有时提示条上不放“编辑”）
 export function canEditScript(issue: ScriptIssue): boolean {
   return scriptOfIssue(issue) !== undefined || waterTypeOfIssue(issue) !== undefined;
@@ -173,7 +167,7 @@ export function canEditScript(issue: ScriptIssue): boolean {
 export function editScript(issue: ScriptIssue) {
   const wt = waterTypeOfIssue(issue);
   if (wt) {
-    openWaterTypeEditor(wt.kind, wt.id);
+    waterTypeEditor.open?.(wt.kind, wt.id);
     return;
   }
   const at = scriptOfIssue(issue);

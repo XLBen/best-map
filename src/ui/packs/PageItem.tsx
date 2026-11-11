@@ -1,13 +1,19 @@
-import { ChevronRight, Copy, Download, LocateFixed, Pencil, RotateCcw, Save, Trash2 } from 'lucide-preact';
+import { Brush, ChevronRight, Copy, Download, LocateFixed, RotateCcw, Save, Trash2 } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { itemName, kindOf } from '../../../core/content/registry';
+import { type FieldDesc, itemName, kindOf } from '../../../core/content/registry';
 import type { Era } from '../../../core/human';
-import { askUser } from '../../state';
+import { libEdits } from '../../library-edit';
+import { askUser, noteAction, options, tool } from '../../state';
 import { focusOn } from '../camera';
+import { paintWith } from '../defs/tools';
 import { EditorKind, FieldsBox } from './ContentEditor';
+import { MoreBox, MoreCtx, type MoreState } from './editor-parts';
 import { EraPatterns, PatternTip } from './EraPatterns';
-import { type Obj, editorIssues } from './fields';
+import { type Obj, editorIssues, issuesAt, shownFields } from './fields';
+import { type DeleteVerdict, libraryDelete, worldDelete } from './item-delete';
+import { showAllSettings } from './lib-prefs';
+import { MORE_ID, moreKey, moreOpen, moreSegmentsBrief, splitMore, splitSegments, toggleMore } from './more-settings';
 import { commitItem, copyItemIn, deleteFromLibrary, useSourceVersion } from './page-actions';
 import { type Segment, initialOpen, segmentBrief } from './page-segments';
 import type { UsedBy } from './page-used-by';
@@ -29,12 +35,29 @@ import { WaterBiomesSegment } from './PageEcology';
 import { BiomeEditor } from '../ecology/BiomeEditor';
 import { RefGo } from './RefPicker';
 import { refLabel, refOptionsOf } from './refs';
-import { exportRow, openDedicated, runTrusted, sampleLine, swatchOf } from './row-actions';
-import { DEDICATED, type ItemRow, defaultStyleCommand, removeCommand, rowUsage, saveableItem } from './rows';
+import { exportRow, runTrusted, sampleLine, swatchOf } from './row-actions';
+import { type ItemRow, defaultStyleCommand, rowUsage, saveableItem } from './rows';
+import { WaterScript } from './WaterScript';
 
 // 一项的页面（第五十九轮）：几段可折叠的卡片，收起时标题旁写一句当前内容；表单是 ContentEditor 的 FieldsBox。
 // 松开滑块、打完字（框失去焦点、回车）就存：本世界是一条命令，我的库走自己的撤销；有错的留在页面上、不存。只读的库整个表单不能动，引用照样能点过去
 
+// 先问一句（被用到时：谁用到它、删了会怎样），答了“删除”才是 true
+async function confirmDelete(v: DeleteVerdict): Promise<boolean> {
+  if (v.t === 'blocked') return false;
+  if (v.t === 'go') return true;
+  const got = await askUser({
+    title: v.title,
+    text: v.text,
+    choices: [
+      { value: 'delete', label: '删除', primary: true },
+      { value: 'cancel', label: '取消' },
+    ],
+  });
+  return got === 'delete';
+}
+
+// 第九十三轮：每一种内容（生态也是）同一排按钮、同一种先后（pages.ts 的 itemActions）；删除按同一套规矩（item-delete.ts）。
 // onMap：页面顶上有“在地图上”一行（第九十轮）：定位在那一行上，这里不再放一个
 function Actions({ p, row, src, ctx, embedded, side, onMap }: { p: ItemPage; row: ItemRow | undefined; src: SourceRef; ctx: PageCtx; embedded: boolean; side: boolean; onMap: boolean }) {
   // 右栏里：删了收起右栏，复制出来的在右栏打开
@@ -42,19 +65,35 @@ function Actions({ p, row, src, ctx, embedded, side, onMap }: { p: ItemPage; row
   const replace = side ? openRoute : replaceTop;
   const w = ctx.world;
   const usage = row && w && src.t === 'world' ? rowUsage(row, w) : null;
-  const remove = row && w && src.t === 'world' ? removeCommand(row, w) : null;
+  const verdict = row && w && src.t === 'world' ? worldDelete(row, w, p.usedBy) : null;
   const def = row && w && p.kind.id === 'nameStyle' ? defaultStyleCommand(row, w) : null;
+  // 删不了时点一下按钮，把原因写在下面（悬停里也有；触摸屏看不到悬停）
+  const [why, setWhy] = useState(false);
+  const biomeHere = p.kind.id === 'biome' && src.t === 'world';
+  const painting = biomeHere && options.value.biome === p.id && tool.value === 'biome';
   const list = itemActions(src, row, ctx, {
-    remove: !!remove,
-    usage: usage ? `有 ${usage.count.toLocaleString('en-US')} 处在用：${usage.label}` : null,
+    remove: !!verdict && verdict.t !== 'blocked',
+    usage: verdict?.t === 'blocked' ? verdict.why : null,
     changed: p.diff.t === 'changed',
     setDefault: !!def,
     hasCells: !!usage?.cells?.length,
     saveable: !!row && src.t === 'world' && !row.path && saveableItem(row) !== null,
-    dedicated: DEDICATED.has(p.kind.id),
     newable: !!p.kind.blank,
+    paint: biomeHere,
     // 第八十一轮：整个库复制成我的库在右上角的“⋯”里，一项的页面上不放（只读的库顶上一行是“在本世界打开 / 添加到本世界…”）
-  }).filter((a) => a.id !== 'copyLibrary' && !(onMap && a.id === 'locate') && !(p.kind.id === 'biome' && src.t === 'world' && (a.id === 'copyItem' || a.id === 'removeFromWorld')));
+  }).filter((a) => a.id !== 'copyLibrary' && !(onMap && a.id === 'locate'));
+  const removeHere = async () => {
+    if (!verdict || verdict.t === 'blocked' || !verdict.cmd) return;
+    if (!(await confirmDelete(verdict))) return;
+    if ((await runTrusted(verdict.cmd, '正在删除…')) && !embedded) back();
+  };
+  const deleteHere = async () => {
+    if (src.t !== 'lib' || !(await confirmDelete(libraryDelete(p.name, p.usedBy)))) return;
+    if (!deleteFromLibrary(src, p.kind, p.id, p.name)) return;
+    const key = src.key;
+    noteAction(`已删除“${p.name}”`, { label: '撤销', run: () => void libEdits.undo(key) });
+    if (!embedded) back();
+  };
   const button = (a: ItemAction) => {
     const dis = a.disabled;
     switch (a.id) {
@@ -62,6 +101,12 @@ function Actions({ p, row, src, ctx, embedded, side, onMap }: { p: ItemPage; row
         return (
           <button class="small primary" onClick={() => void copyToMine(src)}>
             <Copy /> 复制成我的库
+          </button>
+        );
+      case 'paint':
+        return (
+          <button class="small" title="换到涂生态的画笔，涂这一种" disabled={painting} onClick={() => paintWith(p.id)}>
+            <Brush /> {painting ? '正在涂' : '用它涂'}
           </button>
         );
       case 'setDefault':
@@ -80,12 +125,6 @@ function Actions({ p, row, src, ctx, embedded, side, onMap }: { p: ItemPage; row
         return (
           <button class="small" title={`换成“${p.diffLib}”里的这一项`} onClick={() => void useSourceVersion(p.kind, p.id, ctx)}>
             <RotateCcw /> 用库里的版本
-          </button>
-        );
-      case 'dedicated':
-        return (
-          <button class="small" title="图表、滑块和脚本检查" onClick={() => row && openDedicated(row)}>
-            <Pencil /> 详细编辑
           </button>
         );
       case 'saveToMine':
@@ -115,35 +154,30 @@ function Actions({ p, row, src, ctx, embedded, side, onMap }: { p: ItemPage; row
           </button>
         );
       case 'removeFromWorld':
-        return (
-          <span title={dis}>
-            <button class="small" disabled={!!dis} title={dis ?? DELETE_WORLD_TIP} onClick={() => remove && void runTrusted(remove, '正在删除…').then((ok) => ok && !embedded && back())}>
-              <Trash2 /> {DELETE}
-            </button>
-          </span>
+        return dis ? (
+          <button class="small danger dim" aria-disabled="true" title={dis} onClick={() => setWhy(!why)}>
+            <Trash2 /> {DELETE}
+          </button>
+        ) : (
+          <button class="small danger" title={DELETE_WORLD_TIP} onClick={() => void removeHere()}>
+            <Trash2 /> {DELETE}
+          </button>
         );
       case 'deleteItem':
         return (
-          <button
-            class="small danger"
-            onClick={async () => {
-              const v = await askUser({
-                title: `删除“${p.name}”`,
-                text: '可以撤销。别的内容写到它的地方不会跟着改。',
-                choices: [
-                  { value: 'delete', label: '删除', primary: true },
-                  { value: 'cancel', label: '取消' },
-                ],
-              });
-              if (v === 'delete' && deleteFromLibrary(src, p.kind, p.id, p.name) && !embedded) back();
-            }}
-          >
-            <Trash2 /> 删除
+          <button class="small danger" onClick={() => void deleteHere()}>
+            <Trash2 /> {DELETE}
           </button>
         );
     }
   };
-  return <div class="row wrap lp-item-actions">{list.map(button)}</div>;
+  const blocked = list.find((a) => a.id === 'removeFromWorld')?.disabled;
+  return (
+    <>
+      <div class="row wrap lp-item-actions">{list.map(button)}</div>
+      {why && blocked && <p class="hint warn lp-delete-why">删不了：{blocked}</p>}
+    </>
+  );
 }
 
 function Samples({ item, kindId }: { item: Obj; kindId: string }) {
@@ -188,6 +222,9 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
     if (!pending.current) setDraft(null);
   }, [live]);
   const segs = p?.segments ?? [];
+  // 第九十三轮：常用 / 更多设置（more-settings.ts）。都摊开时（lib-prefs.ts 的 showAllSettings）不分
+  const all = showAllSettings();
+  const split = useMemo(() => splitSegments(segs, all), [segs, all]);
   const [open, setOpen] = useState<ReadonlySet<string>>(() => (route.seg ? initialOpen(segs, route.seg) : (openSegments(kindId) ?? initialOpen(segs))));
   useEffect(() => {
     if (route.seg) setOpen(new Set([...open, route.seg]));
@@ -198,17 +235,20 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
   // 第九十一轮：政体的称号旁的示例、“谁盖过它”
   const titleHelp = useMemo(() => (p?.kind.id === 'government' && item ? titleHelpOf(item, src, ctx) : null), [p?.kind.id, item, src.t, ctx.world, ctx.lib]);
   if (!p || !item) return null;
-  const toggle = (id: string) => {
-    const next = new Set(open);
-    if (!next.delete(id)) next.add(id);
+  // 哪几段、哪几处“更多设置”展开着：这次打开页面期间按种类记着（panel-store.ts）
+  const store = (next: ReadonlySet<string>) => {
     setOpen(next);
     rememberSegments(kindId, next);
   };
-  // “在地图上”那一行的按钮要看某一段（“还没选生态 · 去选”）：展开它，滚到那里
+  const toggle = (id: string) => {
+    const next = new Set(open);
+    if (!next.delete(id)) next.add(id);
+    store(next);
+  };
+  const moreState: MoreState = { isOpen: (k) => open.has(k), toggle };
+  // “在地图上”那一行的按钮要看某一段（“还没选生态 · 去选”）：展开它，滚到那里。它在“更多设置”里时那一层跟着展开（moreOpen 看里面的段）
   const showSegment = (id: string) => {
-    const next = new Set([...open, id]);
-    setOpen(next);
-    rememberSegments(kindId, next);
+    store(new Set([...open, id]));
     requestAnimationFrame(() => root.current?.querySelector(`[data-seg="${id}"]`)?.scrollIntoView({ block: 'nearest' }));
   };
   const save = (next: Obj) => {
@@ -240,40 +280,84 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
   const source = p.readonly ? null : sourceKind(src, ctx);
   // 页面顶上的“在地图上”一行：只在看本世界、不是在上级页面里展开着时
   const onMap = src.t === 'world' && !embedded;
-  const segment = (s: Segment) => {
+  // 一组字段的表单
+  const box = (fields: readonly FieldDesc[]) => fields.length > 0 && <FieldsBox fields={fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />;
+  // flat：这一段整个在“更多设置”里（里面不再折叠）
+  const segment = (s: Segment, flat = false) => {
     const timing = segmentTiming(source, p.kind, s);
     const line = timing && timingLine(timing);
+    // 常用的照旧，more 的几个在这一段最下面折叠着（里面有要改的错时直接展开）
+    const parts = (fields: readonly FieldDesc[]) => {
+      const sp = splitMore(shownFields(fields, item), flat || all);
+      const bad = sp.more.some((f) => issuesAt(issues.errors, [f.key]).length > 0);
+      return {
+        common: box(sp.common),
+        more: sp.more.length > 0 && (
+          <MoreBox id={moreKey(s.id)} labels={sp.more.map((f) => f.label)} open={bad}>
+            {box(sp.more)}
+          </MoreBox>
+        ),
+      };
+    };
+    const water = p.kind.id === 'riverType' ? 'river' : p.kind.id === 'lakeType' ? 'lake' : null;
+    const body = () => {
+      if (s.custom === 'eraDims' && src.t === 'world') return <WorldVariables era={item as unknown as Era} ctx={ctx} />;
+      if (s.custom === 'eraPatterns') {
+        const x = parts(s.fields.filter((f) => f.key !== 'patterns' && f.key !== 'nationalism'));
+        return (
+          <>
+            {x.common}
+            <EraPatterns era={item} src={src} ctx={ctx} onChange={save} />
+            {x.more}
+          </>
+        );
+      }
+      if (s.custom === 'patternTip') {
+        const x = parts(s.fields);
+        return (
+          <>
+            {x.common}
+            <PatternTip item={item} />
+            {x.more}
+          </>
+        );
+      }
+      if (s.custom === 'waterBiomes') {
+        const x = parts(s.fields.filter((f) => f.key === 'when'));
+        return (
+          <>
+            {box(s.fields.filter((f) => f.key === 'natural'))}
+            <WaterBiomesSegment src={src} ctx={ctx} kindId={p.kind.id} type={item as never} />
+            {x.common}
+            {x.more}
+          </>
+        );
+      }
+      // 第九十三轮：这张地图里河、湖的规则是脚本框（停一下就用到地图上、出错写在下面），和以前“水系 ⋯”里的同一个
+      if (water && s.id === 'scripts' && src.t === 'world' && !p.readonly) return <WaterScript kind={water} t={item as never} />;
+      const x = parts(s.fields);
+      // 第九十一轮：每行称号下面的示例、哪几条换说法盖过它（title-help.ts）
+      if (p.kind.id === 'government' && s.id === 'titles') {
+        return (
+          <TitleHelpCtx.Provider value={titleHelp}>
+            {x.common}
+            {x.more}
+          </TitleHelpCtx.Provider>
+        );
+      }
+      return (
+        <>
+          {x.common}
+          {x.more}
+        </>
+      );
+    };
     return (
       <SegmentCard key={s.id} seg={s} open={open.has(s.id)} onToggle={() => toggle(s.id)} brief={segmentBrief(s, item, labelOf)} timing={timing}>
         {line && <p class="hint lp-timing-line">{line}</p>}
         {s.hint && <p class="hint">{s.hint}</p>}
         {s.custom === 'samples' && <Samples item={item} kindId={p.kind.id} />}
-        {s.custom === 'eraDims' && src.t === 'world' ? (
-          <WorldVariables era={item as unknown as Era} ctx={ctx} />
-        ) : s.custom === 'eraPatterns' ? (
-          <>
-            <FieldsBox fields={s.fields.filter((f) => f.key !== 'patterns' && f.key !== 'nationalism')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-            <EraPatterns era={item} src={src} ctx={ctx} onChange={save} />
-          </>
-        ) : s.custom === 'patternTip' ? (
-          <>
-            <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-            <PatternTip item={item} />
-          </>
-        ) : s.custom === 'waterBiomes' ? (
-          <>
-            <FieldsBox fields={s.fields.filter((f) => f.key === 'natural')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-            <WaterBiomesSegment src={src} ctx={ctx} kindId={p.kind.id} type={item as never} />
-            <FieldsBox fields={s.fields.filter((f) => f.key === 'when')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-          </>
-        ) : p.kind.id === 'government' && s.id === 'titles' ? (
-          // 第九十一轮：每行称号下面的示例、哪几条换说法盖过它（title-help.ts）
-          <TitleHelpCtx.Provider value={titleHelp}>
-            <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-          </TitleHelpCtx.Provider>
-        ) : (
-          s.fields.length > 0 && <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-        )}
+        {body()}
         {p.kind.id === 'government' && s.id === 'titles' && !p.readonly && <TitleReplace src={src} ctx={ctx} />}
         {/* 第九十轮：表单旁的小预览（previews.ts） */}
         {p.kind.id === 'landmarkType' && s.id === 'label' && <LandmarkNameSamples item={item} src={src} ctx={ctx} />}
@@ -281,6 +365,12 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
       </SegmentCard>
     );
   };
+  // id：别的内容按它找到这一项，建好后不改；平时在“更多设置”里看得到
+  const idLine = (
+    <p class="hint lp-id-line">
+      id：<code>{p.id}</code>　别的内容按它找到这一项，建好后不改
+    </p>
+  );
   return (
     <div class={`lp-item ${embedded ? 'embedded' : ''}`} ref={root}>
       {!embedded && (
@@ -302,21 +392,35 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
       {sample && <p class="small lp-sample">{sample}</p>}
       <EditorKind.Provider value={p.kind.id}>
         <RefGo.Provider value={go}>
-          {/* 第七十二轮：生态是自己的编辑器（气候图、滑块、脚本框），不按字段表画 */}
-          {biome ? (
-            <BiomeEditor sp={item as never} src={src} ctx={ctx} onSelect={(id) => (side ? openRoute : replaceTop)({ p: 'item', kind: 'biome', id })} />
-          ) : (
-            <fieldset class="lp-fields" disabled={!!p.readonly}>
-              {segs.slice(0, 1).map(segment)}
-            </fieldset>
-          )}
-          {/* 下面的几段在第一段后面，不在只读的 fieldset 里：内置的库里也能点开看 */}
-          <ChildSegments list={p.children} parent={item} parentKind={p.kind.id} src={src} ctx={ctx} Item={PageItem} />
-          {!biome && segs.length > 1 && (
-            <fieldset class="lp-fields" disabled={!!p.readonly}>
-              {segs.slice(1).map(segment)}
-            </fieldset>
-          )}
+          <MoreCtx.Provider value={moreState}>
+            {/* 第七十二轮：生态是自己的编辑器（气候图、滑块、脚本框），不按字段表画 */}
+            {biome ? (
+              <BiomeEditor sp={item as never} src={src} ctx={ctx} onSelect={(id) => (side ? openRoute : replaceTop)({ p: 'item', kind: 'biome', id })} />
+            ) : (
+              <fieldset class="lp-fields" disabled={!!p.readonly}>
+                {split.main.slice(0, 1).map((s) => segment(s))}
+              </fieldset>
+            )}
+            {/* 下面的几段在第一段后面，不在只读的 fieldset 里：内置的库里也能点开看 */}
+            <ChildSegments list={p.children} parent={item} parentKind={p.kind.id} src={src} ctx={ctx} Item={PageItem} />
+            {!biome && split.main.length > 1 && (
+              <fieldset class="lp-fields" disabled={!!p.readonly}>
+                {split.main.slice(1).map((s) => segment(s))}
+              </fieldset>
+            )}
+            {/* 第九十三轮：整段是“更多设置”的几段和 id 收在页面底下这一层里；都摊开时没有这一层，id 写在最下面 */}
+            {!biome && !all && (
+              <SegmentCard seg={MORE_SEG} open={moreOpen(open, split.more)} onToggle={() => store(toggleMore(open, split.more))} brief={moreSegmentsBrief(split.more, true)}>
+                {idLine}
+                {split.more.length > 0 && (
+                  <fieldset class="lp-fields" disabled={!!p.readonly}>
+                    {split.more.map((s) => segment(s, true))}
+                  </fieldset>
+                )}
+              </SegmentCard>
+            )}
+            {!biome && all && idLine}
+          </MoreCtx.Provider>
         </RefGo.Provider>
       </EditorKind.Provider>
       {issues.errors.length > 0 && (
@@ -391,6 +495,7 @@ function UsedByNames({ rows }: { rows: readonly { kind: string; id: string; name
 }
 
 const USED_SEG = { id: 'usedBy', title: '谁用到它', fields: [] } as unknown as Segment;
+const MORE_SEG = { id: MORE_ID, title: '更多设置', fields: [] } as unknown as Segment;
 
 function UsedBySegment({ u, kindId }: { u: UsedBy; kindId: string }) {
   const memoKey = `${kindId}:usedBy`;

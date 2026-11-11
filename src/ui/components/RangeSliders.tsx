@@ -29,6 +29,7 @@ export function RangeSliders(p: { lo: number; hi: number; step: number; unit: st
       label={label}
       pos={scale.pos(now[which])}
       text={rangeText(now[which], p.lo, p.hi, p.unit)}
+      textAt={(pos) => `${scale.at(pos)} ${p.unit}`}
       changed={draft !== null && draft[which] !== p.value[which]}
       onDraft={(pos) => setDraft(moveRange(p.value, which, scale.at(pos)))}
       onCommit={(pos) => {

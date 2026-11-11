@@ -136,6 +136,7 @@ function ReferenceBox() {
             disabled={!r.visible}
             pos={OPACITY.pos(Math.round(r.opacity * 100))}
             text={`${Math.round(r.opacity * 100)}%`}
+            textAt={(p) => `${OPACITY.at(p)}%`}
             onDraft={(p) => void setReference({ ...r, opacity: OPACITY.at(p) / 100 }, false)}
             onCommit={(p) => {
               // 松手才存进浏览器

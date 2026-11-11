@@ -1,3 +1,4 @@
+import { BELT_WIDTH, ISLAND_AMOUNT, LAND_FRACTION } from '../../../core/effect-ranges';
 import type { Command } from '../../../core/commands';
 import { WORLD_TYPE_INFO, type Worldgen, type WorldgenInput, type WorldType } from '../../../core/generate';
 import { itemKey, ownItems, sameItem, walkPacks } from '../../../core/packs';
@@ -191,8 +192,8 @@ function pairKnob(id: 'plates' | 'blocks' | 'radius', label: string, hint: strin
 }
 
 export const FORM_KNOBS: FormKnob[] = [
-  profileKnob('landFraction', '陆地多少', '陆地占星球表面多少', [0.03, 0.7], (v) => `${Math.round(v * 100)}%`),
-  profileKnob('islands', '岛多少', '火山岛和小岛的多少', [0, 1], (v) => level(v, ['很少', '较少', '较多', '很多'])),
+  profileKnob('landFraction', '陆地多少', '陆地占星球表面多少', [LAND_FRACTION.min, LAND_FRACTION.max], (v) => `${Math.round(v * 100)}%`),
+  profileKnob('islands', '岛多少', '火山岛和小岛的多少', [ISLAND_AMOUNT.min, ISLAND_AMOUNT.max], (v) => level(v, ['很少', '较少', '较多', '很多'])),
   pairKnob('plates', '板块数', '越多，山脉越多越碎', [2, 40], [2, 40], 1, true, (v) => `约 ${Math.round(v)} 块`),
   pairKnob('blocks', '大陆块数', '拼成陆地的大块，不算岛', [0, 60], [0, 60], 1, true, (v) => (v < 0.5 ? '没有' : `约 ${Math.round(v)} 块`)),
   pairKnob('radius', '大陆大小', '每块大陆有多大', [0.04, 0.5], [0.02, 0.6], 0.01, false, (v, km) => `每块约 ${(Math.round(((2 * v) / LAYOUT_R) * km / 100) * 100).toLocaleString()} 公里宽`),
@@ -200,8 +201,8 @@ export const FORM_KNOBS: FormKnob[] = [
     id: 'beltWidth',
     label: '山脉宽窄',
     hint: '板块碰撞处、大陆边的山脉宽度',
-    range: [0.3, 3],
-    step: 0.05,
+    range: [BELT_WIDTH.min, BELT_WIDTH.max],
+    step: BELT_WIDTH.step,
     read: (f) => f.tuning?.beltWidth ?? 1,
     write: (f, v) => ({ ...f, tuning: { ...f.tuning, beltWidth: v } }),
     format: (v) => `${v < 0.8 ? '窄' : v > 1.3 ? '宽' : '适中'}（×${v.toFixed(2)}）`,

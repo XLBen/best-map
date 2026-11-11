@@ -380,7 +380,7 @@ function ExportSection() {
               />
             </div>
             {png.seamMode === 'lon' && (
-              <Slider stacked label="经度" pos={LON.pos(png.seamLon)} text={lonText(png.seamLon)} onDraft={(p) => choosePng({ seamLon: LON.at(p) })} onCommit={(p) => choosePng({ seamLon: LON.at(p) })} />
+              <Slider stacked label="经度" pos={LON.pos(png.seamLon)} text={lonText(png.seamLon)} textAt={(p) => String(LON.at(p))} entry={String(png.seamLon)} title="打字时西经写成负数" onDraft={(p) => choosePng({ seamLon: LON.at(p) })} onCommit={(p) => choosePng({ seamLon: LON.at(p) })} />
             )}
             <SeamStrip w={w} seamX={seamX} />
             <p class="hint">

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'preact/hooks';
 import { Flag } from '../panels/countries';
 import type { Obj } from './fields';
 import type { PageCtx, SourceRef } from './page-source';
-import { FLAG_WORDS, LANDMARK_TOKENS, flagPreview, landmarkSamples } from './previews';
+import { LANDMARK_TOKENS, LANDMARK_TOKEN_NAMES, flagPreview, landmarkSamples } from './previews';
 import { replaceTitles } from './page-actions';
 import { TITLE_MAX, governmentsIn, replaceNote, replacePlan } from './title-help';
 
@@ -24,7 +24,7 @@ export function LandmarkNameSamples({ item, src, ctx }: { item: Obj; src: Source
           </span>
         </div>
       ))}
-      <p class="hint">能写的词：{LANDMARK_TOKENS.map((t) => `{${t}}`).join(' ')}</p>
+      <p class="hint">能写的词：{LANDMARK_TOKENS.map((t) => `{${t}} ${LANDMARK_TOKEN_NAMES[t]}`).join('、')}</p>
       <p class="hint">{src.t === 'world' ? '词换成地标附近的名字；这里用的是地图上的' : '词换成地标附近的名字'}</p>
     </section>
   );
@@ -45,10 +45,8 @@ export function FlagSamples({ item }: { item: Obj }) {
           换一批
         </button>
       </div>
-      {p.unknown.length > 0 && <p class="hint warn">不认识：{p.unknown.join('、')}</p>}
-      <p class="hint">纹章能写：{FLAG_WORDS.emblems.join('、')}</p>
-      <p class="hint">样式能写：{FLAG_WORDS.layouts.join('、')}</p>
-      <p class="hint">颜色跟着国家；空着时按政体的类别挑</p>
+      {p.unknown.length > 0 && <p class="hint warn">不认识、不起作用：{p.unknown.join('、')}</p>}
+      <p class="hint">颜色跟着国家；纹章四面里约三面有</p>
     </section>
   );
 }

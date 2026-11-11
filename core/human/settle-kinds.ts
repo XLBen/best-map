@@ -9,21 +9,37 @@ import { type CityRank, LANDMARK_DETECTORS, LANDMARK_PLACES, type LandmarkType, 
 
 const renamed = (name: string, id: string, from: string) => `${name} ${id.slice(from.length + 1) || id}`.slice(0, 20);
 
+// 第九十三轮：选项写中文（以前照写 peak、big-city……）
+const DETECTOR_LABEL: Record<(typeof LANDMARK_DETECTORS)[number], string> = { peak: '高峰', volcano: '火山', waterfall: '瀑布', canyon: '峡谷', oasis: '绿洲' };
+const PLACE_LABEL: Record<(typeof LANDMARK_PLACES)[number], string> = {
+  capital: '首都',
+  'big-city': '大城市',
+  city: '城市',
+  mountain: '山里',
+  coast: '海边',
+  river: '河边',
+  desert: '荒漠',
+  forest: '森林',
+  border: '边境',
+  wild: '荒野',
+  any: '哪里都行',
+};
+
 const RANK_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
-  { key: 'icon', label: '图标', type: 'text', hint: 'star、circle、dot……' },
+  { key: 'icon', label: '图标', type: 'text' },
   { key: 'color', label: '颜色', type: 'color', optional: true },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'capital', label: '首都用', type: 'bool', optional: true },
-  { key: 'level', label: '重要', type: 'number', min: 0, max: 100, step: 1, hint: '越大越重要' },
+  { key: 'capital', more: true, label: '首都用', type: 'bool', optional: true },
+  { key: 'level', more: true, label: '重要', type: 'number', min: 0, max: 100, step: 1, hint: '越大越重要' },
   { key: 'minShare', label: '占本国人口', type: 'number', min: 0, max: 1, step: 0.001, hint: '比例下限' },
-  { key: 'minPop', label: '人数下限', type: 'number', optional: true, min: 0, max: 1e10, step: 1000 },
+  { key: 'minPop', more: true, label: '人数下限', type: 'number', optional: true, min: 0, max: 1e10, step: 1000 },
   { key: 'label', label: '字号', type: 'number', min: 0.3, max: 4, step: 0.05, hint: '1 是普通城市' },
-  { key: 'major', label: '连大道', type: 'bool', optional: true },
-  { key: 'alpha', label: '图标浓淡', type: 'number', optional: true, min: 0.1, max: 1, step: 0.05, hint: '1 不透明；鼠标停着、选中时照 1 画' },
-  { key: 'iconScale', label: '图标大小', type: 'number', optional: true, min: 0.3, max: 2, step: 0.05, hint: '1 是原来的大小' },
-  { key: 'labelAlpha', label: '名字浓淡', type: 'number', optional: true, min: 0.1, max: 1, step: 0.05, hint: '空着时同图标' },
+  { key: 'major', more: true, label: '连大道', type: 'bool', optional: true },
+  { key: 'alpha', more: true, label: '图标浓淡', type: 'number', optional: true, min: 0.1, max: 1, step: 0.05, hint: '1 不透明；鼠标停着、选中时照 1 画' },
+  { key: 'iconScale', more: true, label: '图标大小', type: 'number', optional: true, min: 0.3, max: 2, step: 0.05, hint: '1 是原来的大小' },
+  { key: 'labelAlpha', more: true, label: '名字浓淡', type: 'number', optional: true, min: 0.1, max: 1, step: 0.05, hint: '空着时同图标' },
 ];
 
 const LANDMARK_FIELDS: readonly FieldDesc[] = [
@@ -33,6 +49,7 @@ const LANDMARK_FIELDS: readonly FieldDesc[] = [
     key: 'category',
     label: '类别',
     type: 'enum',
+    more: true,
     options: [
       { value: 'natural', label: '自然' },
       { value: 'manmade', label: '人造' },
@@ -41,36 +58,38 @@ const LANDMARK_FIELDS: readonly FieldDesc[] = [
   { key: 'icon', label: '图标', type: 'text' },
   { key: 'color', label: '颜色', type: 'color', optional: true },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'detector', label: '怎么找', type: 'enum', optional: true, options: LANDMARK_DETECTORS.map((d) => ({ value: d, label: d })), when: { key: 'category', is: 'natural' } },
+  { key: 'detector', more: true, label: '怎么找', type: 'enum', optional: true, options: LANDMARK_DETECTORS.map((d) => ({ value: d, label: DETECTOR_LABEL[d] })), when: { key: 'category', is: 'natural' } },
   { key: 'cultureGroups', label: '文化组', type: 'tags', optional: true, ref: 'cultureGroup', dep: 'gate', hint: '空着时不限' },
-  { key: 'governments', label: '政体的类别', type: 'tags', optional: true, ref: 'govCategory', hint: '空着时不限' },
-  { key: 'place', label: '放在哪', type: 'enum', options: LANDMARK_PLACES.map((p) => ({ value: p, label: p })) },
+  { key: 'governments', more: true, label: '政体的类别', type: 'tags', optional: true, ref: 'govCategory', hint: '空着时不限' },
+  { key: 'place', label: '放在哪', type: 'enum', options: LANDMARK_PLACES.map((p) => ({ value: p, label: PLACE_LABEL[p] })) },
   {
     key: 'per',
     label: '个数按',
     type: 'enum',
+    more: true,
     options: [
       { value: 'country', label: '每个国家' },
       { value: 'world', label: '整个世界' },
     ],
   },
   { key: 'count', label: '个数', type: 'number', min: 0, max: 100, step: 0.1 },
-  { key: 'chance', label: '可能', type: 'number', min: 0, max: 1, step: 0.05 },
-  { key: 'label', label: '名字的写法', type: 'title', keyRef: ['culture', 'cultureGroup'], dep: 'strip', hint: '“{city}神庙”；可按文化换' },
-  { key: 'manual', label: '不自动放', type: 'bool', optional: true },
+  { key: 'chance', more: true, label: '可能', type: 'number', min: 0, max: 1, step: 0.05 },
+  { key: 'label', label: '名字的写法', type: 'title', keyRef: ['culture', 'cultureGroup'], dep: 'strip', hint: '“{city}神庙”；能写的词在下面' },
+  { key: 'manual', more: true, label: '不自动放', type: 'bool', optional: true },
 ];
 
 const POINT_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
   { key: 'icon', label: '图标', type: 'text', optional: true },
-  { key: 'image', label: '图片', type: 'text', optional: true, hint: 'data:image/… 的小图' },
+  { key: 'image', label: '图片', type: 'text', optional: true, hint: '传一张小图，盖过图标' },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   {
     key: 'actsAsCity',
     label: '当作城市',
     type: 'json',
+    more: true,
     optional: true,
     of: [
       { key: 'capital', label: '算首都', type: 'bool', optional: true },

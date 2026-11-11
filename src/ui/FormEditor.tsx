@@ -210,7 +210,7 @@ function Editor({ st }: { st: FormEditorState }) {
             {FORM_KNOBS.map((k) => {
               const scale = linear(k.range[0], k.range[1], k.step);
               const set = (p: number) => setForm(k.write(formRef.current, scale.at(p)));
-              return <Slider stacked label={k.label} title={k.hint} pos={scale.pos(k.read(form))} text={knobText(k, form, st.radiusKm)} onDraft={set} onCommit={set} />;
+              return <Slider stacked label={k.label} title={k.hint} pos={scale.pos(k.read(form))} text={knobText(k, form, st.radiusKm)} textAt={(p) => knobText(k, k.write(formRef.current, scale.at(p)), st.radiusKm)} onDraft={set} onCommit={set} />;
             })}
             <details open={!!st.initial.scripts}>
               <summary>脚本</summary>

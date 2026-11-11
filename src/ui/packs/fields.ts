@@ -2,6 +2,7 @@ import { type ContentKind, type ContentWorld, type FieldDesc, itemId, itemName }
 import { itemErrors } from '../../../core/packs';
 import { SCRIPT_API } from '../../../core/script';
 import { styleRgba } from '../../../core/map-style';
+import { RAIN_SCALE, rainText } from '../../../core/effect-ranges';
 
 // 通用编辑器（资源库里的“编辑”“新建”）的逻辑：按登记表的字段表（FieldDesc）显示哪些、改一个字段、新建与复制、
 // 检查（格式、启用前的检查、不挡启用的提醒）。界面在 ContentEditor.tsx
@@ -79,9 +80,11 @@ export interface NumberScale {
   // 停得到的数（对数的；等间距的没有）
   stops?: readonly number[];
 }
-export function sliderScale(f: Pick<FieldDesc, 'min' | 'max' | 'step'>): NumberScale | null {
+export function sliderScale(f: Pick<FieldDesc, 'min' | 'max' | 'step' | 'show'>): NumberScale | null {
   const { min: lo, max: hi, step } = f;
   if (lo === undefined || hi === undefined || !step || hi <= lo) return null;
+  // 第九十三轮：变湿变干存的是指数，滑块停在降水的百分之几上（和生态编辑器同一条刻度，core/effect-ranges.ts）
+  if (f.show === 'expPercent') return RAIN_SCALE;
   if ((hi - lo) / step <= SLIDER_MAX_STEPS) return linearScale(lo, hi, step);
   const start = lo > 0 ? lo : step;
   if (lo >= 0 && hi / start >= LOG_FROM) return logScale(lo, hi, step);
@@ -146,7 +149,8 @@ const decimals = (step: number): number => {
 export const numberText = (v: number, step?: number): string => (step ? v.toFixed(decimals(step)) : String(v));
 
 // 滑块右边写的数（第八十一轮）：单位写在数后面；单位是 % 的存的是 0–1，写成百分之几；按对数的写原样（两位有效数字），一万以上加千位的逗号
-export function valueText(f: Pick<FieldDesc, 'min' | 'max' | 'step' | 'unit'>, v: number): string {
+export function valueText(f: Pick<FieldDesc, 'min' | 'max' | 'step' | 'unit' | 'show'>, v: number): string {
+  if (f.show === 'expPercent') return rainText(v);
   if (f.unit === '%') {
     const d = Math.max(0, decimals(f.step ?? 0.01) - 2);
     return `${Number((v * 100).toFixed(d))}%`;
@@ -198,12 +202,19 @@ export function renameKey(obj: Obj, from: string, to: string): Obj {
   return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k === from ? to : k, v]));
 }
 
-// map 里新加一项的键：base、base2、base3……
+// map 里新加一项的键：base、base2、base3……（第九十三轮起界面先问名字，不再用它起一个 new；留给别处）
 export function newKey(obj: Obj, base = 'new'): string {
   if (!(base in obj)) return base;
   let k = 2;
   while (`${base}${k}` in obj) k++;
   return `${base}${k}`;
+}
+
+// map 里新加一项时写的名字行不行（第九十三轮：先写名字再加）。行时 null
+export function keyProblem(obj: Obj, key: string): string | null {
+  const k = key.trim();
+  if (!k) return '先写名字';
+  return k in obj ? `已经有“${k}”了` : null;
 }
 
 // ---------- 几种写法的转换 ----------
@@ -328,12 +339,17 @@ export function freeId(base: string, taken: ReadonlySet<string>): string {
   return `${base}-${k}`;
 }
 
-// 新建：登记的空样子，id 不撞
+// 新建：登记的空样子，id 不撞。
+// 第九十三轮：全部种类的新建都走这里（以前生态页、底部条上河湖岛的“新建”各起各的：custom_3、river-type-2、island-type-1）。
+// id 是登记表里那个英文的底子加编号（my-river、my-river-2……）：名字是中文，id 只能是字母数字，没法从名字起；
+// 第二个起名字也带上编号（“新的河 2”），列表里分得清。id 建好后不改（别的内容按它找到这一项），页面上在“更多设置”里看得到
 export function blankItem(kind: ContentKind, taken: ReadonlySet<string>): Obj | null {
   const b = kind.blank?.();
   if (!isObj(b)) return null;
-  const id = freeId(String(b.id ?? 'item'), taken);
-  return { ...structuredClone(b), id };
+  const base = String(b.id ?? 'item');
+  const id = freeId(base, taken);
+  const k = id === base ? '' : id.slice(base.length + 1);
+  return { ...structuredClone(b), id, ...(k && typeof b.name === 'string' ? { name: `${b.name} ${k}` } : {}) };
 }
 
 // 复制：另起 id，名字带上编号（“西欧·日耳曼 2”）

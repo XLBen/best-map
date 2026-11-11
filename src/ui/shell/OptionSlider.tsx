@@ -14,6 +14,7 @@ export function OptionSlider({ def, w }: { def: SliderDef; w: World }) {
       label={def.label}
       pos={sliderPos(def, w, value)}
       text={def.format(value, w)}
+      textAt={(p) => def.format(sliderValue(def, w, p), w)}
       onDraft={(p) => {
         sliderActive.value = true;
         setOptions({ [def.key]: sliderValue(def, w, p) });

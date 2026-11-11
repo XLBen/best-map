@@ -1,4 +1,3 @@
-import type { Command } from '../../../core/commands';
 import { itemFields } from '../../../core/content/links';
 import { kindOf } from '../../../core/content/registry';
 import { PACK_FORMAT, PACK_VERSION, type ResourcePack, packIdFor } from '../../../core/packs';
@@ -12,7 +11,6 @@ import {
   type Tolerance,
   advancedTolerances,
   elevationTolerances,
-  freshSpecies,
   withCondition,
   withRect,
 } from '../../../core/species';
@@ -73,26 +71,9 @@ export function elevationPatch(sp: Species): Patch | null {
 // 海拔条件写成一行字
 export const elevationText = (t: Tolerance): string => `${Math.max(0, t.optLow)}–${Math.min(HEIGHT_MAX, t.optHigh)} m（${Math.max(0, t.min)} m 起、${Math.min(HEIGHT_MAX, t.max)} m 止）`;
 
-// ---------- 本世界：新建、复制 ----------
-
-const PALETTE = ['#8a6fb0', '#c0607a', '#4f9fb0', '#b08a3a', '#6aa050', '#d07a40', '#5a70c0', '#a05a9a'];
-
-// 第九十轮：新建的生态自然生成开着（合适的地方马上长，“在地图上”那一行写长在几格；不要它自己长时关掉“自然生成”）。
-// 样子和资源库列表上的“新建”一样（core/species.ts 的 freshSpecies），只差 id、名字带编号、颜色轮着取
-export function newSpeciesCommand(w: Pick<World, 'small'>): { id: string; cmd: Command } {
-  const all = w.small.species;
-  let k = all.length + 1;
-  let id = `custom_${k}`;
-  while (all.some((s) => s.id === id)) id = `custom_${++k}`;
-  return { id, cmd: { op: 'add_species', species: freshSpecies(id, `新生态 ${k}`, PALETTE[k % PALETTE.length]) } };
-}
-
-// 第九十轮：副本原样（以前悄悄关掉“自然生成”）：原来自然生成的，副本也自然生成，和原来的那种分地盘；原来关着的还关着
-export function copySpeciesCommand(w: Pick<World, 'small'>, sp: Species): { id: string; cmd: Command } {
-  let id = `${sp.id}_copy`;
-  for (let k = 2; w.small.species.some((s) => s.id === id); k++) id = `${sp.id}_copy${k}`;
-  return { id, cmd: { op: 'add_species', species: { ...structuredClone(sp), id, name: `${sp.name}（副本）` } } };
-}
+// 第九十三轮：这里以前有生态页自己的“新建生态”“复制”（newSpeciesCommand、copySpeciesCommand：id 叫 custom_3、taiga_copy）。
+// 去掉了：生态和别的种类走同一条路——列表上的“新建”（packs/fields.ts 的 blankItem：my-biome、my-biome-2，样子是 core/species.ts 的 freshSpecies）、
+// 页面上的“复制”（copyItem：原样，id 带编号）
 
 // ---------- 长在哪里 ----------
 

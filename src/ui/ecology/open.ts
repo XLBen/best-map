@@ -10,6 +10,12 @@ export function openBiomeEditor(id: string | null): void {
   openLibraryAt(WORLD_SOURCE, biomeStack(id));
 }
 
+// 河、湖的一种在资源库里的页面（第九十三轮：以前是“水系 ⋯”里另一个编辑器）。seg：直接展开哪一段（规则出错的“编辑”展开“规则”）
+export function openWaterType(kind: 'river' | 'lake', id: string, seg?: string): void {
+  const kindId = kind === 'river' ? 'riverType' : 'lakeType';
+  openLibraryAt(WORLD_SOURCE, [HOME, { p: 'ecology' }, { p: 'list', kind: kindId }, { p: 'item', kind: kindId, id, ...(seg ? { seg } : {}) }]);
+}
+
 // 总表（生态 × 水系）：河湖类型的“出现在这些生态里”在这里改
 export function openWaterTable(): void {
   openLibraryAt(WORLD_SOURCE, [HOME, { p: 'ecology' }, { p: 'table' }]);

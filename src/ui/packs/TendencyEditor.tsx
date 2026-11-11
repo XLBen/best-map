@@ -14,6 +14,9 @@ import { type EraKey, addDim, addValue, erasWritten, removeDim, removeValue, set
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
+// 这张表怎么读（每张倾向的表上面都写；各处自己的一句在它下面）
+const TENDENCY_HELP = '一行一个变量；拖滑块改每种的多少，右边是占比';
+
 // 一个取值的“多少”（第八十一轮：以前是数字框）：0–1000 按对数的滑块，松手才换上
 const WEIGHT = logScale(0, 1000, 0.1);
 function WeightSlider({ label, value, onCommit }: { label: string; value: number; onCommit: (v: number) => void }) {
@@ -26,6 +29,7 @@ function WeightSlider({ label, value, onCommit }: { label: string; value: number
         label={`${label}的多少`}
         pos={WEIGHT.pos(cur)}
         text={String(cur)}
+        textAt={(p) => String(WEIGHT.at(p))}
         onDraft={(p) => setDraft(WEIGHT.at(p))}
         onCommit={(p) => {
           const v = WEIGHT.at(p);
@@ -55,14 +59,12 @@ export function TendencyEditor({ obj, onChange, byEra, label, hint }: { obj: Obj
   return (
     <div class="ed-group tend">
       <div class="row between tend-head">
-        <span class="ed-label" title={hint}>
-          {label}
-        </span>
+        <span class="ed-label">{label}</span>
         {byEra && (
           <select
             class="tend-era"
             value={era ?? ''}
-            title="不分时代的，或某个时代的"
+            aria-label="不分时代的，或某个时代的"
             onChange={(e) => {
               const v = (e.target as HTMLSelectElement).value;
               setEra(v || null);
@@ -78,7 +80,10 @@ export function TendencyEditor({ obj, onChange, byEra, label, hint }: { obj: Obj
           </select>
         )}
       </div>
-      {era !== null && <p class="hint">写了的那几维换掉不分时代的</p>}
+      {/* 第九十三轮：说明直接写在表上面（以前在悬停里，触摸屏看不到） */}
+      <p class="hint ed-hint">{TENDENCY_HELP}</p>
+      {hint && <p class="hint ed-hint">{hint}</p>}
+      {era !== null && <p class="hint">写了的那几个变量换掉不分时代的</p>}
       <div class="tend-rows">
         {rows.map((r) => {
           const opts = valueOpts(r.dim);

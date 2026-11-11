@@ -99,9 +99,11 @@ describe('给河选类型', () => {
   it('新建的类型 id 不重复；规则脚本的命令只带 match（空的去掉）', () => {
     const eng = continents();
     const w = eng.world;
-    expect(newRiverType(w).id).toBe('river-type-1');
+    // 第九十三轮（有意改的）：id 和资源库列表上的“新建”同一种起法（以前这里另起 river-type-1、river-type-2）
+    expect(newRiverType(w).id).toBe('my-river');
     eng.exec({ op: 'set_river_type', type: newRiverType(w) });
-    expect(newRiverType(w).id).toBe('river-type-2');
+    expect(newRiverType(w).id).toBe('my-river-2');
+    expect(newRiverType(w).name).toBe('新的河 2');
     const t = w.small.riverTypes![0];
     const cmd = riverTypeScriptCommand(t, 'return 河长 > 500;');
     expect(cmd).toEqual({ op: 'set_river_type', type: { ...t, scripts: { match: { api: 1, src: 'return 河长 > 500;' } } } });

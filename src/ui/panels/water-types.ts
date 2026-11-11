@@ -4,11 +4,16 @@ import { RIVER_STYLES, RIVER_STYLE_LABEL } from '../../../core/river-types';
 import { SCRIPT_API } from '../../../core/script';
 import type { WaterType } from '../../../core/water-types';
 import type { World } from '../../../core/world';
-import { editsIdle, exec, openPanel, replaceLast, toast, trustHandledElsewhere, waterTypeEditorRequest, whenEditsIdle, world, worldEpoch } from '../../state';
+import { kindOf } from '../../../core/content/registry';
+import { editsIdle, exec, openPanel, replaceLast, toast, trustHandledElsewhere, whenEditsIdle, world } from '../../state';
 import { noteScriptCommitted } from '../editor-hooks';
+import { blankItem } from '../packs/fields';
+import { openWorldItem } from '../packs/panel-store';
 import { type ApplyMode, type ApplyResult, type ScriptProblem, normScript, problemOfIssue } from '../script-commit';
 
-// 水体类型（waterTypes.tsx）的逻辑：河、湖两种的说明，新建并用上，连着改几项时排队，规则脚本的提交与出错
+// 水体类型（waterTypes.tsx）的逻辑：河、湖两种的说明，新建并用上，规则脚本的提交与出错。
+// 第九十三轮：“水系 ⋯”里另一个编辑器并进了资源库里这一种的页面（只有一处能改）：这里以前给它排队的 queueTypeEdit、clean 去掉了，
+// 新建之后直达那一页；规则的脚本框（WaterScript.tsx）照旧用这里的 applyMatch、matchIssue
 
 export type WaterKind = 'river' | 'lake';
 
@@ -73,18 +78,18 @@ export const KINDS: Record<WaterKind, KindDef> = {
   },
 };
 
-// 新的一种：id 不与已有的重复；颜色轮着取
+// 新的一种：和资源库列表上的“新建”同一个样子、同一种 id（packs/fields.ts 的 blankItem：my-river、my-river-2……，
+// 第九十三轮以前这里另起 river-type-1），只是颜色轮着取。
+// 第九十轮：新建的自然生成开着：选了生态、写了条件或规则就按它自己出现，什么都没写时只用在画的、选了它的上
 const NEW_COLORS = ['#b03a2e', '#2a7fbf', '#7a4fb0', '#c47f17', '#2e8b57', '#d4508a'];
 export function newWaterType(w: World, kind: WaterKind): WaterType {
   const def = KINDS[kind];
-  const ids = new Set(def.list(w).map((t) => t.id));
-  let k = 1;
-  while (ids.has(`${def.idPrefix}-${k}`)) k++;
-  // 第九十轮：新建的自然生成开着（和资源库里新建的一样）：选了生态、写了条件或规则就按它自己出现，什么都没写时只用在画的、选了它的上
-  return { id: `${def.idPrefix}-${k}`, name: `新的${def.noun} ${k}`, color: NEW_COLORS[(k - 1) % NEW_COLORS.length], natural: true };
+  const all = def.list(w);
+  const blank = blankItem(kindOf(def.library)!, new Set(all.map((t) => t.id)))!;
+  return { ...(blank as unknown as WaterType), color: NEW_COLORS[all.length % NEW_COLORS.length] };
 }
 
-// 新建一种并用上：then 是用上它的命令（新画的河、新放的湖只改选项，没有命令）。一整步，然后打开它的编辑
+// 新建一种并用上：then 是用上它的命令（新画的河、新放的湖只改选项，没有命令）。一整步，然后打开资源库里这一种的页面
 export async function createAndUse(kind: WaterKind, use: ((id: string) => Command | null) | null, after?: (id: string) => void): Promise<void> {
   const w = world.value;
   if (!w) return;
@@ -96,53 +101,14 @@ export async function createAndUse(kind: WaterKind, use: ((id: string) => Comman
   const ok = await exec(cmd, def.busy);
   if (!ok) return;
   after?.(t.id);
-  waterTypeEditorRequest.value = { kind, id: t.id };
-  openPanel.value = 'cat:water';
+  openWorldItem(def.library, t.id);
 }
 
-// ---------- 编辑：排队按最新的样子做出命令 ----------
-// 大星球上一步要算一会儿：连着改几项时，后一步按前一步算完之后世界上的这种类型做出整份（set_*_type 是整份换掉）
+// ---------- 脚本框问“排着的编辑都做完了没有” ----------
+// 资源库页面上别的字段改了是排着队发命令的（packs/page-actions.ts 的 queueWorld：等前一步算完）；脚本框等它们都算完再提交
 
-let tail: Promise<unknown> = Promise.resolve();
-let queued = 0;
-
-export const typeEditsSettled = () => queued === 0 && editsIdle();
-export async function settleTypeEdits(): Promise<void> {
-  while (!typeEditsSettled()) {
-    await tail;
-    await whenEditsIdle();
-  }
-}
-
-export function queueTypeEdit(kind: WaterKind, id: string, label: string, make: (t: WaterType) => WaterType | null): Promise<boolean> {
-  const epoch = worldEpoch.value;
-  queued++;
-  const job = tail.then(async () => {
-    await whenEditsIdle();
-    const w = world.value;
-    if (worldEpoch.value !== epoch || !w) return false;
-    const t = KINDS[kind].list(w).find((x) => x.id === id);
-    const next = t ? make(structuredClone(t)) : null;
-    return next ? exec(KINDS[kind].set(next), label) : false;
-  });
-  tail = job.then(
-    () => void queued--,
-    () => void queued--,
-  );
-  return job;
-}
-
-// 去掉值为 undefined 的项（存进命令的 JSON 里不留空项）
-export function clean(t: WaterType): WaterType {
-  const out = { ...t } as Record<string, unknown>;
-  for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
-  if (t.bank) {
-    const b = { ...t.bank } as Record<string, unknown>;
-    for (const k of Object.keys(b)) if (b[k] === undefined || b[k] === 0) delete b[k];
-    out.bank = b;
-  }
-  return out as unknown as WaterType;
-}
+export const typeEditsSettled = () => editsIdle();
+export const settleTypeEdits = (): Promise<void> => whenEditsIdle();
 
 // match 脚本换成 src（空的就去掉）
 export function typeScriptCommand(kind: WaterKind, t: WaterType, src: string): Command {

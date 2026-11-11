@@ -541,31 +541,37 @@ export function eraVariables(src: SourceRef, era: Era, ctx: PageCtx): { id: stri
 // 这一项能做什么（组件照这个画按钮，点了走 page-actions.ts）。why：不能做的原因（写在悬停里）。
 // 添加到本世界不在这里：第六十七轮起是页面顶上的勾（PickBox）
 // 第九十二轮：“存回”（saveBack）并进了 saveToMine——一个动作、一个去向（save-mine.ts）
-export type ItemActionId = 'copyLibrary' | 'removeFromWorld' | 'deleteItem' | 'useSource' | 'setDefault' | 'locate' | 'dedicated' | 'saveToMine' | 'exportItem' | 'copyItem';
+export type ItemActionId = 'copyLibrary' | 'paint' | 'setDefault' | 'locate' | 'useSource' | 'copyItem' | 'saveToMine' | 'exportItem' | 'removeFromWorld' | 'deleteItem';
 export interface ItemAction {
   id: ItemActionId;
   disabled?: string;
 }
 
-// row：这一项在这一份里的状态
-export function itemActions(src: SourceRef, row: ItemRow | undefined, ctx: PageCtx, can: { remove: boolean; usage: string | null; changed: boolean; setDefault: boolean; hasCells: boolean; saveable: boolean; dedicated: boolean; newable: boolean }): ItemAction[] {
+// row：这一项在这一份里的状态。
+// 第九十三轮：每一种内容同一排按钮、同一种先后（生态页以前自己一排：用它涂、复制、新建生态、导出、删除；河湖岛另有“详细编辑”）：
+//   先是“用它”的几个（用它涂、设为默认、定位、用库里的版本），然后 复制 → 存到我的库 → 导出文件 → 删除（总在最后）。
+//   新建只在列表上。删除要不要问、删不删得掉见 item-delete.ts
+export function itemActions(
+  src: SourceRef,
+  row: ItemRow | undefined,
+  ctx: PageCtx,
+  can: { remove: boolean; usage: string | null; changed: boolean; setDefault: boolean; hasCells: boolean; saveable: boolean; newable: boolean; paint?: boolean },
+): ItemAction[] {
   const out: ItemAction[] = [];
   const k = sourceKind(src, ctx);
   if (!row) return out;
   if (k === 'builtin' || k === 'imported') out.push({ id: 'copyLibrary' });
+  if (k === 'world' && can.paint) out.push({ id: 'paint' });
   if (can.setDefault) out.push({ id: 'setDefault' });
   if (can.hasCells) out.push({ id: 'locate' });
-  if (src.t === 'world') {
-    // 和来源的库不同：换成库里的（第六十二轮）
-    if (can.changed) out.push({ id: 'useSource' });
-    if (can.dedicated) out.push({ id: 'dedicated' });
-    // 改过的、自己做的：存到我的库（第九十二轮：以前改过的是“存回”来源的库，自己做的存进另一个包）
-    if (can.changed || can.saveable) out.push({ id: 'saveToMine' });
-    if (!row.status.locked) out.push(can.remove ? { id: 'removeFromWorld' } : { id: 'removeFromWorld', disabled: can.usage ?? '不能删除' });
-  }
+  // 和来源的库不同：换成库里的（第六十二轮）
+  if (src.t === 'world' && can.changed) out.push({ id: 'useSource' });
+  if (k === 'mine' || (k === 'world' && can.newable && !row.status.locked)) out.push({ id: 'copyItem' });
+  // 改过的、自己做的：存到我的库（第九十二轮：以前改过的是“存回”来源的库，自己做的存进另一个包）
+  if (src.t === 'world' && (can.changed || can.saveable)) out.push({ id: 'saveToMine' });
   out.push({ id: 'exportItem' });
-  if (k === 'mine') out.push({ id: 'copyItem' }, { id: 'deleteItem' });
-  if (k === 'world' && can.newable && !row.status.locked) out.push({ id: 'copyItem' });
+  if (src.t === 'world' && !row.status.locked) out.push(can.remove ? { id: 'removeFromWorld' } : { id: 'removeFromWorld', disabled: can.usage ?? '不能删除' });
+  if (k === 'mine') out.push({ id: 'deleteItem' });
   return out;
 }
 
