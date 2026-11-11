@@ -46,4 +46,10 @@ describe('要告诉用户哪一种', () => {
     expect(saveProblemOf({ world: true, role: 'writer', fail: 'unavailable' })).toBe('unavailable');
     expect(saveProblemOf({ world: true, role: 'writer', fail: 'too-big' })).toBe('too-big');
   });
+
+  it('第九十五轮：写的那一页关了、这个页面里的是旧的——另一种，不说“已在另一个页面打开”', () => {
+    expect(saveProblemOf({ world: true, role: 'stale', fail: null })).toBe('stale-page');
+    expect(saveProblemOf({ world: true, role: 'stale', fail: 'quota' })).toBe('stale-page');
+    expect(saveProblemOf({ world: false, role: 'stale', fail: null })).toBeNull();
+  });
 });

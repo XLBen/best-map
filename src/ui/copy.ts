@@ -129,6 +129,18 @@ export const SAVE_TEXT = {
   tookOver: '这个页面接着自动保存',
   export: '导出文件',
   exportTip: '把这个页面里的世界存成世界文件',
+  // 第九十五轮：写的那一页关了，但它存下的比这个页面里的新——主要的按钮是“重新载入”
+  stalePage: '另一个页面里保存了更新的世界，这个页面里的是旧的，改动不会自动保存',
+  reload: '重新载入',
+  reloadTip: '打开保存的那一份。这个页面里的样子先留一份',
+  reloadKept: '这个页面里原来的样子留在“以前的版本”里',
+  reloadNotKept: {
+    title: '这个页面里的样子没能留下来',
+    text: '浏览器存储满了或不可用。重新载入以后，这个页面里的改动找不回来；想留着就先导出文件。',
+    go: '重新载入',
+    export: '导出文件',
+    cancel: '取消',
+  },
   // 顶栏“世界”旁的小标记
   badge: '没保存',
   // 没存成时顶上说一次的话、“世界”菜单第一行的话：发生了什么、现在能做什么
@@ -137,6 +149,7 @@ export const SAVE_TEXT = {
     unavailable: '浏览器存储不可用（可能是隐私模式），这张地图没能自动保存。请导出世界文件',
     'too-big': '这张地图太大，浏览器存储不可用时存不下。请导出世界文件',
     'other-page': '这个世界已在另一个页面打开，这个页面里的改动不会自动保存',
+    'stale-page': '另一个页面里保存了更新的世界，这个页面里的是旧的，改动不会自动保存。请重新载入',
   },
   // 标记的悬停
   tip: {
@@ -144,6 +157,96 @@ export const SAVE_TEXT = {
     unavailable: '没保存：浏览器存储不可用',
     'too-big': '没保存：这张地图太大',
     'other-page': '没保存：已在另一个页面打开',
+    'stale-page': '没保存：这个页面里的是旧的',
   },
   tight: '浏览器给的存储快满了。请导出世界文件，或删除几张旧地图',
+} as const;
+
+// 以前的版本（第九十五轮）：“世界”菜单里的一行、“我的地图”每张上的按钮、列表、回到某一份
+export const VERSION_TEXT = {
+  menu: '以前的版本…',
+  menuHint: (n: number) => `自动留了 ${n} 份，能回到那时的样子`,
+  menuNone: '还没有。改动以后自动留',
+  title: '以前的版本',
+  titleOf: (name: string) => `“${name}”以前的版本`,
+  hint: '改动时自动留，越早的留得越稀。回到某一份之前，现在的样子也先留一份',
+  empty: '还没有以前的版本',
+  // 没存进“我的地图”、现在也没开着的世界
+  others: '没存进“我的地图”的世界',
+  othersHint: '换世界之前没保存的，最后的样子在这里',
+  restore: '回到这一份',
+  restoreTip: '现在的样子先留一份，再换成这一份',
+  open: '打开',
+  openTip: '打开这个世界那时的样子',
+  export: '导出文件',
+  exportTip: '把这一份存成世界文件',
+  deleteTitle: '删除这一份',
+  deleteText: '删除后找不回来。现在的地图和别的几份不受影响。',
+  restored: (when: string) => `已回到 ${when} 的样子。回去之前的样子也留了一份`,
+  opened: (when: string) => `已打开 ${when} 的样子`,
+  gone: '这一份已经不在了',
+  failed: '没能打开这一份',
+  steps: (n: number) => `${n} 步`,
+  // 列表里一行灰字的最后一段：为什么留的（平常隔一阵留的不写）
+  why: {
+    auto: '',
+    opened: '打开时的样子',
+    'before-restore': '回去之前留的',
+    replaced: '被换掉之前留的',
+    'before-reload': '重新载入之前留的',
+  },
+  // 回去之前现在的样子没能留下来（存储满了、不可用）：先问
+  notKept: {
+    title: '现在的样子没能留下来',
+    text: '浏览器存储满了或不可用。回到这一份以后，现在的样子找不回来；想留着就先导出文件。',
+    go: '仍然回去',
+    export: '导出文件',
+    cancel: '取消',
+  },
+  // 别的页面往同一张地图里存过：盖掉之前留了一份
+  replaced: (name: string) => `“${name}”在另一个页面里保存过。那一份留在“以前的版本”里`,
+  mapButton: '版本',
+  mapButtonTip: '这张地图以前的版本',
+} as const;
+
+// 存到电脑上的文件（第九十五轮）：“世界”菜单里的一行和状态、没在写时顶上的一条、没写成时的记号
+export const FILE_TEXT = {
+  menu: '存到电脑上的文件…',
+  menuHint: '选一个文件，以后保存时也写进它',
+  menuAgain: '换一个文件…',
+  unsupported: '这个浏览器不支持。请用下面的“世界文件”导出',
+  // 状态一行
+  on: (name: string, when: string) => `也存在电脑上：${name} · ${when}`,
+  notYet: '还没写',
+  paused: (name: string) => `没在写文件：${name}`,
+  resume: (name: string) => `接着存到 ${name}`,
+  resumeTip: '浏览器要重新确认一次能写这个文件',
+  stop: '不再存到这个文件',
+  stopTip: '文件留在原处，以后不再写它',
+  stopped: (name: string) => `不再存到“${name}”。文件还在原处`,
+  attached: (name: string) => `以后保存时也写进“${name}”`,
+  resumed: (name: string) => `接着存到“${name}”`,
+  pickFailed: '没能打开选文件的窗口。请用“世界文件”导出',
+  // 没在写时顶上一直在的一条
+  pausedBanner: (name: string) => `这张地图也存在电脑上的“${name}”，现在没在写`,
+  // 没写成：顶栏的记号、悬停、“世界”菜单第一行（发生了什么、现在能做什么）
+  badge: '文件没写',
+  tip: {
+    gone: '文件没写：找不到那个文件',
+    denied: '文件没写：不能写那个文件',
+    full: '文件没写：磁盘满了',
+    failed: '文件没写：没写成',
+  },
+  fail: {
+    gone: (name: string) => `电脑上的“${name}”找不到了，没能写进去。浏览器里的这一份还在。请换一个文件`,
+    denied: (name: string) => `不能写电脑上的“${name}”，没能写进去。浏览器里的这一份还在。请点“接着存到 ${name}”`,
+    full: (name: string) => `磁盘满了，“${name}”没能写进去。浏览器里的这一份还在。请腾出空间，或换一个文件`,
+    failed: (name: string) => `“${name}”没能写进去。浏览器里的这一份还在。请换一个文件，或导出世界文件`,
+  },
+} as const;
+
+// 撤销到头了（第九十五轮）：更早的步骤的撤销记录为了省内存丢掉了
+export const UNDO_LIMIT_TEXT = {
+  tip: '更早的步骤不能撤销了（为了省内存）',
+  history: (n: number) => `前 ${n} 步不能撤销了（为了省内存），世界文件里都还在`,
 } as const;

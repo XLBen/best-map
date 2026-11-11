@@ -15,6 +15,14 @@
 //     6. 把存着的一步改成引擎不认识的命令（装“上次的世界打不开”）→ 刷新 → 不进向导，停在“上次的世界没能打开”的问话上（写着原因）；
 //        点“新建”、在向导里建一个新世界 → 原来那一份在“留着的旧世界”里（写着没能打开和原因），顶上有一条说它还留着；
 //     7. 把存着的命令删掉一条（装“没存完整”）→ 刷新 → 不当没有：挪进“留着的旧世界”，向导上面说“没存完整……存下的部分还留着”。
+//   第九十五轮加的（插在中间）：
+//     2b. 第一次自动保存之后已经留了一份以前的版本；“世界 → 以前的版本…”里有它；再画一笔、点“回到这一份”→ 世界回到那时的样子，
+//         回去之前的样子也留了一份（再点它能回来）；
+//     2c. 存到电脑上的文件：真的选择框无头浏览器点不了——把 showSaveFilePicker 换成给一个浏览器自己管的文件（OPFS）的句柄，
+//         别的都是真的：点“世界 → 存到电脑上的文件…”→ 文件里就是世界文件；再画一笔 → 过一阵文件跟着变；刷新后还接着写；
+//         装成“要重新给权限”→ 顶上有“没在写”的一条、不写；点“接着存到…”→ 写；“不再存到这个文件”→ 不再写；
+//     5b. 写的那一页刷新（锁空出来过一下）时，世界不一样的那一页不说“已在另一个页面打开”，说“这个页面里的是旧的”，
+//         主要的按钮是“重新载入”；点它 → 这个页面打开保存的那一份，原来的样子留在以前的版本里。
 //   退出码：有没过的 1
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -216,6 +224,38 @@ const HEAD = `(async () => {
   });
 })()`;
 const BANNER = `(() => [...document.querySelectorAll('.notices .notice.banner .notice-text')].map((e) => e.textContent).find((t) => t.includes('另一个页面')) || null)()`;
+// 第九十五轮：以前的版本（versions 表）：每一份是哪个世界的、为什么留的、几步；最近留的在前
+const VERSIONS = `(async () => await new Promise((resolve) => {
+  const open = indexedDB.open('map2');
+  open.onerror = () => resolve([]);
+  open.onsuccess = () => {
+    const db = open.result;
+    db.onversionchange = () => db.close();
+    if (!db.objectStoreNames.contains('versions')) { db.close(); resolve([]); return; }
+    const req = db.transaction('versions', 'readonly').objectStore('versions').getAll();
+    req.onsuccess = () => { db.close(); resolve(req.result.sort((a, b) => b.at - a.at).map((v) => ({ id: v.id, series: v.series, why: v.why, steps: v.steps, thumb: !!v.thumb }))); };
+    req.onerror = () => { db.close(); resolve([]); };
+  };
+}))()`;
+// 点“世界”菜单里的一行（按名字找）；菜单没开就先开
+const menuItem = (name) => `(async () => {
+  const find = () => [...document.querySelectorAll('.menu .item')].find((x) => (x.querySelector('b')?.textContent ?? '') === ${JSON.stringify(name)});
+  if (!find()) { const b = document.querySelector('.topbar button[data-panel="world"]'); if (!b) throw new Error('找不到“世界”按钮'); b.click(); await new Promise((r) => setTimeout(r, 200)); }
+  const it = find();
+  if (!it) throw new Error('“世界”菜单里找不到：' + ${JSON.stringify(name)});
+  return { disabled: !!it.disabled, hint: it.querySelector('.hint')?.textContent ?? '' };
+})()`;
+const clickMenuItem = (name) => `(async () => { const info = await ${menuItem(name)}; [...document.querySelectorAll('.menu .item')].find((x) => (x.querySelector('b')?.textContent ?? '') === ${JSON.stringify(name)}).click(); return info; })()`;
+const closeMenu = `(() => { if (document.querySelector('.menu')) document.querySelector('.topbar button[data-panel="world"]').click(); })()`;
+// “以前的版本”弹窗里的各行
+const VERSION_ROWS = `(() => { const m = [...document.querySelectorAll('.modal.maps')].find((x) => (x.querySelector('h2, h3')?.textContent ?? '').includes('以前的版本')); return m ? [...m.querySelectorAll('.file-row')].map((r) => ({ when: r.querySelector('.file-name b')?.textContent ?? '', note: r.querySelector('.hint')?.textContent ?? '', buttons: [...r.querySelectorAll('button')].map((b) => b.textContent.trim()) })) : null; })()`;
+// 存到电脑上的文件：选择框换成给一个浏览器自己管的文件（真的句柄、真的写）；ASK_AGAIN：装成“这次打开页面要重新给权限”
+const FAKE_PICKER = `window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('smoke-world.json', { create: true });`;
+const ASK_AGAIN = `(() => { let ok = false; FileSystemFileHandle.prototype.queryPermission = async () => (ok ? 'granted' : 'prompt'); FileSystemFileHandle.prototype.requestPermission = async () => { ok = true; return 'granted'; }; })();`;
+// 那个文件里现在的内容（几步、多少字）；还没有时 null
+const FILE = `(async () => { try { const h = await (await navigator.storage.getDirectory()).getFileHandle('smoke-world.json'); const t = await (await h.getFile()).text(); if (!t) return { steps: -1, chars: 0 }; const d = JSON.parse(t); return { steps: d.commands.length, chars: t.length, format: d.format }; } catch (e) { return null; } })()`;
+const FILE_BANNER = `(() => [...document.querySelectorAll('.notices .notice.banner')].find((e) => e.textContent.includes('没在写')) ? [...document.querySelectorAll('.notices .notice.banner')].find((e) => e.textContent.includes('没在写')).querySelector('.notice-text').textContent : null)()`;
+const FILE_LINE = `(async () => { if (!document.querySelector('.menu')) { document.querySelector('.topbar button[data-panel="world"]').click(); await new Promise((r) => setTimeout(r, 200)); } const l = document.querySelector('.menu .file-line'); return l ? { text: l.querySelector('.hint').textContent, buttons: [...l.querySelectorAll('button')].map((b) => b.textContent.trim()) } : null; })()`;
 const BADGE = `(() => { const b = document.querySelector('.topbar .tb-badge.warn'); return b ? b.getAttribute('title') : null; })()`;
 // 留着的旧世界（backups 表）：每一份为什么留着、几步、原因
 const BACKUPS = `(async () => await new Promise((resolve) => {
@@ -308,6 +348,115 @@ try {
   check((await p.eval(LAND)) === land1, '刷新后世界还在，那一笔还在（陆地逐字节相同）', `刷新前 ${land1}，刷新后 ${await p.eval(LAND)}`);
   check((await count(p)) === n0 + 1, `存着的还是 ${n0 + 1} 步`, `是 ${await count(p)} 步`);
 
+  console.log('2b. 以前的版本');
+  writer = (await ownWrite(p, writer)).writer;
+  // 自动留的：新建后第一次自动保存留一份；刚才刷新打开时又留一份（同一个 5 分钟里平常留的只剩最新的，所以是 1 或 2 份）
+  const vers0 = await p.until('留了以前的版本', `(${VERSIONS}).then((l) => (l.some((v) => v.steps === ${n0 + 1}) ? l : null))`, 20000).catch(() => []);
+  check(vers0.length >= 1 && vers0.every((v) => v.series.startsWith('w:')), `不用点保存，自动留了 ${vers0.length} 份（没存进“我的地图”的世界也有）：${vers0.map((v) => `${v.why} ${v.steps} 步${v.thumb ? ' 带缩略图' : ''}`).join('；')}`, JSON.stringify(vers0));
+  const target = vers0.find((v) => v.steps === n0 + 1);
+  // 再画一笔（之后回到没有这一笔的那一份）
+  await stroke(p, 0.35);
+  await p.until('这一笔画上了', `(${LAND}) !== ${JSON.stringify(land1)}`, 60000);
+  await p.until('自动保存多了一步', `(${HEAD}).then((h) => !!h && h.count === ${n0 + 2})`, 30000);
+  await p.until('算完', READY, 60000);
+  const landX = await p.eval(LAND);
+  const item = await p.eval(clickMenuItem('以前的版本…'));
+  check(!item.disabled && /\d+ 份/.test(item.hint), `“世界”菜单里“以前的版本…”能点（${item.hint}）`, JSON.stringify(item));
+  const rows = await p.until('以前的版本的弹窗', VERSION_ROWS, 10000).catch(() => null);
+  check(!!rows && rows.length === vers0.length && rows.every((r) => r.when.startsWith('今天') && /\d+ 步/.test(r.note) && r.buttons.includes('回到这一份')), `弹窗里 ${rows?.length} 行，写着时间、几步，有“回到这一份”（${rows?.map((r) => `${r.when} · ${r.note}`).join('；')}）`, JSON.stringify(rows));
+  await p.shot('以前的版本');
+  const clickRow = (text) => `(() => { const m = [...document.querySelectorAll('.modal.maps')].find((x) => (x.querySelector('h2, h3')?.textContent ?? '').includes('以前的版本')); const row = [...m.querySelectorAll('.file-row')].find((r) => r.querySelector('.hint').textContent.includes(${JSON.stringify(text)})); if (!row) throw new Error('找不到那一行：' + ${JSON.stringify(text)}); [...row.querySelectorAll('button')].find((b) => b.textContent.includes('回到这一份')).click(); })()`;
+  await p.eval(clickRow(`${n0 + 1} 步`));
+  await p.until('回到了少一笔的样子', `(${LAND}) === ${JSON.stringify(land1)}`, 120000).catch(() => null);
+  await p.until('算完', READY, 60000);
+  check(!!target && (await p.eval(LAND)) === land1, '“回到这一份”：世界回到那时的样子（陆地逐字节相同）', `现在 ${await p.eval(LAND)}，那时 ${land1}`);
+  const vers1 = await p.until('回去之前的样子也留了一份', `(${VERSIONS}).then((l) => (l.some((v) => v.why === 'before-restore') ? l : null))`, 20000).catch(() => []);
+  const before = vers1.find((v) => v.why === 'before-restore');
+  check(!!before && before.steps === n0 + 2 && before.series === target?.series, `回去之前的样子（${before?.steps} 步）也留了一份，记在同一个世界上`, JSON.stringify(vers1));
+  await p.until('回去以后自动保存', `(${HEAD}).then((h) => !!h && h.count === ${n0 + 1})`, 30000);
+  // 反悔：回到“回去之前留的”那一份
+  await p.eval(clickMenuItem('以前的版本…'));
+  await p.until('以前的版本的弹窗', VERSION_ROWS, 10000);
+  await p.shot('以前的版本-回去之后');
+  await p.eval(clickRow('回去之前留的'));
+  await p.until('又回到多一笔的样子', `(${LAND}) === ${JSON.stringify(landX)}`, 120000).catch(() => null);
+  await p.until('算完', READY, 60000);
+  check((await p.eval(LAND)) === landX, '回去本身能反悔：再回到“回去之前留的”那一份，那一笔又在了');
+  await p.until('自动保存跟上', `(${HEAD}).then((h) => !!h && h.count === ${n0 + 2})`, 30000);
+  // 撤销这一笔（后面几步照旧从 n0 + 1 步、land1 接着走）
+  await p.eval(`document.querySelector('.topbar button[aria-label="撤销"]').click()`);
+  await p.until('撤销了', `(${LAND}) === ${JSON.stringify(land1)}`, 60000);
+  await p.until('自动保存跟上', `(${HEAD}).then((h) => !!h && h.count === ${n0 + 1})`, 30000);
+  await p.until('算完', READY, 60000);
+
+  console.log('2c. 存到电脑上的文件（选择框换成浏览器自己管的文件，别的是真的）');
+  await p.eval(FAKE_PICKER);
+  const fileItem = await p.eval(menuItem('存到电脑上的文件…'));
+  check(!fileItem.disabled, `“世界”菜单里“存到电脑上的文件…”能点（${fileItem.hint}）`, JSON.stringify(fileItem));
+  await p.eval(clickMenuItem('存到电脑上的文件…'));
+  const file1 = await p.until('文件写下了', `(${FILE}).then((f) => (f && f.steps > 0 ? f : null))`, 20000).catch(() => null);
+  check(!!file1 && file1.steps === n0 + 1 && file1.format === 'map2-world', `选好就写了一次：文件里是世界文件（${file1?.steps} 步，${file1?.chars} 字）`, JSON.stringify(file1));
+  const line1 = await p.eval(FILE_LINE);
+  check(!!line1 && line1.text.startsWith('也存在电脑上：smoke-world.json') && line1.buttons.includes('不再存到这个文件'), `“世界”菜单里写着：“${line1?.text}”`, JSON.stringify(line1));
+  await p.shot('世界菜单-也存在电脑上');
+  await p.eval(closeMenu);
+  // 再画一笔：自动保存之后文件跟着变（节流 10 秒）
+  const tStroke = Date.now();
+  await stroke(p, 0.35);
+  await p.until('这一笔画上了', `(${LAND}) !== ${JSON.stringify(land1)}`, 60000);
+  const file2 = await p.until('文件跟着变', `(${FILE}).then((f) => (f && f.steps === ${n0 + 2} ? f : null))`, 40000).catch(() => null);
+  check(!!file2, `再画一笔：${((Date.now() - tStroke) / 1000).toFixed(1)} 秒后文件里也是 ${n0 + 2} 步`, JSON.stringify(await p.eval(FILE)));
+  await p.until('算完', READY, 60000);
+  await p.until('自动保存跟上', `(${HEAD}).then((h) => !!h && h.count === ${n0 + 2})`, 30000);
+  // 撤销这一笔（后面几步照旧从 n0 + 1 步、land1 接着走）
+  await p.eval(`document.querySelector('.topbar button[aria-label="撤销"]').click()`);
+  await p.until('撤销了', `(${LAND}) === ${JSON.stringify(land1)}`, 60000);
+  await p.until('自动保存跟上', `(${HEAD}).then((h) => !!h && h.count === ${n0 + 1})`, 30000);
+  await p.until('文件也跟上', `(${FILE}).then((f) => !!f && f.steps === ${n0 + 1})`, 40000).catch(() => null);
+  check((await p.eval(FILE))?.steps === n0 + 1, '撤销以后文件也跟着回到少一步');
+  // 刷新：浏览器自己管的文件不用重新给权限——接着写
+  await p.send('Page.navigate', { url: `${origin}/` });
+  await p.until('刷新后世界打开', READY, 120000);
+  const line2 = await p.until('刷新后还连着那个文件', `(${FILE_LINE}).then((l) => (l && l.text.includes('smoke-world.json') ? l : null))`, 20000).catch(() => null);
+  check(!!line2 && line2.text.startsWith('也存在电脑上'), `刷新后还记着那个文件，接着写（“${line2?.text}”）`, JSON.stringify(line2));
+  await p.eval(closeMenu);
+  check((await p.eval(FILE_BANNER)) === null, '能写的时候顶上没有“没在写”的那一条');
+  // 装成“这次打开页面要重新给权限”：刷新后没在写、看得出来；点了才写
+  await p.send('Page.addScriptToEvaluateOnNewDocument', { source: ASK_AGAIN }).then((r) => (p.askAgainScript = r.identifier));
+  await p.send('Page.navigate', { url: `${origin}/` });
+  await p.until('刷新后世界打开', READY, 120000);
+  const paused = await p.until('顶上有“没在写”的一条', FILE_BANNER, 20000).catch(() => null);
+  check(!!paused && paused.includes('smoke-world.json'), `要重新给权限时顶上一直有一条：“${paused}”`, '没有出现');
+  const line3 = await p.eval(FILE_LINE);
+  check(!!line3 && line3.text === '没在写文件：smoke-world.json' && line3.buttons.some((b) => b.startsWith('接着存到')), `“世界”菜单里写着“${line3?.text}”，有“接着存到…”`, JSON.stringify(line3));
+  await p.shot('没在写文件');
+  await p.eval(closeMenu);
+  await stroke(p, 0.35);
+  await p.until('这一笔画上了', `(${LAND}) !== ${JSON.stringify(land1)}`, 60000);
+  await p.until('自动保存多一步', `(${HEAD}).then((h) => !!h && h.count === ${n0 + 2})`, 30000);
+  await sleep(1500);
+  check((await p.eval(FILE))?.steps === n0 + 1, '没点之前不写：文件里还是原来的');
+  await p.eval(`(() => { const b = [...document.querySelectorAll('.notices .notice.banner button')].find((x) => x.textContent.includes('接着存到')); if (!b) throw new Error('找不到“接着存到”'); b.click(); })()`);
+  const file3 = await p.until('点了以后写', `(${FILE}).then((f) => (f && f.steps === ${n0 + 2} ? f : null))`, 20000).catch(() => null);
+  check(!!file3, '点“接着存到 smoke-world.json”：马上写了', JSON.stringify(await p.eval(FILE)));
+  check((await p.until('那一条消失', `(${FILE_BANNER}) === null`, 10000).catch(() => false)) !== false, '那一条消失');
+  // 不再存到这个文件
+  await p.eval(FILE_LINE);
+  await p.eval(`(() => { const b = [...document.querySelectorAll('.menu .file-line button')].find((x) => x.textContent.includes('不再存到这个文件')); if (!b) throw new Error('找不到“不再存到这个文件”'); b.click(); })()`);
+  await p.until('状态一行没了', `!document.querySelector('.menu .file-line')`, 10000).catch(() => null);
+  await p.eval(closeMenu);
+  await p.eval(`document.querySelector('.topbar button[aria-label="撤销"]').click()`);
+  await p.until('撤销了', `(${LAND}) === ${JSON.stringify(land1)}`, 60000);
+  await p.until('自动保存跟上', `(${HEAD}).then((h) => !!h && h.count === ${n0 + 1})`, 30000);
+  await sleep(1500);
+  check((await p.eval(FILE))?.steps === n0 + 2, '“不再存到这个文件”以后不再写（文件留在原处）', JSON.stringify(await p.eval(FILE)));
+  if (p.askAgainScript) await p.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: p.askAgainScript });
+  await p.send('Page.navigate', { url: `${origin}/` });
+  await p.until('刷新后世界打开', READY, 120000);
+  check((await p.eval(LAND)) === land1 && (await count(p)) === n0 + 1, `接着往下走：世界还是 ${n0 + 1} 步的那一个`);
+  check((await p.eval(FILE_BANNER)) === null && (await p.eval(FILE_LINE)) === null, '刷新后不再提那个文件');
+  await p.eval(closeMenu);
+
   console.log('3. 再画一笔，世界一变就马上刷新（不等 1.5 秒）');
   writer = (await ownWrite(p, writer)).writer;
   await stroke(p, 0.4);
@@ -384,9 +533,27 @@ try {
   await q.until('第二个页面刷新后世界打开', READY, 120000);
   check((await q.eval(LAND)) === landQ1, '第二个页面刷新后是它自己的世界');
 
-  // 第一个页面的世界和存着的不一样：第二个页面刷新（锁空出来过一下）时它没有自己接过去
+  // 第一个页面的世界和存着的不一样：第二个页面刷新（锁空出来过一下）时它没有自己接过去。
+  // 第九十五轮：这时它说的是“另一个页面里保存了更新的世界，这个页面里的是旧的”，主要的按钮是“重新载入”
   await sleep(1000);
-  check(!!(await p.eval(BANNER)), '第一个页面（世界不一样）没有趁第二个页面刷新自己接过去，还说着');
+  const stale = await p.until('第一个页面说它是旧的', `(() => { const t = ${BANNER}; return t && t.includes('旧的') ? t : null; })()`, 20000).catch(() => null);
+  check(!!stale, `第一个页面（世界不一样）没有趁第二个页面刷新自己接过去；它说：“${stale}”`, `说的是：${await p.eval(BANNER)}`);
+  const staleButtons = await p.eval(`[...document.querySelectorAll('.notices .notice.banner')].find((e) => e.textContent.includes('旧的')) ? [...[...document.querySelectorAll('.notices .notice.banner')].find((e) => e.textContent.includes('旧的')).querySelectorAll('button')].map((b) => ({ text: b.textContent.trim(), primary: b.classList.contains('primary') })) : []`);
+  check(staleButtons.length === 3 && staleButtons[0].text === '重新载入' && staleButtons[0].primary && staleButtons[1].text === '在这里接着做' && !staleButtons[1].primary, `主要的按钮是“重新载入”，“在这里接着做”是次要的（${staleButtons.map((b) => b.text).join(' / ')}）`, JSON.stringify(staleButtons));
+  check(/旧的/.test((await p.eval(BADGE)) ?? ''), `顶栏的记号也换了说法（${await p.eval(BADGE)}）`);
+  await p.shot('这个页面里的是旧的');
+  // 点“重新载入”：这个页面打开保存的那一份（第二个页面的世界）；原来的样子留在以前的版本里
+  const landP1 = await p.eval(LAND);
+  const askedP = p.leaveAsked;
+  await p.eval(`(() => { const b = [...document.querySelectorAll('.notices .notice.banner button')].find((x) => x.textContent.trim() === '重新载入'); b.click(); })()`);
+  await p.until('第一个页面重新载入成保存的那一份', `(${LAND}) === ${JSON.stringify(landQ1)}`, 120000).catch(() => null);
+  await p.until('算完', READY, 60000);
+  check((await p.eval(LAND)) === landQ1 && landP1 !== landQ1, '点“重新载入”：这个页面打开了保存的那一份（另一个页面的世界）');
+  check(p.leaveAsked === askedP, '重新载入时浏览器没有再问“要离开吗”（这个页面里的样子已经留了）', `问了 ${p.leaveAsked - askedP} 次`);
+  const versP = await p.eval(VERSIONS);
+  check(versP.some((v) => v.why === 'before-reload' && v.steps === n0 + 4), `这个页面里原来的样子留在以前的版本里（${JSON.stringify(versP.filter((v) => v.why === 'before-reload'))}）`);
+  const bannerP2 = await p.until('重新载入以后说“已在另一个页面打开”', `(() => { const t = ${BANNER}; return t && !t.includes('旧的') ? t : null; })()`, 20000).catch(() => null);
+  check(!!bannerP2, `重新载入以后（第二个页面还开着、在写）：“${bannerP2}”`);
   await p.send('Page.close').catch(() => {});
   const head5 = await ownWrite(q, head4.writer);
   // 第三个页面：打开的就是存着的那一份。写的那个页面关了，它不用点就接着保存

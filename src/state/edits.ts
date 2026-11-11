@@ -79,10 +79,13 @@ export async function replaceLast(cmd: Command, label = '正在计算…'): Prom
 export async function undo() {
   const r = await call({ kind: 'undo' }, '撤销…');
   const before = world.value;
-  const last = history.value.filter((h) => h.done).pop();
+  const done = history.value.filter((h) => h.done);
+  const last = done[done.length - 1];
   regenTrack.pending = 'history';
   const ok = await handle(r);
-  if (ok && last) noteChange(`撤销：${last.summary}`, before, false);
+  // 第九十五轮：撤销到头了（更早的步骤的撤销记录为了省内存丢掉了）时这一下什么都没撤，不说“撤销：……”
+  const undone = history.value.filter((h) => h.done).length < done.length;
+  if (ok && last && undone) noteChange(`撤销：${last.summary}`, before, false);
 }
 
 export async function redo() {

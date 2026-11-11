@@ -24,6 +24,8 @@ export const ESC_RANK = {
   scriptHelp: 310,
   // ---- 冒泡阶段（以前 keys.ts 里的 if/else 链，从上到下） ----
   packDialog: 160,
+  // 以前的版本（第九十五轮，maps/versions.ts）：能从“我的地图”里打开，在它上面
+  versionsDialog: 157,
   // 留着的旧世界（第九十一轮，maps/backups.ts）
   backupsDialog: 155,
   mapsDialog: 150,

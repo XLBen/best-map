@@ -13,6 +13,7 @@ import { download } from './export-host';
 import { prebuildMesh } from './mesh';
 import { changeNote, flash, noteSkipped, showToast, skippedNote } from './notes';
 import { askTrust } from './script-trust';
+import { keepVersion, noteMapSeen } from './versions';
 import { call, currentHost, engineHost, getDoc, handle, hostOpts, safeMode, whenEditsIdle } from './worker-host';
 import { worldEpoch, worldState } from './world';
 
@@ -130,6 +131,8 @@ export async function resumeLast(): Promise<boolean | null> {
     if (r.ok) {
       noteResumed(saved);
       if (saved.mapId) await relink(saved.mapId, saved.mapSynced ? 0 : saved.savedAt);
+      // 第九十五轮：打开时的样子留一份（和最新的那一份一样就不留）——之后画坏了，回得到“上次结束时”
+      void keepVersion('opened', saved.doc);
       return true;
     }
     if (r.cancelled) {
@@ -192,6 +195,7 @@ async function relink(id: string, autosavedAt: number) {
   try {
     const e = await idbMapStore.entry(id);
     if (!e) return;
+    noteMapSeen(id, e.savedAt);
     mapLink.value = { id, name: e.name, epoch: worldEpoch.value };
     mapSavedState.value = e.savedAt >= autosavedAt ? worldState.value : -1;
     if (mapSavedState.value < 0) void autosaveNow();

@@ -4,6 +4,8 @@
 // 点“在这里接着做”把锁抢过来（steal），并在 BroadcastChannel 上说一声，原来写的那一页变成不写的那一方。
 // 写的那一页关了：等着的页面拿到锁，但只在存着的那一份就是它的世界的开头时才接着写（canPromote）——
 // 不然会拿这一页的旧世界盖掉那一页后来做的；不能接时放开锁，等用户自己点。
+// 第九十五轮：这时不再说“已在另一个页面打开”（那一页已经关了），而是另一种状态 stale——
+// “另一个页面里保存了更新的世界，这个页面里的是旧的”，界面上主要的按钮是“重新载入”，次要的才是“在这里接着做”。
 // 没有 navigator.locks 的环境（旧浏览器、测试）：lock 为 null，都当自己能写，靠头里的“谁写的”在事务里核对（autosave-io.ts）；
 // 别的页面说它接过去了（频道上的 taken）时让出。
 // 这里不碰界面、不碰存储：锁和频道经 LockIo，测试换成内存里的（memoryLocks）
@@ -20,7 +22,8 @@ export interface LockIo {
   listen(fn: (msg: RoleMessage) => void): void;
 }
 
-export type Role = 'unknown' | 'writer' | 'other';
+// other：这个世界开在另一个页面里，那一页在写；stale（第九十五轮）：那一页关了，但它存下的比这个页面里的新（这一页不写）
+export type Role = 'unknown' | 'writer' | 'other' | 'stale';
 
 export interface RoleHooks {
   changed(role: Role): void;
@@ -89,7 +92,8 @@ export class SaveRole {
     this.wait();
   }
 
-  // 不再是写的那一方：别的页面说它接过去了；没有锁可用时，写的时候发现头成了别人的（autosave-io.ts 的 lost）
+  // 不再是写的那一方：别的页面说它接过去了；没有锁可用时，写的时候发现头成了别人的（autosave-io.ts 的 lost）。
+  // 原来是 stale（那一页关了、这一页是旧的）时也回到 other：又有一个页面在写了，重新排队
   giveUp() {
     if (this.role === 'other') return;
     this.turn++;
@@ -115,8 +119,11 @@ export class SaveRole {
         }
         if (turn !== this.turn) return;
         if (can) this.set('writer');
-        // 不能接：放开锁（不占着不写），等用户点“在这里接着做”
-        else this.lock!.release();
+        else {
+          // 不能接：放开锁（不占着不写），等用户点“重新载入”或“在这里接着做”。那一页已经关了：换一种说法（stale）
+          this.lock!.release();
+          this.set('stale');
+        }
       })
       .catch(() => {});
   }

@@ -8,9 +8,11 @@ import { AUTOSAVE_KEY, splitHead, staleLocalAutosave } from '../backups';
 import { openDb } from '../idb';
 import { type StorageLike, askPersist, storageNearlyFull } from '../storage-health';
 import { keepGate, keepStaleOnce, refreshBackups } from './backups';
-import { THUMB_EVERY_MS, activeLink, idbMapStore, isQuotaError, mapLink, mapSavedState, overwriteMap, thumbHook } from '../maps';
+import { THUMB_EVERY_MS, activeLink, idbMapStore, isQuotaError, mapLink, mapSavedState, thumbHook } from '../maps';
+import { fileAfterSave } from './file-save';
 import { showToast } from './notes';
 import { failWhy, saveFail, saveRole, savedState, storageTight, unsaved } from './save-status';
+import { adoptWorldId, freeVersionRoom, overwriteLinked, versionAfterSave, worldId } from './versions';
 import { call, currentHost, getDoc, hostHooks, safeMode } from './worker-host';
 import { world, worldEpoch, worldState } from './world';
 
@@ -106,6 +108,8 @@ export function noteResumed(saved: Autosaved) {
   p.writer.opened = saved.mark ?? null;
   p.writer.keepWhy = { why: 'replaced' };
   savedState.value = worldState.value;
+  // 第九十五轮：还是同一个世界——它的版本接着记在同一个编号上
+  adoptWorldId(saved.wid);
 }
 // 上次的世界没能打开、没打开（取消了）：之后这个页面的自动保存盖掉它之前先原样留着，写上为什么
 export function noteNotResumed(why: 'failed' | 'cancelled', error?: string) {
@@ -146,7 +150,8 @@ async function syncLinked(link: { id: string; name: string; epoch: number }, sta
   const now = Date.now();
   const thumb = now - thumbAt > THUMB_EVERY_MS ? (thumbHook.make?.() ?? null) : null;
   try {
-    const e = await overwriteMap(idbMapStore, link.id, { doc, thumb, now });
+    // 第九十五轮：别的页面往这一张里存过、盖掉会丢东西时，先把那一份留成一个版本（versions.ts 的 overwriteKeeping）
+    const e = await overwriteLinked(idbMapStore, link.id, { doc, thumb, now });
     if (!e) {
       // 别的页面里删掉了：这个世界不再连着它
       if (mapLink.value?.id === link.id) mapLink.value = null;
@@ -160,9 +165,9 @@ async function syncLinked(link: { id: string; name: string; epoch: number }, sta
   }
 }
 
-// 头里除了世界以外的几项：安全模式的原因、连着哪一张地图
+// 头里除了世界以外的几项：安全模式的原因、连着哪一张地图、这个世界的编号（第九十五轮：以前的版本按它记）
 function extraNow(link: { id: string } | null, synced: boolean): SaveExtra {
-  return { ...(safeMode.value ? { safe: safeMode.value.reason } : {}), ...(link ? { mapId: link.id, ...(synced ? { mapSynced: true } : {}) } : {}) };
+  return { ...(safeMode.value ? { safe: safeMode.value.reason } : {}), ...(link ? { mapId: link.id, ...(synced ? { mapSynced: true } : {}) } : {}), wid: worldId() };
 }
 
 async function autosave() {
@@ -190,6 +195,13 @@ async function autosaveOnce() {
   const link = activeLink(mapLink.value, epoch);
   const state = worldState.value;
   let idbError: unknown = null;
+  // 第九十五轮：写不进去是因为满了时，先把以前的版本丢掉一半腾地方再试一次——不能因为留着版本让现在这一份存不下
+  let roomTried = false;
+  const madeRoom = async (e: unknown) => {
+    if (roomTried || !isQuotaError(e)) return false;
+    roomTried = true;
+    return (await freeVersionRoom()) > 0;
+  };
   // 最多两次：第二次是“要整份”（头不是这一页上一次写的那一代）时重新取整份
   for (let round = 0; round < 2; round++) {
     const base = writer.savedIds;
@@ -201,12 +213,20 @@ async function autosaveOnce() {
     try {
       out = await writer.write(r.tail, extraNow(link, mapSavedState.value === state), { base, key });
     } catch (e) {
+      if (await madeRoom(e)) {
+        round--;
+        continue;
+      }
       idbError = e ?? new Error('自动保存没写成');
       break;
     }
     if (out.kind === 'again') continue;
     if (out.kind === 'other') return;
     if (out.kind === 'keep-failed') {
+      if (await madeRoom(out.error)) {
+        round--;
+        continue;
+      }
       // 原来那一份没能留下来（多半是满了）：不盖它，和写不进去一样退回 localStorage
       idbError = out.error ?? new Error('自动保存没写成');
       break;
@@ -224,6 +244,9 @@ async function autosaveOnce() {
     }
     void storageCheck();
     if (link) await syncLinked(link, state);
+    // 第九十五轮：隔一阵留一份以前的样子；这个世界连着电脑上的文件时也写进去（都不等、都有自己的节流）
+    versionAfterSave();
+    fileAfterSave();
     return;
   }
   if (idbError === null) return;
@@ -237,7 +260,7 @@ async function autosaveOnce() {
       return;
     }
     const at = Date.now();
-    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ savedAt: at, doc, ...(safeMode.value ? { safe: safeMode.value.reason } : {}) }));
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ savedAt: at, doc, ...(safeMode.value ? { safe: safeMode.value.reason } : {}), wid: worldId() }));
     autosaved.value = at;
     savedState.value = state;
     saveFail.value = null;
@@ -293,6 +316,7 @@ if (typeof document !== 'undefined') {
   window.addEventListener('pagehide', saveOnLeave);
   // 有没存的改动时关页面：浏览器自带的确认。只在真有没存的时候挂着
   const warn = (e: BeforeUnloadEvent) => {
+    if (leaving) return;
     flushNow();
     e.preventDefault();
     e.returnValue = '';
@@ -301,6 +325,13 @@ if (typeof document !== 'undefined') {
     if (unsaved.value) window.addEventListener('beforeunload', warn);
     else window.removeEventListener('beforeunload', warn);
   });
+}
+
+// 第九十五轮：这个页面要自己重新载入（“重新载入”：打开别的页面里保存的那一份；这个页面里的样子已经另外留了一份）——
+// 浏览器不用再问“要离开吗”
+let leaving = false;
+export function skipLeaveWarning() {
+  leaving = true;
 }
 
 // 读上次的自动保存：IndexedDB 与 localStorage（IndexedDB 用不了时的后备）里较新的那一份。safe：上次是安全模式（原因）。
@@ -314,6 +345,8 @@ export interface Autosaved {
   mapSynced?: boolean;
   // 第九十四轮：读的是 IndexedDB 里的哪一份（谁写的、第几代）——这个页面第一次写时认“盖掉的就是我打开的那一份”
   mark?: HeadMark;
+  // 第九十五轮：这个世界的编号（以前的版本按它记）
+  wid?: string;
 }
 export async function readAutosave(): Promise<Autosaved | null> {
   await keepStaleOnce();
@@ -330,7 +363,7 @@ export async function readAutosave(): Promise<Autosaved | null> {
       // 没存完整的（条数对不上）不在这里打开：启动时已经原样挪进“留着的旧世界”（backups.ts 的 staleWhy）；
       // 这个页面不是写的那一方时没挪，照样不打开
       if (wholeDoc(meta, commands) && isCurrentDoc(doc))
-        best = { savedAt: info.savedAt, doc, ...(info.safe !== undefined ? { safe: info.safe } : {}), ...(info.mapId !== undefined ? { mapId: info.mapId, mapSynced: info.mapSynced === true } : {}), mark: markOf(meta) };
+        best = { savedAt: info.savedAt, doc, ...(info.safe !== undefined ? { safe: info.safe } : {}), ...(info.mapId !== undefined ? { mapId: info.mapId, mapSynced: info.mapSynced === true } : {}), ...(info.wid !== undefined ? { wid: info.wid } : {}), mark: markOf(meta) };
     }
     db.close();
   } catch {
@@ -339,7 +372,7 @@ export async function readAutosave(): Promise<Autosaved | null> {
   try {
     const raw = localStorage.getItem(AUTOSAVE_KEY);
     const old = raw ? (JSON.parse(raw) as Autosaved) : null;
-    if (old && isCurrentDoc(old.doc) && (!best || old.savedAt > best.savedAt)) best = { savedAt: old.savedAt, doc: old.doc, ...(typeof old.safe === 'string' ? { safe: old.safe } : {}) };
+    if (old && isCurrentDoc(old.doc) && (!best || old.savedAt > best.savedAt)) best = { savedAt: old.savedAt, doc: old.doc, ...(typeof old.safe === 'string' ? { safe: old.safe } : {}), ...(typeof old.wid === 'string' ? { wid: old.wid } : {}) };
   } catch {
     // 坏了就当没有
   }

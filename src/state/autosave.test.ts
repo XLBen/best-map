@@ -324,10 +324,14 @@ describe('两个页面', () => {
     // 轮到过这一页（拿到锁、看了一眼不能接）：锁又放开了（没有占着不写）
     await vi.waitFor(() => expect(locks.holder()).toBe(-1), { timeout: 20000, interval: 10 });
     await tick(30);
-    expect(saveRole.value).toBe('other');
+    // 第九十五轮：那一页已经关了——不再说“已在另一个页面打开”，说“这个页面里的是旧的”（主要的按钮是“重新载入”）
+    expect(saveRole.value).toBe('stale');
+    expect(saveProblem.value).toBe('stale-page');
     expect(stored(disk)).toEqual(was);
     expect(locks.holder()).toBe(-1);
     await takeOverSaving();
+    expect(saveRole.value).toBe('writer');
+    expect(saveProblem.value).toBeNull();
     expect(stored(disk)!.commands).toEqual(mine());
     expect([...disk.backups.values()].map((b) => b.doc)).toEqual([was]);
     expect(backups.value).not.toBeNull();

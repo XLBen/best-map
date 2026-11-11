@@ -1,7 +1,9 @@
-import { Download, FolderOpen, Pencil, Trash2 } from 'lucide-preact';
+import { Download, FolderOpen, History, Pencil, Trash2 } from 'lucide-preact';
 import { describeMap } from '../../maps';
 import { ModalHead } from '../common';
+import { VERSION_TEXT } from '../copy';
 import { currentMap, deleteSaved, exportSaved, mapList, mapsDialog, openMap, renameSaved } from './store';
+import { mapVersionCount, openVersions, versions } from './versions';
 
 // 我的地图（世界 → 我的地图…）：存在这个浏览器里的世界，最近保存的在前。一行一张：小缩略图、名字，下面两行灰字（地区还是星球、格数；保存的时间）；
 // 右边打开、改名、导出文件、删掉
@@ -48,6 +50,12 @@ export function MapsDialog() {
                   <button class="small" onClick={() => void renameSaved(e)}>
                     <Pencil /> 改名
                   </button>
+                  {/* 第九十五轮：这张地图自动留的以前的版本（有才出现） */}
+                  {mapVersionCount(versions.value, e.id) > 0 && (
+                    <button class="small" onClick={() => openVersions({ t: 'map', id: e.id, name: e.name })} title={VERSION_TEXT.mapButtonTip}>
+                      <History /> {VERSION_TEXT.mapButton}
+                    </button>
+                  )}
                   <button class="small" onClick={() => void exportSaved(e)} title="下载世界文件，用于换电脑或备份">
                     <Download /> 导出
                   </button>

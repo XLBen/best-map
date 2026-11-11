@@ -14,6 +14,8 @@ export const worldEpoch = signal(0);
 export const history = signal<{ summary: string; done: boolean }[]>([]);
 export const canUndo = signal(false);
 export const canRedo = signal(false);
+// 第九十五轮：历史里最前面几步不能撤销了（为了省内存，见 core/undo-budget.ts）
+export const undoLocked = signal(0);
 
 export const focusSpecies = signal<string | null>(null);
 

@@ -8,7 +8,7 @@ import { DEFAULT_LIBRARY } from '../../../core/packs/builtin-tree';
 import { worldLibrary } from '../../../core/packs/switch';
 import { panelLibrary, refreshLibrary } from '../../library';
 import { copyLibrary, libEdits } from '../../library-edit';
-import { canRedo, canUndo, history, redo, showToast, undo, world } from '../../state';
+import { canRedo, canUndo, history, redo, showToast, undo, undoLocked, world } from '../../state';
 import { HOME, type OpenRequest, type PageCtx, type Route, type SourceRef, type UndoTarget, WORLD_SOURCE, liveSource, liveStack, openTarget, popRoute, pushRoute, sameSource, undoTarget } from './pages';
 import { type OtherOpen, sameOther } from './other-view';
 import { canPick, pickCount, pickStore, setPickDest, togglePickIn } from './pick-store';
@@ -18,6 +18,7 @@ import { regenNow } from './regen-now';
 import { worldItemStack } from './open-item';
 import type { World } from '../../../core/world';
 import { ESC_RANK, pushEscape } from '../shell/escape';
+import { UNDO_LIMIT_TEXT } from '../copy';
 
 // 资源库面板的状态（第五十九轮）：看的是哪一份、点到了第几层。关上再打开回到原来的地方。
 // 切换来源、关上时把我的库没写进存储的写进去（改的内容已经在日志里，这一步不影响“不丢”）。
@@ -375,7 +376,11 @@ export function undoNow(): { target: UndoTarget; lib: string | null } {
 export function undoHere(): void {
   const u = undoNow();
   if (u.lib) libEdits.undo(u.lib);
-  else if (u.target === 'world') void undo();
+  else if (u.target === 'world') {
+    // 第九十五轮：撤销到头了（⌘Z）：说一句为什么，不去问计算程序
+    if (undoState().limited) showToast(UNDO_LIMIT_TEXT.tip);
+    else void undo();
+  }
 }
 export function redoHere(): void {
   const u = undoNow();
@@ -384,15 +389,18 @@ export function redoHere(): void {
 }
 
 // 顶栏的撤销、重做：能不能点、悬停写哪一步（世界的看历史，我的库的看它自己的）
-export function undoState(): { canUndo: boolean; canRedo: boolean; undo: string | null; redo: string | null; lib: boolean } {
+// limited（第九十五轮）：世界的撤销到头了——还有做了的步，但更早的不能撤销了（撤销记录为了省内存丢掉了）
+export function undoState(): { canUndo: boolean; canRedo: boolean; undo: string | null; redo: string | null; lib: boolean; limited: boolean } {
   void libEdits.tick.value;
   const u = undoNow();
-  if (u.lib) return { canUndo: libEdits.canUndo(u.lib), canRedo: libEdits.canRedo(u.lib), undo: libEdits.undoLabel(u.lib), redo: libEdits.redoLabel(u.lib), lib: true };
-  if (u.target === 'none') return { canUndo: false, canRedo: false, undo: null, redo: null, lib: false };
+  if (u.lib) return { canUndo: libEdits.canUndo(u.lib), canRedo: libEdits.canRedo(u.lib), undo: libEdits.undoLabel(u.lib), redo: libEdits.redoLabel(u.lib), lib: true, limited: false };
+  if (u.target === 'none') return { canUndo: false, canRedo: false, undo: null, redo: null, lib: false, limited: false };
   const h = history.value;
   const done = h.filter((x) => x.done);
-  return { canUndo: canUndo.value, canRedo: canRedo.value, undo: done.at(-1)?.summary ?? null, redo: h.find((x) => !x.done)?.summary ?? null, lib: false };
+  return { canUndo: canUndo.value, canRedo: canRedo.value, undo: done.at(-1)?.summary ?? null, redo: h.find((x) => !x.done)?.summary ?? null, lib: false, limited: undoLimited(canUndo.value, done.length, undoLocked.value) };
 }
+// 撤销到头了：不能撤、有做了的步、而且正好停在不能撤的那几步上
+export const undoLimited = (can: boolean, doneSteps: number, locked: number): boolean => !can && doneSteps > 0 && locked >= doneSteps;
 
 // 哪几段展开着（按种类记，这次打开页面期间）
 const segOpen = new Map<string, Set<string>>();

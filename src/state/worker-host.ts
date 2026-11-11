@@ -43,6 +43,7 @@ import {
   selectedSettle,
   settleExists,
   sheet,
+  undoLocked,
   visualOverrides,
   world,
   worldEpoch,
@@ -317,6 +318,7 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false, regen?: Poste
   adjustPreview.value = null;
   canUndo.value = s.canUndo;
   canRedo.value = s.canRedo;
+  undoLocked.value = s.undoLocked ?? 0;
   timings.value = s.timings;
   noteTimings(s.timings);
   // 选中的省份可能已被合并；关注的生态、要涂的生态可能已被撤销掉

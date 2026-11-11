@@ -186,6 +186,7 @@ export {
   adjustPreviewWorld,
   canRedo,
   canUndo,
+  undoLocked,
   focusSpecies,
   hereOpen,
   history,
@@ -236,7 +237,27 @@ export {
 } from './state/exact-preview';
 export { cancelExport, download, exportPartFiles, exportProgress, exportZip, imageExportCancel } from './state/export-host';
 export { compactForSave, keepRemoved, planTidy, worldName } from './state/tidy';
-export { type Autosaved, autosaveNow, autosaved, flushNow, noteThumb, takeOverSaving } from './state/autosave';
+export { type Autosaved, autosaveNow, autosaved, flushNow, noteThumb, skipLeaveWarning, takeOverSaving } from './state/autosave';
+// 第九十五轮：以前的版本、存到电脑上的文件
+export {
+  adoptWorldId,
+  currentSeries,
+  deleteVersion,
+  keepText,
+  keepVersion,
+  noteMapSeen,
+  overwriteLinked,
+  refreshVersions,
+  versionEvents,
+  versionText,
+  versions,
+  versionsDropped,
+  versionsMoved,
+  worldId,
+} from './state/versions';
+export { fileAfterSave, fileFlush, fileMoved, fileStatus, fileSupported, resumeFile, saveToFile, stopFile } from './state/file-save';
+export type { FileStatus } from './file-save';
+export type { VersionInfo } from './versions';
 export { type SaveFail, type SaveProblem, saveFail, saveProblem, saveRole, storageTight, unsaved } from './state/save-status';
 export { backupOf, backups, deleteBackup, dismissBackups, refreshBackups } from './state/backups';
 export type { BackupInfo, WorldBackup } from './backups';

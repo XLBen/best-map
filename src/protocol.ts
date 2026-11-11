@@ -62,6 +62,8 @@ export interface Snapshot extends PostedContent {
   history: { summary: string; done: boolean }[];
   canUndo: boolean;
   canRedo: boolean;
+  // 第九十五轮：最前面几步不能撤销了（撤销记录为了省内存丢掉了，见 core/undo-budget.ts）；没有时不带
+  undoLocked?: number;
   timings: Timings;
   // 引擎的状态编号（预览按它判断过没过期）
   stateId: number;
@@ -90,6 +92,8 @@ export interface LightSnapshot extends PostedContent {
   history: { summary: string; done: boolean }[];
   canUndo: boolean;
   canRedo: boolean;
+  // 第九十五轮：最前面几步不能撤销了（撤销记录为了省内存丢掉了，见 core/undo-budget.ts）；没有时不带
+  undoLocked?: number;
   timings: Timings;
   stateId: number;
 }

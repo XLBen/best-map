@@ -48,6 +48,8 @@ export interface DoneStep {
   dirty: Dirty;
   // 这一步之前的推导结果（撤销时换回）
   state?: DerivedState;
+  // 第九十五轮：撤销记录算了多少字节（undo-budget.ts；丢掉了的是 0）。只在引擎里记，不进检查点
+  bytes?: number;
 }
 
 // 检查点：引擎的完整状态（原因、推导、历史）。存进浏览器后，打开时直接恢复，不必重放所有命令
@@ -58,7 +60,7 @@ export interface Checkpoint {
   derived: Derived;
   base: EngineBase | null;
   solve: SolveResult;
-  done: Omit<DoneStep, 'state'>[];
+  done: Omit<DoneStep, 'state' | 'bytes'>[];
   timings: Timings;
 }
 

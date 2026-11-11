@@ -1,7 +1,8 @@
 import { BellOff, ScanSearch, X } from 'lucide-preact';
 import { activeConflicts } from '../../core/constraints';
 import type { Conflict } from '../../core/world';
-import { exec, history, world } from '../state';
+import { exec, history, undoLocked, world } from '../state';
+import { UNDO_LIMIT_TEXT } from './copy';
 import { openBiomeEditor } from './ecology/open';
 import { focusOn } from './camera';
 import { outsideRangeReason } from '../biome-range';
@@ -141,11 +142,16 @@ export function UnmetPanel() {
 export function HistoryPanel() {
   const list = history.value;
   if (!list.length) return <p class="hint">没有修改</p>;
+  // 第九十五轮：最前面几步不能撤销了（撤销记录为了省内存丢掉了）：写一句，那几步淡一些
+  const locked = undoLocked.value;
   return (
-    <ol class="history">
-      {list.map((h) => (
-        <li class={h.done ? '' : 'undone'}>{h.summary}</li>
-      ))}
-    </ol>
+    <>
+      {locked > 0 && <p class="hint">{UNDO_LIMIT_TEXT.history(locked)}</p>}
+      <ol class="history">
+        {list.map((h, k) => (
+          <li class={h.done ? (k < locked ? 'locked' : '') : 'undone'}>{h.summary}</li>
+        ))}
+      </ol>
+    </>
   );
 }

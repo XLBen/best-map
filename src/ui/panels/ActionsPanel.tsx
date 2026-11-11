@@ -1,6 +1,23 @@
-import { Archive, Boxes, CircleHelp, CopyPlus, FileDown, FilePlus, FolderOpen, ImageDown, Library, PackageOpen, Save } from 'lucide-preact';
+import { Archive, Boxes, CircleHelp, CopyPlus, FileDown, FilePlus, FolderOpen, HardDriveDownload, History, ImageDown, Library, PackageOpen, Save } from 'lucide-preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { type WheelPref, download, exportPartFiles, exportProgress, exportZip, helpOpen, openPanel, prefs, saveProblem, setPrefs, wizardOpen, world } from '../../state';
+import {
+  type WheelPref,
+  currentSeries,
+  download,
+  exportPartFiles,
+  exportProgress,
+  exportZip,
+  fileStatus,
+  fileSupported,
+  helpOpen,
+  openPanel,
+  prefs,
+  refreshVersions,
+  saveProblem,
+  setPrefs,
+  wizardOpen,
+  world,
+} from '../../state';
 import { Seg } from '../common';
 import { Slider, linear } from '../components/Slider';
 import { type LabelSize, autoSeam, seamLongitude } from '../../render/export-plan';
@@ -8,12 +25,13 @@ import { EE_HALF_W } from '../../render/projection';
 import type { World } from '../../../core/world';
 import { exportFullMap, snapshotCanvas } from '../map/export';
 import { HistoryPanel } from '../panels';
-import { BACKUP_TEXT, LIBRARY_NOTE, SAVE_TEXT } from '../copy';
-import { saveNote, takeOverHere } from '../shell/save-note';
+import { BACKUP_TEXT, FILE_TEXT, LIBRARY_NOTE, SAVE_TEXT, VERSION_TEXT } from '../copy';
+import { fileLine, pickFile, reloadSaved, resumeFileHere, saveNote, stopFileHere, takeOverHere } from '../shell/save-note';
 import { openLibrary } from '../packs/panel-store';
 import { fileNameOf } from '../../maps';
 import { beforeLeave, currentMap, exportCurrent, mapStatus, openFile, openMaps, saveMap, saveMapAs } from '../maps/store';
 import { backups, openBackups } from '../maps/backups';
+import { openVersions, versionCount, versions } from '../maps/versions';
 import { exportPartRows, hasAnySettle } from '../domain/settlements';
 import { Toggle } from '../components/Toggle';
 import { worldMapStyle } from '../../../core/map-style';
@@ -23,10 +41,16 @@ import { DECOR_KEYS, DECOR_LABELS, type DecorOptions, defaultDecor } from '../..
 
 export function WorldMenu() {
   const close = () => (openPanel.value = null);
+  // 第九十五轮：打开菜单时读一次有几份以前的版本
+  useEffect(() => void refreshVersions(), []);
+  const kept = versionCount(versions.value, currentSeries.value);
+  const canFile = fileSupported();
+  const file = fileStatus.value;
   return (
     <div class="menu">
       <SaveProblemLine />
       <p class="hint map-status">{mapStatus()}</p>
+      <FileStatusLine />
       <button
         class="item"
         onClick={async () => {
@@ -98,6 +122,36 @@ export function WorldMenu() {
           }}
         />
       </label>
+      {/* 第九十五轮：自动留的以前的版本。没有时灰着，写为什么 */}
+      <button
+        class="item"
+        disabled={kept === 0}
+        onClick={() => {
+          close();
+          openVersions();
+        }}
+      >
+        <History />
+        <span class="grow item-text">
+          <b>{VERSION_TEXT.menu}</b>
+          <span class="hint">{kept > 0 ? VERSION_TEXT.menuHint(kept) : VERSION_TEXT.menuNone}</span>
+        </span>
+      </button>
+      {/* 第九十五轮：选一个电脑上的文件，以后保存时也写进它。浏览器不支持时灰着，写怎么办 */}
+      <button
+        class="item"
+        disabled={!world.value || !canFile}
+        onClick={() => {
+          close();
+          void pickFile();
+        }}
+      >
+        <HardDriveDownload />
+        <span class="grow item-text">
+          <b>{file.mode === 'off' ? FILE_TEXT.menu : FILE_TEXT.menuAgain}</b>
+          <span class="hint">{canFile ? FILE_TEXT.menuHint : FILE_TEXT.unsupported}</span>
+        </span>
+      </button>
       {/* 第九十一轮：这一版打不开的自动保存留着时才有这一行 */}
       {(backups.value?.length ?? 0) > 0 && (
         <button
@@ -132,10 +186,13 @@ export function WorldMenu() {
   );
 }
 
-// 第九十四轮：自动保存没存成时“世界”菜单的第一行——原因、“导出文件”（这个世界开在另一个页面里时还有“在这里接着做”）
+// 第九十四轮：自动保存没存成时“世界”菜单的第一行——原因、“导出文件”（这个世界开在另一个页面里时还有“在这里接着做”）。
+// 第九十五轮：这个页面里的是旧的——主要的是“重新载入”；电脑上的文件没写成——“接着存到…”或“换一个文件…”
 function SaveProblemLine() {
-  const n = saveNote(saveProblem.value);
+  const file = fileStatus.value;
+  const n = saveNote(saveProblem.value, file);
   if (!n) return null;
+  const main = n.reload || n.file !== null;
   return (
     <div class="save-problem">
       <span>{n.line}</span>
@@ -145,8 +202,54 @@ function SaveProblemLine() {
             {SAVE_TEXT.takeOver}
           </button>
         )}
-        <button class="small primary" onClick={() => void exportCurrent()} title={SAVE_TEXT.exportTip}>
+        <button class={`small ${main ? '' : 'primary'}`} onClick={() => void exportCurrent()} title={SAVE_TEXT.exportTip}>
           <FileDown /> {SAVE_TEXT.export}
+        </button>
+        {n.reload && (
+          <button class="small primary" onClick={() => void reloadSaved()} title={SAVE_TEXT.reloadTip}>
+            {SAVE_TEXT.reload}
+          </button>
+        )}
+        {n.file === 'resume' && file.name && (
+          <button class="small primary" onClick={() => void resumeFileHere()} title={FILE_TEXT.resumeTip}>
+            {FILE_TEXT.resume(file.name)}
+          </button>
+        )}
+        {n.file === 'pick' && (
+          <button
+            class="small primary"
+            onClick={() => {
+              openPanel.value = null;
+              void pickFile();
+            }}
+          >
+            {FILE_TEXT.menuAgain}
+          </button>
+        )}
+      </span>
+    </div>
+  );
+}
+
+// 第九十五轮：这张地图也存在电脑上的一个文件里时的状态一行——“也存在电脑上：xxx.json · 刚刚”，能“不再存到这个文件”；
+// 这次打开页面还没重新给权限时写“没在写文件：xxx.json”，带“接着存到 xxx.json”
+function FileStatusLine() {
+  const s = fileStatus.value;
+  const line = fileLine(s, Date.now());
+  if (!line || !s.name) return null;
+  return (
+    <div class={`file-line ${line.paused ? 'paused' : ''}`}>
+      <span class="hint ellipsis" title={line.text}>
+        {line.text}
+      </span>
+      <span class="row">
+        {line.paused && (
+          <button class="small primary" onClick={() => void resumeFileHere()} title={FILE_TEXT.resumeTip}>
+            {FILE_TEXT.resume(s.name)}
+          </button>
+        )}
+        <button class="small" onClick={() => void stopFileHere()} title={FILE_TEXT.stopTip}>
+          {FILE_TEXT.stop}
         </button>
       </span>
     </div>

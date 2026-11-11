@@ -22,6 +22,7 @@ import { CATEGORY_DEFS } from './defs/tools';
 import { Help } from './Help';
 import { MapView } from './MapView';
 import { BackupsDialog } from './maps/BackupsDialog';
+import { VersionsDialog } from './maps/VersionsDialog';
 import { MapsDialog } from './maps/MapsDialog';
 import { PackDialog } from './packs/PackDialog';
 import { LibPanel } from './packs/LibPanel';
@@ -51,7 +52,7 @@ import { Notice } from './shell/Notice';
 import { Popover } from './shell/Popover';
 import { RulerButton } from './shell/Ruler';
 import { BackupBanner } from './shell/BackupBanner';
-import { SaveBanner } from './shell/SaveBanner';
+import { FileBanner, SaveBanner } from './shell/SaveBanner';
 import { ScriptBanner } from './shell/ScriptBanner';
 import { SkippedBanner } from './shell/SkippedBanner';
 import { Sheet } from './shell/Sheet';
@@ -231,6 +232,8 @@ export function App() {
           {!wizardOpen.value && <BackupBanner />}
           {/* 第九十四轮：这个世界已在另一个页面打开 */}
           {!wizardOpen.value && <SaveBanner />}
+          {/* 第九十五轮：这张地图也存在电脑上的文件里，这次打开页面还没在写 */}
+          {!wizardOpen.value && <FileBanner />}
           <ScriptBanner />
           <SkippedBanner />
           <Notice />
@@ -240,6 +243,7 @@ export function App() {
         <PackDialog />
         <MapsDialog />
         <BackupsDialog />
+        <VersionsDialog />
         <Help />
         <AskDialog />
       </div>

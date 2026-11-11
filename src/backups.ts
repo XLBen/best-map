@@ -52,6 +52,8 @@ export interface RawAutosave {
   count?: number;
   writer?: string;
   gen?: number;
+  // 第九十五轮：没存进“我的地图”的世界的编号（它的版本记在这个编号上，见 versions.ts）
+  wid?: string;
 }
 
 // 自动保存的头（kv 的 autosave）里除了世界文件本身的那几项
@@ -66,10 +68,12 @@ export interface AutosaveInfo {
   // 第九十四轮：写它的页面（每次打开页面一个随机的 id）、第几代（每写一次加一）
   writer?: string;
   gen?: number;
+  // 第九十五轮：这个世界的编号（以前的版本按它记；连着“我的地图”的一张时按那一张记）
+  wid?: string;
 }
 // 把头拆成这几项和世界文件的头（format、version、settings……）：世界文件里不带上面这几项
 export function splitHead<T extends AutosaveInfo>(meta: T): { info: AutosaveInfo; head: Omit<T, keyof AutosaveInfo> } {
-  const { savedAt, count, safe, mapId, mapSynced, writer, gen, ...head } = meta;
+  const { savedAt, count, safe, mapId, mapSynced, writer, gen, wid, ...head } = meta;
   return {
     info: {
       savedAt,
@@ -78,6 +82,7 @@ export function splitHead<T extends AutosaveInfo>(meta: T): { info: AutosaveInfo
       ...(typeof mapId === 'string' ? { mapId, mapSynced: mapSynced === true } : {}),
       ...(typeof writer === 'string' ? { writer } : {}),
       ...(typeof gen === 'number' ? { gen } : {}),
+      ...(typeof wid === 'string' ? { wid } : {}),
     },
     head,
   };

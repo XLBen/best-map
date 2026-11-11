@@ -22,6 +22,7 @@ import { type Derived, type Settings, type World, createWorld, kmPerUnit, settin
 import type { WorldDoc, Timings, EngineBase, DerivedState, DoneStep, Checkpoint, UndoneStep, DocTail, PreviewResult, ProvincesPreview } from './engine-types';
 import { type RecomputeState, recomputeDerived, warmWater } from './engine-recompute';
 export { passStats } from './engine-recompute';
+import { UNDO_KEEP_STEPS, UNDO_RECORD_BYTES, droppedUndo, undoRecordBytes } from './undo-budget';
 import { onlyRestyled, drain, landAndFailing, provinceOnly, diffWorlds, undoDepth, UNDO_BYTES, keptBytes, sameContent, privatize, cloneWorld } from './engine-helpers';
 export type { WorldDoc, Timings, EngineBase, Checkpoint, DocTail, PreviewExtras, PreviewResult, ProvincesPreview } from './engine-types';
 
@@ -41,6 +42,11 @@ export class Engine {
   // 每一步记下它影响到哪一层：撤销时只需从这一层重算
   private done: DoneStep[] = [];
   private undone: UndoneStep[] = [];
+  // 第九十五轮：撤销记录的内存上限（undo-budget.ts）。done 里最前面 undoFloor 步的撤销记录丢掉了（不能撤销到它们之前）；
+  // undoBytes 是其余各步记录的合计。超过 undoBudget 时从最老的丢起（settleUndo）
+  private undoFloor = 0;
+  private undoBytes = 0;
+  undoBudget = UNDO_RECORD_BYTES;
   // 存着推导结果的步（先存的在前）；最多 undoCache 份，合计不超过 UNDO_BYTES。每份是整个世界的推导数组
   // （4 万格约 11 MB，10 万格约 27 MB），但相邻几份内容相同的数组共用一个（见 shareSame），只改气候、生态的步只多占变了的那些
   private kept: (DoneStep | UndoneStep)[] = [];
@@ -75,7 +81,50 @@ export class Engine {
     return [...this.done.map((h) => ({ summary: h.summary, done: true })), ...[...this.undone].reverse().map((h) => ({ summary: h.summary, done: false }))];
   }
   get canUndo() {
-    return this.done.length > 0;
+    return this.done.length > this.undoFloor;
+  }
+  // 最前面几步不能撤销了（撤销记录为了省内存丢掉了）
+  get undoLocked(): number {
+    return this.undoFloor;
+  }
+
+  // ---------- 撤销记录的内存上限（第九十五轮） ----------
+
+  private pushStep(step: DoneStep) {
+    step.bytes = undoRecordBytes(step.undo);
+    this.undoBytes += step.bytes;
+    this.done.push(step);
+  }
+
+  private popStep(): DoneStep | undefined {
+    const h = this.done.pop();
+    if (h) this.undoBytes -= h.bytes ?? 0;
+    return h;
+  }
+
+  // 一步做成了之后：最后一步的记录重新量一次（留名字、整理湖边的省份、修补人口会往里加），合计超过上限就从最老的丢起。
+  // 只丢撤销记录：命令、历史照旧，世界不变。最近 UNDO_KEEP_STEPS 步总留着
+  private settleUndo() {
+    const last = this.done[this.done.length - 1];
+    if (last && this.done.length > this.undoFloor) {
+      const b = undoRecordBytes(last.undo);
+      this.undoBytes += b - (last.bytes ?? 0);
+      last.bytes = b;
+    }
+    this.trimUndo();
+  }
+
+  private trimUndo() {
+    while (this.undoBytes > this.undoBudget && this.done.length - this.undoFloor > UNDO_KEEP_STEPS) {
+      const old = this.done[this.undoFloor++];
+      this.undoBytes -= old.bytes ?? 0;
+      old.bytes = 0;
+      old.undo = droppedUndo(old.undo);
+      if (old.state) {
+        old.state = undefined;
+        this.kept = this.kept.filter((k) => k !== old);
+      }
+    }
   }
   get canRedo() {
     return this.undone.length > 0;
@@ -88,6 +137,7 @@ export class Engine {
     const adopted = this.adoptPreview(cmd);
     if (adopted !== null) {
       this.stateId = ++states;
+      this.settleUndo();
       return adopted;
     }
     const fresh = this.dirty === Dirty.None;
@@ -117,6 +167,7 @@ export class Engine {
       }
       throw e;
     }
+    this.settleUndo();
     return summary;
   }
 
@@ -124,7 +175,7 @@ export class Engine {
   // 存着这一步之前的推导（keepBefore 复制的那份，没有被改过）就直接换上；否则从头重算——执行前的原因算过一次没出错，
   // 引擎是确定的，所以这次也不会出错
   private rollbackLast() {
-    const h = this.done.pop()!;
+    const h = this.popStep()!;
     revert(this.world, h.undo);
     const before = h.state;
     h.state = undefined;
@@ -160,7 +211,7 @@ export class Engine {
       const { provinceOrig: _, ...rest } = recorded;
       recorded = rest as Command;
     }
-    this.done.push({ id: ++this.seq, cmd: recorded, undo: r.undo, summary: r.summary, dirty });
+    this.pushStep({ id: ++this.seq, cmd: recorded, undo: r.undo, summary: r.summary, dirty });
     this.dirty = Math.max(this.dirty, dirty) as Dirty;
     return { summary: r.summary, changed: r.changed, removed: r.removed, added: r.added };
   }
@@ -241,7 +292,9 @@ export class Engine {
 
   // 撤掉一步：原因退回去，推导从这一步影响到的那一层重算。推导只取决于原因，所以结果与从头重算逐值一致
   private revertLast(): DoneStep | null {
-    const h = this.done.pop();
+    // 第九十五轮：撤销记录丢掉了的步不能撤
+    if (this.done.length <= this.undoFloor) return null;
+    const h = this.popStep();
     if (!h) return null;
     revert(this.world, h.undo);
     this.dirty = Math.max(this.dirty, h.dirty, this.speciesChanged() ? Dirty.Solve : Dirty.None) as Dirty;
@@ -322,6 +375,7 @@ export class Engine {
       }
       throw e;
     }
+    this.settleUndo();
     return true;
   }
 
@@ -367,7 +421,7 @@ export class Engine {
       this.shareWithLast();
     } catch (e) {
       // 新的一步撤掉（推导写了一半，不能留着）：原因退回去，原来那一步放回去后从头重算
-      this.done.pop();
+      this.popStep();
       revert(this.world, step.undo);
       step.state = undefined;
       this.kept = this.kept.filter((k) => k !== step && k.state);
@@ -376,6 +430,7 @@ export class Engine {
       this.undone = undone;
       throw e;
     }
+    this.settleUndo();
     return summary;
   }
 
@@ -548,7 +603,7 @@ export class Engine {
   toCheckpoint(): Checkpoint {
     this.update();
     const w = this.world;
-    return { settings: w.settings, causes: w.causes, small: w.small, derived: w.derived, base: this.base, solve: this.solve, done: this.done.map(({ state: _, ...h }) => h), timings: this.lastTimings };
+    return { settings: w.settings, causes: w.causes, small: w.small, derived: w.derived, base: this.base, solve: this.solve, done: this.done.map(({ state: _, bytes: _b, ...h }) => h), timings: this.lastTimings };
   }
 
   // 从检查点恢复，再对齐到存档的命令：共同的前缀之后，检查点多出来的步撤掉，存档多出来的命令执行。
@@ -566,7 +621,14 @@ export class Engine {
     e.base = cp.base;
     e.solve = cp.solve;
     e.dirty = Dirty.None;
-    e.done = cp.done.map((h) => ({ ...h }));
+    // 第九十五轮：检查点里最前面几步的撤销记录可能已经丢掉了（gone）；要撤到它们之前才对得上存档时用不了，改用重放
+    let floor = 0;
+    while (floor < cp.done.length && cp.done[floor].undo.gone) floor++;
+    if (p < floor) return null;
+    e.done = cp.done.map((h) => ({ ...h, bytes: h.undo.gone ? 0 : undoRecordBytes(h.undo) }));
+    e.undoFloor = floor;
+    e.undoBytes = e.done.reduce((n, h) => n + (h.bytes ?? 0), 0);
+    e.undoBudget = UNDO_RECORD_BYTES;
     e.undone = [];
     e.kept = [];
     e.undoCache = undoDepth(mesh.n);
@@ -586,19 +648,24 @@ export class Engine {
       } catch (err) {
         throw new CommandError(`第 ${k + 1} 条命令失败：${(err as Error).message}`);
       }
+      e.trimUndo();
     }
+    e.trimUndo();
     e.update();
     return e;
   }
 
   // onStep（第二十九轮，压缩世界文件用，见 compact.ts）：每条命令之后告诉调用方这一步移出、新加了哪些内容
-  static fromDoc(doc: WorldDoc, mesh?: Mesh, opts: { onStep?: (k: number, step: { removed: RemovedItem[]; added: ContentRef[] }) => void } = {}): Engine {
+  static fromDoc(doc: WorldDoc, mesh?: Mesh, opts: { onStep?: (k: number, step: { removed: RemovedItem[]; added: ContentRef[] }) => void; undoBudget?: number } = {}): Engine {
     checkDoc(doc);
     const settings = settingsSchema.parse(doc.settings);
     const engine = new Engine(settings, mesh);
+    if (opts.undoBudget !== undefined) engine.undoBudget = opts.undoBudget;
     doc.commands.forEach((cmd, k) => {
       try {
         const r = engine.applyOnly(cmd);
+        // 重放一份很长的世界文件时不把每一步的撤销记录都攒着
+        engine.trimUndo();
         opts.onStep?.(k, r);
       } catch (e) {
         throw new CommandError(`第 ${k + 1} 条命令失败：${(e as Error).message}`);
@@ -672,7 +739,7 @@ export class Engine {
     this.world.causes.fields = copy.causes.fields;
     shareTerrainBase(copy, this.world);
     this.world.small = copy.small;
-    this.done.push({ id: ++this.seq, cmd: step.cmd, undo: step.undo, summary: step.summary, dirty: step.dirty });
+    this.pushStep({ id: ++this.seq, cmd: step.cmd, undo: step.undo, summary: step.summary, dirty: step.dirty });
     this.dropUndone();
     // 换下来的推导不再被改动，直接留给撤销
     if (step.dirty > Dirty.Human && this.undoCache > 0) this.keep(this.done[this.done.length - 1], this.current());
@@ -707,6 +774,10 @@ export class Engine {
     e.seq = this.seq;
     e.done = this.done.map((h) => ({ id: h.id, cmd: h.cmd, summary: h.summary, dirty: h.dirty, undo: { ...h.undo, fields: h.undo.fields.map((f) => ({ name: f.name, old: f.old && f.old.slice() })) } }));
     e.undone = this.undone.map((h) => ({ cmd: h.cmd, summary: h.summary }));
+    // 副本用完就丢：不在它上面丢撤销记录
+    e.undoFloor = this.undoFloor;
+    e.undoBytes = 0;
+    e.undoBudget = Infinity;
     e.kept = [];
     e.undoCache = this.undoCache;
     e.sharedDerived = false;

@@ -1307,6 +1307,20 @@ button.here {
   justify-content: flex-end;
   gap: var(--sp-2);
 }
+/* “世界”菜单里“也存在电脑上：xxx.json · 刚刚”的一行（第九十五轮），按钮在它下面靠右；没在写时字是警告色 */
+.file-line {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0 var(--sp-2) var(--sp-2);
+}
+.file-line .row {
+  justify-content: flex-end;
+  gap: var(--sp-1);
+}
+.file-line.paused .hint {
+  color: var(--warn-text);
+}
 .export-body {
   padding: 0 var(--sp-2);
 }
@@ -1321,6 +1335,10 @@ ol.history {
 ol.history li.undone {
   color: var(--muted);
   text-decoration: line-through;
+}
+/* 第九十五轮：不能撤销了的那几步（撤销记录为了省内存丢掉了） */
+ol.history li.locked {
+  color: var(--muted);
 }
 
 /* 右边的抽屉（国家、城市、集团的档案） */
@@ -2241,6 +2259,24 @@ button.map-thumb {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+/* 以前的版本的一行（第九十五轮）：缩略图不是按钮 */
+span.version-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 96px;
+  height: 54px;
+  overflow: hidden;
+  background-color: var(--field);
+  border-radius: var(--r-sm);
+}
+@media (max-width: 520px) {
+  span.version-thumb {
+    width: 72px;
+    height: 40px;
+  }
 }
 @media (max-width: 520px) {
   button.map-thumb {

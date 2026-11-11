@@ -61,6 +61,7 @@ describe('一把锁', () => {
     expect(locks.holder()).toBe(1);
   });
 
+  // 第九十五轮：这时那一页已经关了，不再是“已在另一个页面打开”（other），是另一种状态 stale（这个页面里的是旧的）
   it('不能接（那一页后来又做过）：不写、放开锁，等用户点；点了就写', async () => {
     const locks = memoryLocks();
     const al = locks.page();
@@ -71,7 +72,8 @@ describe('一把锁', () => {
     await b.role.start();
     al.close();
     await tick();
-    expect(b.role.role).toBe('other');
+    expect(b.role.role).toBe('stale');
+    expect(b.seen).toEqual(['other', 'stale']);
     expect(locks.holder()).toBe(-1);
     // 第三个页面这时打开：它写
     const c = page(locks.page(), '丙');
@@ -126,6 +128,69 @@ describe('一把锁', () => {
     expect(a.role.role).toBe('writer');
     await a.role.take();
     expect(a.role.role).toBe('writer');
+  });
+});
+
+describe('那一页关了、这个页面里的是旧的（stale，第九十五轮）', () => {
+  async function stale() {
+    const locks = memoryLocks();
+    const al = locks.page();
+    const a = page(al, '甲');
+    const b = page(locks.page(), '乙', async () => false);
+    await a.role.start();
+    await b.role.start();
+    expect(b.role.role).toBe('other');
+    al.close();
+    await tick();
+    expect(b.role.role).toBe('stale');
+    return { locks, b };
+  }
+
+  it('写的那一页还开着时是 other，关了才是 stale；能接的（存着的是它的开头）直接写，不经过 stale', async () => {
+    const locks = memoryLocks();
+    const al = locks.page();
+    const a = page(al, '甲');
+    const b = page(locks.page(), '乙', async () => true);
+    await a.role.start();
+    await b.role.start();
+    al.close();
+    await tick();
+    expect(b.seen).toEqual(['other', 'writer']);
+  });
+
+  it('“在这里接着做”：从 stale 也能把写的权利拿过来', async () => {
+    const { locks, b } = await stale();
+    await b.role.take();
+    await tick();
+    expect(b.role.role).toBe('writer');
+    expect(locks.holder()).toBe(1);
+    expect(b.seen).toEqual(['other', 'stale', 'writer']);
+  });
+
+  it('又有一个页面打开（它拿到锁、它写）：这个页面还是 stale，不抢', async () => {
+    const { locks, b } = await stale();
+    const c = page(locks.page(), '丙');
+    await c.role.start();
+    await tick();
+    expect(c.role.role).toBe('writer');
+    expect(b.role.role).toBe('stale');
+    expect(locks.holder()).toBe(2);
+  });
+
+  it('别的页面说它接过去了：回到 other，重新排队；那一页再关，再看能不能接', async () => {
+    const { locks, b } = await stale();
+    const cl = locks.page();
+    const c = page(cl, '丙');
+    await c.role.start();
+    await c.role.take();
+    await tick();
+    expect(b.role.role).toBe('other');
+    cl.close();
+    await tick();
+    // 还是不能接（存着的不是它的开头）：又是 stale，锁放开着
+    expect(b.role.role).toBe('stale');
+    expect(locks.holder()).toBe(-1);
+    expect(b.seen).toEqual(['other', 'stale', 'other', 'stale']);
   });
 });
 

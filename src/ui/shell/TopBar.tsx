@@ -1,13 +1,14 @@
 import { Boxes, CircleEllipsis, Globe, Layers, MousePointer, Redo2, Undo2, WandSparkles } from 'lucide-preact';
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { PanelId } from '../../state';
-import { openPanel, saveProblem, togglePanel, world } from '../../state';
+import { fileStatus, openPanel, saveProblem, togglePanel, world } from '../../state';
 import { CATEGORIES, category, setCategory, setTool } from '../defs/tools';
 import type { CategoryDef, Icon } from '../defs/types';
 import { mapStatus } from '../maps/store';
 import { panelLibrary } from '../../library';
 import { libPanel, pendingBadge, redoHere, showWorldLibrary, toggleLibrary, undoHere, undoState } from '../packs/panel-store';
 import { PENDING_TIP, redoTitle, regenCountText, undoTitle } from '../packs/copy';
+import { UNDO_LIMIT_TEXT } from '../copy';
 import { MapKindButton } from './MapKind';
 import { saveNote } from './save-note';
 
@@ -65,7 +66,7 @@ function PanelButton({ panel, icon: I, label, disabled = false, title }: { panel
 // 第九十四轮：自动保存没存成（存储满了、不可用、世界太大、这个世界开在另一个页面里）期间，“世界”旁边一直有一个“没保存”的小标记；
 // 点它打开“世界”菜单，第一行写原因和“导出文件”。下一次存成了它自己消失
 function SaveBadge() {
-  const n = saveNote(saveProblem.value);
+  const n = saveNote(saveProblem.value, fileStatus.value);
   if (!n) return null;
   return (
     <button class="tb-badge warn" title={n.tip} aria-label={n.tip} onClick={() => (openPanel.value = 'world')}>
@@ -101,7 +102,8 @@ function UndoRedo() {
   const u = undoState();
   return (
     <>
-      <button class="tb-btn icon" disabled={!u.canUndo} onClick={undoHere} title={undoTitle(u.undo, u.lib)} aria-label="撤销">
+      {/* 第九十五轮：撤销到头了（更早的步骤的撤销记录为了省内存丢掉了）：灰着，悬停说为什么 */}
+      <button class="tb-btn icon" disabled={!u.canUndo} onClick={undoHere} title={u.limited ? UNDO_LIMIT_TEXT.tip : undoTitle(u.undo, u.lib)} aria-label="撤销">
         <Undo2 size={18} />
       </button>
       <button class="tb-btn icon" disabled={!u.canRedo} onClick={redoHere} title={redoTitle(u.redo, u.lib)} aria-label="重做">

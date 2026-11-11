@@ -8,6 +8,7 @@ import { lastPress, redoHere, undoHere } from '../packs/panel-store';
 import { formEditor } from '../form-store';
 import { backupsDialog } from '../maps/backups';
 import { mapsDialog, saveMap, saveMapAs } from '../maps/store';
+import { versionsDialog } from '../maps/versions';
 
 // 键盘：一个地方统一处理。Esc 按固定顺序一层层退出（第六十九轮起是 escape.ts 的栈：各层自己登记，这里只问最上面的）
 
@@ -60,7 +61,7 @@ export function onKeyDown(e: KeyboardEvent) {
     runEscape(e, 'bubble');
     return;
   }
-  if (typing(e.target) || helpOpen.value || wizardOpen.value || packDialog.value || mapsDialog.value || backupsDialog.value) return;
+  if (typing(e.target) || helpOpen.value || wizardOpen.value || packDialog.value || mapsDialog.value || backupsDialog.value || versionsDialog.value) return;
   // 回车：交给工具（画河时确认截走别的河）
   if (e.key === 'Enter' && !openPanel.value && mapApi.current?.enter()) {
     e.preventDefault();

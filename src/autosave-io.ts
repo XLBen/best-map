@@ -47,7 +47,7 @@ export const markOf = (h: { writer?: string; gen?: number; savedAt: number; coun
 const sameMark = (a: HeadMark | null, b: HeadMark) => !!a && a.writer === b.writer && a.gen === b.gen && a.savedAt === b.savedAt && a.count === b.count;
 
 // 头里除了世界文件、时间、条数、谁写的以外的几项
-export type SaveExtra = Pick<AutosaveInfo, 'safe' | 'mapId' | 'mapSynced'>;
+export type SaveExtra = Pick<AutosaveInfo, 'safe' | 'mapId' | 'mapSynced' | 'wid'>;
 
 // 主线程手上的整份世界（sandbox.ts 的命令记录）：key 认是不是同一个引擎（换了 Worker、换了世界就不同）
 export interface FullDoc extends DocHead {
@@ -172,6 +172,7 @@ export class AutosaveWriter {
       count,
       ...(extra.safe !== undefined ? { safe: extra.safe } : {}),
       ...(extra.mapId !== undefined ? { mapId: extra.mapId, ...(extra.mapSynced ? { mapSynced: true } : {}) } : {}),
+      ...(extra.wid !== undefined ? { wid: extra.wid } : {}),
       writer: this.id,
       gen,
     };

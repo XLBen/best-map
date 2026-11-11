@@ -52,6 +52,8 @@ export interface UndoRecord extends SmallCopy {
   dropFragment?: true;
   // 这一步第一次有了画的地形类别、资源（第二十一轮）：撤销时去掉这些数组
   dropArrays?: HumanArray[];
+  // 第九十五轮：这一步的撤销记录为了省内存丢掉了（undo-budget.ts）：这一步和更早的不能撤销
+  gone?: true;
 }
 
 export function formatIssues(err: z.ZodError): string {

@@ -9,8 +9,9 @@ import { world, worldState } from './world';
 
 // 没存成的原因：存储满了；浏览器存储不可用（隐私模式）；世界太大（存储不可用时退回的小地方放不下）
 export type SaveFail = 'quota' | 'unavailable' | 'too-big';
-// 加上：这个页面不是写的那一方（这个世界已在另一个页面打开）
-export type SaveProblem = SaveFail | 'other-page';
+// 加上：这个页面不是写的那一方（这个世界已在另一个页面打开）；
+// 第九十五轮：那一页关了，但它存下的比这个页面里的新（这个页面里的是旧的，照旧不写）
+export type SaveProblem = SaveFail | 'other-page' | 'stale-page';
 
 // 最近一次自动保存没存成的原因（存成了、还没存过时 null）
 export const saveFail = signal<SaveFail | null>(null);
@@ -31,6 +32,7 @@ export function failWhy(idb: unknown, local: unknown): SaveFail {
 export function saveProblemOf(s: { world: boolean; role: Role; fail: SaveFail | null }): SaveProblem | null {
   if (!s.world) return null;
   if (s.role === 'other') return 'other-page';
+  if (s.role === 'stale') return 'stale-page';
   return s.fail;
 }
 

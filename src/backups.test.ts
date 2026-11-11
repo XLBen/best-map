@@ -206,9 +206,12 @@ describe('界面读的那一份', () => {
 describe('IndexedDB 的库', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('第 7 版：多一张 backups；升级只补缺的表，已有的表不动', async () => {
-    expect(DB_VERSION).toBe(7);
+  // 第九十五轮：库升到第 8 版，再多 versions、versionDocs 两张（以前的版本）
+  it('第 7 版：多一张 backups；第 8 版：多 versions、versionDocs；升级只补缺的表，已有的表不动', async () => {
+    expect(DB_VERSION).toBe(8);
     expect(DB_STORES).toContain('backups');
+    expect(DB_STORES).toContain('versions');
+    expect(DB_STORES).toContain('versionDocs');
     // 从第 6 版升上来：七张表都在
     const have = new Set(['kv', 'autosave', 'checkpoint', 'packs', 'meshes', 'maps', 'mapDocs']);
     const created: string[] = [];
@@ -232,8 +235,8 @@ describe('IndexedDB 的库', () => {
     req.onupgradeneeded!();
     req.onsuccess!();
     await p;
-    expect(asked).toBe(7);
-    expect(created).toEqual(['backups']);
+    expect(asked).toBe(8);
+    expect(created).toEqual(['backups', 'versions', 'versionDocs']);
     expect(deleted).toEqual([]);
   });
 });

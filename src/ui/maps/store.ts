@@ -16,7 +16,6 @@ import {
   mapSavedState,
   nameFromFile,
   needsSaveQuestion,
-  overwriteMap,
   renameMap,
   thumbHook,
   uniqueName,
@@ -24,7 +23,32 @@ import {
 import { splitWorldContent } from '../../../core/compact';
 import { keepInLibrary } from '../../library';
 import { ESC_RANK, pushEscape } from '../shell/escape';
-import { askText, askUser, autosaveNow, compactForSave, download, getDoc, history, loadDoc, noteThumb, showToast, world, worldEpoch, worldState } from '../../state';
+import {
+  askText,
+  askUser,
+  autosaveNow,
+  compactForSave,
+  currentSeries,
+  download,
+  fileFlush,
+  fileMoved,
+  getDoc,
+  history,
+  keepVersion,
+  loadDoc,
+  noteMapSeen,
+  noteThumb,
+  overwriteLinked,
+  refreshVersions,
+  showToast,
+  versionsDropped,
+  versionsMoved,
+  world,
+  worldEpoch,
+  worldId,
+  worldState,
+} from '../../state';
+import { mapSeries, worldSeries } from '../../versions';
 
 // “我的地图”的界面这边：保存（⌘S）、另存为、打开、改名、导出、删掉，换世界之前问“先保存吗”。
 // 存进浏览器失败（隐私模式、存储被关、满了）时改成下载世界文件，并说清楚
@@ -65,6 +89,8 @@ async function refreshMaps(): Promise<MapEntry[]> {
 export function openMaps() {
   mapsDialog.value = true;
   void refreshMaps();
+  // 每张有没有以前的版本（“版本”按钮）
+  void refreshVersions();
 }
 
 // 缩略图：截地图画面（干净的，不带高亮和预览），缩成约 240 像素宽的 JPEG
@@ -139,7 +165,14 @@ async function saveNew(title: string, initial: string): Promise<boolean> {
   const thumb = makeThumb();
   try {
     const e = await createMap(store, { name, doc, thumb });
+    noteMapSeen(e.id, e.savedAt);
     if (epoch === worldEpoch.value) {
+      // 第九十五轮：这个世界第一次存进“我的地图”——它以前的版本、电脑上的文件跟着记到这一张上（另存为时不带：留在原来那一张上）
+      const from = currentSeries.value;
+      if (from && from === worldSeries(worldId())) {
+        await versionsMoved(from, mapSeries(e.id));
+        await fileMoved(from, mapSeries(e.id));
+      }
       mapLink.value = { id: e.id, name: e.name, epoch };
       mapSavedState.value = state;
       if (thumb) noteThumb();
@@ -148,6 +181,7 @@ async function saveNew(title: string, initial: string): Promise<boolean> {
     }
     showToast(`已保存“${e.name}”到“我的地图”`);
     void refreshMaps();
+    void fileFlush();
     return true;
   } catch (err) {
     fallback(err, name, doc);
@@ -174,7 +208,8 @@ export async function saveMap(): Promise<boolean> {
   if (!doc || epoch !== worldEpoch.value) return false;
   const thumb = makeThumb();
   try {
-    const e = await overwriteMap(store, link.id, { doc, thumb });
+    // 第九十五轮：别的页面往这一张里存过、盖掉会丢东西时，先把存着的那一份留成一个版本
+    const e = await overwriteLinked(store, link.id, { doc, thumb });
     // 那一张已经被删掉了（别的页面里）：当作没保存过，问个名字
     if (!e) {
       mapLink.value = null;
@@ -184,6 +219,8 @@ export async function saveMap(): Promise<boolean> {
     if (thumb) noteThumb();
     showToast(`已保存“${e.name}”`);
     void refreshMaps();
+    // 连着电脑上的文件时也马上写一次
+    void fileFlush();
     return true;
   } catch (err) {
     fallback(err, link.name, doc);
@@ -202,6 +239,13 @@ export async function saveMapAs(): Promise<boolean> {
 // 没连着地图、又改过时先问“先保存吗”；连着的那一张有没写进去的改动就马上写。取消时返回 false
 export async function beforeLeave(): Promise<boolean> {
   if (!world.value) return true;
+  const ok = await leaveAsk();
+  // 第九十五轮：要换走了——现在的样子留一份（没存进“我的地图”的世界，之后在“以前的版本”里还找得到）
+  // （刚生成、还没改过的没存的世界不留：没有什么可找回的）
+  if (ok && (currentMap.value ? doneSteps() > 0 : needsSaveQuestion(false, doneSteps()))) await keepVersion('auto');
+  return ok;
+}
+async function leaveAsk(): Promise<boolean> {
   if (currentMap.value) {
     if (mapDirty.value) await autosaveNow();
     return true;
@@ -240,10 +284,13 @@ export async function openMap(e: MapEntry): Promise<boolean> {
   mapsDialog.value = false;
   const ok = await loadDoc(doc);
   if (!ok) return false;
+  noteMapSeen(e.id, e.savedAt);
   mapLink.value = { id: e.id, name: e.name, epoch: worldEpoch.value };
   mapSavedState.value = worldState.value;
   noteThumb(e.thumb ? e.savedAt : 0);
   void autosaveNow();
+  // 第九十五轮：打开时的样子留一份（和最新的那一份一样就不留）
+  void keepVersion('opened', doc);
   showToast(`已打开“${e.name}”`);
   return true;
 }
@@ -292,6 +339,11 @@ export async function deleteSaved(e: MapEntry): Promise<void> {
   if (v !== 'delete') return;
   try {
     await deleteMap(store, e.id);
+    // 第九十五轮：这一张以前的版本——开着的世界还在，版本、电脑上的文件跟着它（改记到世界的编号上）；不是开着的那一张，一起删
+    if (currentMap.value?.id === e.id) {
+      await versionsMoved(mapSeries(e.id), worldSeries(worldId()));
+      await fileMoved(mapSeries(e.id), worldSeries(worldId()));
+    } else await versionsDropped(mapSeries(e.id));
     if (mapLink.value?.id === e.id) {
       mapLink.value = null;
       void autosaveNow();

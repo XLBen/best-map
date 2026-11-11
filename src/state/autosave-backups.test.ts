@@ -46,13 +46,14 @@ function putAutosave(version: number, savedAt: number, more: Record<string, unkn
 }
 
 describe('启动时读自动保存', () => {
-  it('旧版本的：不打开（返回 null、进向导），但原样挪进 backups；库升到第 7 版只补这一张表', async () => {
+  it('旧版本的：不打开（返回 null、进向导），但原样挪进 backups；库从第 6 版升上来只补缺的表', async () => {
     putAutosave(DOC_VERSION - 1, 1234, { mapId: 'm1', mapSynced: true });
     idb.data.get('checkpoint')!.set('current', { build: 'x' });
     idb.data.get('mapDocs')!.set('m1', { any: 1 });
     expect(await readAutosave()).toBeNull();
     expect(autosaved.value).toBeNull();
-    expect(idb.created).toEqual(['backups']);
+    // 第九十五轮：库是第 8 版了，多补 versions、versionDocs 两张（以前的版本）
+    expect(idb.created).toEqual(['backups', 'versions', 'versionDocs']);
     // 原来的位置空了：新世界的自动保存碰不到它
     expect(idb.data.get('kv')!.has('autosave')).toBe(false);
     expect(idb.data.get('autosave')!.size).toBe(0);
