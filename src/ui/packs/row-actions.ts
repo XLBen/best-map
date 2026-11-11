@@ -6,6 +6,7 @@ import { type NoteAction, askUser, download, execAdjust, knowIsolation } from '.
 import { trustScripts, untrustedScripts } from '../../trust';
 import { scriptTrustText } from '../copy';
 import { islandSwatch } from '../domain/island-swatch';
+import { confirmRegen } from '../domain/regen-ask';
 import { type ItemRow, itemPack } from './rows';
 import { isolationNote } from './script-trust';
 
@@ -28,6 +29,8 @@ export async function runTrusted(cmd: Command, busy: string, note?: { head?: str
     if (v !== 'ok') return false;
     await trustScripts(list);
   }
+  // 第九十八轮：这一步里带着重新生成（“添加并重新生成”、一项顶上“在地图上”的按钮）、会换掉手改的东西时先问
+  if (!(await confirmRegen(cmd))) return false;
   return execAdjust(cmd, busy, note);
 }
 

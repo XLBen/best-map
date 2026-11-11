@@ -2,7 +2,7 @@ import { memo } from 'preact/compat';
 import { useState } from 'preact/hooks';
 import { SUBJECT_NAMES, flagSvg } from '../../../core/human';
 import type { CountryMeta, World } from '../../../core/world';
-import { askUser, exec, openPanel, selectedCountry, setOptions, sheet, switchTool, togglePanel, world } from '../../state';
+import { openPanel, selectedCountry, setOptions, sheet, switchTool, togglePanel, world } from '../../state';
 import { focusOn } from '../camera';
 import { Toggle } from '../components/Toggle';
 import { TypePicker, TypePickerButton } from '../shell/TypePicker';
@@ -17,6 +17,8 @@ import {
   regenerateCountriesCommand,
 } from '../domain/countries';
 import { popText, withPackImports } from '../domain/human';
+import { execRegen, execRemoval } from '../domain/regen-ask';
+import { REGEN_KEEPS } from '../copy';
 import { library } from '../../library';
 import { chosenTerritory, hasHuman, selectCountry } from '../tools/public';
 import { registerPanels } from '../defs/panel-registry';
@@ -154,7 +156,7 @@ function GenerateCountries({ w }: { w: World }) {
     <section>
       <h5>生成国家</h5>
       <EraRulesNote libraryKey={null} small={w.small} seg="state" />
-      <button class="primary" onClick={() => void exec(withPackImports(generateCountriesCommand(), w.small, library.value), '正在生成…')}>
+      <button class="primary" onClick={() => void execRegen(withPackImports(generateCountriesCommand(), w.small, library.value), '正在生成…', { title: '生成国家', action: '生成' })}>
         生成
       </button>
     </section>
@@ -179,25 +181,12 @@ function CountryTools({ w }: { w: World }) {
           </Toggle>
         )}
         <div class="row wrap">
-          <button onClick={() => void exec(withPackImports(regenerateCountriesCommand(keep), w.small, library.value), '正在生成…')} title="人口按新的国家重新分，手改过的格不动">
+          <button onClick={() => void execRegen(withPackImports(regenerateCountriesCommand(keep), w.small, library.value), '正在生成…')} title={REGEN_KEEPS.countries}>
             重新生成
           </button>
-          <button
-            onClick={async () => {
-              const v = await askUser({
-                title: '删除国家',
-                text: '全部国家都删除，人口不变。可以撤销。',
-                choices: [
-                  { value: 'cancel', label: '取消' },
-                  { value: 'ok', label: '删除', primary: true },
-                ],
-              });
-              if (v === 'ok') await exec({ op: 'remove_countries' }, '正在计算…');
-            }}
-          >
-            删除国家
-          </button>
+          <button onClick={() => void execRemoval({ op: 'remove_countries' }, '删除国家')}>删除国家</button>
         </div>
+        <p class="hint">{REGEN_KEEPS.countries}</p>
       </section>
     </>
   );

@@ -2,7 +2,7 @@
 //   node tools/smoke.mjs [--chrome <Chrome 的路径>] [--keep] [--show] [--shots <目录>]
 //     --keep：留下临时目录（Chrome 的用户目录）；--show：不用无头，看着它跑；
 //     --shots：把几处界面截成图存进那个目录（第二个页面顶上的那一条、“世界”菜单的第一行），给人看排版
-//     --only 12：新建以后直接走第十二段（改那一段时用，约一分半钟；交差要跑全的）
+//     --only 12 / --only 13：新建以后直接走第十二段 / 第十三段（改那一段时用，约一两分钟；交差要跑全的）
 //   要先打包（npm run build）：用的是 dist/。不进 vitest（要 Chrome）。
 //   做法：自己起一个只绑 127.0.0.1、随机空闲端口的静态服务器（跑完就关；不碰 5191 / 5196），Chrome 开在一个临时的用户目录里，
 //   经调试端口（WebSocket，Node 自带的）点页面、拖鼠标、读浏览器里存的自动保存。
@@ -42,6 +42,11 @@
 //        做完以后进度条和“取消”都没了，新世界照常自动保存；把计算 Worker 发“走到哪一步了”的那一下拖慢（调试协议）后画一笔 →
 //        顶上出现进度条和“取消”→ 点了说“已取消，世界回到了这一步之前”，数组逐字节不变，计算程序还是原来那一个。
 //   第九十六轮的第 8、11 段跟着改了：按钮叫“取消”，1 秒左右就出现（以前叫“停止”，5 秒没动静才出现）。
+//   第九十八轮加的（接在后面，写在 tools/smoke-start.mjs）：第一次打开一键开始、重新生成前的确认。另开一个存储是空的浏览器环境：
+//    13. 第一屏（1280×800、1024×700）六张缩略图、“自定义…”、“帮助”都在窗口里，不用滚动；没有世界时点“帮助”、按 ? 能开能关；
+//        点一张 → 世界生成；再开向导、展开“自定义…”、什么都不改、点同一张 → 逐字节相同；在输入框里打 ? 不开帮助；
+//        “文化 ⋯ → 重新生成”没有手改时不问就做；用人口笔刷手改几格后：只重新生成人文（留着手改的格）不问，换一个库重新生成
+//        （不留）问、数对、点“先不”世界不变；“删除人文”的问话里写着国家、城市、道路的个数。
 //   退出码：有没过的 1
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -51,6 +56,7 @@ import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { progressSteps } from './smoke-progress.mjs';
 import { safetySteps } from './smoke-safety.mjs';
+import { startSteps } from './smoke-start.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
@@ -178,13 +184,14 @@ class Page {
       if (m.method === 'Runtime.exceptionThrown') this.errors.push(m.params.exceptionDetails?.exception?.description ?? m.params.exceptionDetails?.text ?? '出错');
     });
   }
-  static async open(cdp, url) {
-    const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+  // context：另一个浏览器环境（存储是空的、和别的页面不相干；第九十八轮的第十三段用）
+  static async open(cdp, url, context) {
+    const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank', ...(context ? { browserContextId: context } : {}) });
     const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
     const p = new Page(cdp, targetId, sessionId);
     await p.send('Page.enable');
     await p.send('Runtime.enable');
-    // 第一次建好世界会弹出上手说明：这里不要它挡着
+    // 第一次建好世界会弹出帮助：这里不要它挡着
     await p.send('Page.addScriptToEvaluateOnNewDocument', { source: "try { localStorage.setItem('map2.seenHelp', '1'); } catch {}" });
     await p.send('Page.navigate', { url });
     return p;
@@ -360,6 +367,11 @@ try {
     await progressSteps({ cdp, q: p, origin, check, sleep, stroke, count, READY, LAND, HEAD, ASK, clickMenuItem });
     check(p.errors.length === 0, '页面里没有没接住的错', p.errors.slice(0, 3).join('；'));
     console.log(`${failed ? `没过 ${failed} 项` : '都通过'}（只走了第 1、12 段，${((Date.now() - t0) / 1000).toFixed(0)} 秒）`);
+    throw DONE;
+  }
+  if (only === '13') {
+    await startSteps({ cdp, Page, origin, check, sleep, READY, HEAD, ASK, clickMenuItem });
+    console.log(`${failed ? `没过 ${failed} 项` : '都通过'}（只走了第 1、13 段，${((Date.now() - t0) / 1000).toFixed(0)} 秒）`);
     throw DONE;
   }
 
@@ -645,6 +657,8 @@ try {
   const before12 = q.errors.length;
   await progressSteps({ cdp, q, origin, check, sleep, stroke, count, READY, LAND, HEAD, ASK, clickMenuItem, tracked });
   check(q.errors.length === before12, '第十二段：页面里没有没接住的错', q.errors.slice(before12, before12 + 3).join('；'));
+  // ---------- 第九十八轮 ----------
+  await startSteps({ cdp, Page, origin, check, sleep, READY, HEAD, ASK, clickMenuItem });
   console.log(`${failed ? `没过 ${failed} 项` : '都通过'}（${((Date.now() - t0) / 1000).toFixed(0)} 秒）`);
 } catch (e) {
   if (e !== DONE) {

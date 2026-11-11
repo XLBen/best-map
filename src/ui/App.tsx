@@ -204,7 +204,7 @@ export function App() {
     };
   }, []);
 
-  // 第一次用：建好第一个世界后打开一次上手说明
+  // 第一次用：建好第一个世界后打开一次帮助
   useEffect(() => {
     if (!world.value || wizardOpen.value) return;
     try {

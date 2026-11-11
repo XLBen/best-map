@@ -64,6 +64,16 @@ export const byRulesTip = (noun: string) => `按各类型的规则判断是哪�
 // 地图在星球上的位置（向导、调整、帮助）
 export const CLIMATE_BELT_NOTE = '越往极地越冷；地图本身跨几个气候带';
 
+// 帮助（第九十八轮）：按 ? 开关；向导上、“更多”里的按钮悬停都写这一句
+export const HELP_KEY_TIP = '怎么开始、各类工具、按键（按 ? 开关）';
+
+// 各处“重新生成”留着什么（第九十八轮：写在按钮下面，同一件事只写一处）。会换掉手改的东西时另问一次（domain/regen-ask.ts）
+export const REGEN_KEEPS = {
+  human: '手改过的格、拖过的发源地、国家的领土不动',
+  countries: '锁定的国家、手改过人口的格不动',
+  settlements: '锁定的、自己放的、画的不动',
+} as const;
+
 // 给世界加一个变量
 export const ADD_DIMENSION_NOTE = '文化、国家、城市都不会变。想让国家用上它，点“重新生成国家”';
 

@@ -241,7 +241,8 @@ describe('什么请求都能停', () => {
     expect(mirrorDoc()).toEqual(before);
     expect(FakeEngineWorker.last.done.map((h) => h.cmd)).toEqual(before.commands);
     // 第九十七轮：说的是回到了原来的世界
-    expect(toast.value).toEqual({ text: STOPPED_WORLD, error: false });
+    // 第九十八轮：和新建、打开有关的话带着 about（新建向导里只把这样的话再写一遍）；“世界回到了这一步之前”那几句不带
+    expect(toast.value).toEqual({ text: STOPPED_WORLD, error: false, about: 'open' });
   });
 });
 
@@ -377,7 +378,7 @@ describe('启动时打开上次的世界', () => {
     expect(await p).toBe(false);
     expect(ask.value).toBeNull();
     expect(world.value === null || mirrorDoc() !== null).toBe(true);
-    expect(toast.value).toEqual({ text: STOP_TEXT.openStopped, error: false });
+    expect(toast.value).toEqual({ text: STOP_TEXT.openStopped, error: false, about: 'open' });
     expect(diskRaw(disk)!.doc).toEqual(doc);
     // 记的那一笔没擦
     expect(JSON.parse(storage.get(OPEN_GUARD_KEY)!)).toMatchObject({ n: 1, saved: 1234 });

@@ -3,13 +3,15 @@ import { useState } from 'preact/hooks';
 import type { CityInfo } from '../../../core/human';
 import type { World } from '../../../core/world';
 import { CITY_ICONS, type CityIcon, iconOf } from '../../render/settle-draw';
-import { type SettleRef, askUser, exec, openPanel, options, selectedSettle, setOptions, sheet, togglePanel, world } from '../../state';
+import { type SettleRef, exec, openPanel, options, selectedSettle, setOptions, sheet, togglePanel, world } from '../../state';
 import { focusOn } from '../camera';
 import { Seg } from '../common';
 import { Toggle } from '../components/Toggle';
 import { TypePicker, TypePickerButton } from '../shell/TypePicker';
 import { hasCountries } from '../domain/countries';
 import { popText } from '../domain/human';
+import { execRegen, execRemoval } from '../domain/regen-ask';
+import { REGEN_KEEPS } from '../copy';
 import { openLibrary, openNewItemIn } from '../packs/panel-open';
 import {
   CATEGORY_NAMES,
@@ -361,16 +363,9 @@ function RemoveBox({ w }: { w: World }) {
         disabled={!list.length}
         onClick={async () => {
           const names = [...new Set([...list, ...(pick.has('cities') && counts.roads ? (['roads'] as SettleKind[]) : [])])].map((k) => SETTLE_KIND_NAMES[k]);
-          const v = await askUser({
-            title: '删除',
-            text: `${names.join('、')}都删除。可以撤销。`,
-            choices: [
-              { value: 'cancel', label: '取消' },
-              { value: 'ok', label: '删除', primary: true },
-            ],
-          });
           const cmd = removeSettleCommand(list);
-          if (v === 'ok' && cmd && (await exec(cmd, '正在计算…'))) {
+          // 第九十八轮：问话里写个数（domain/regen-ask.ts）
+          if (cmd && (await execRemoval(cmd, `删除${names.join('、')}`))) {
             setPick(new Set());
             selectSettle(null);
           }
@@ -416,9 +411,10 @@ export function SettlementExtras() {
         <section>
           <h5>重新生成</h5>
           <GenToggles roads={gen.roads} landmarks={gen.landmarks} onChange={setGen} />
-          <button onClick={() => void exec(regenerateSettleCommand(w, gen), '正在生成…')} title="锁定的、自己放的、画的不动">
+          <button onClick={() => void execRegen(regenerateSettleCommand(w, gen), '正在生成…')} title={REGEN_KEEPS.settlements}>
             重新生成
           </button>
+          <p class="hint">{REGEN_KEEPS.settlements}</p>
         </section>
       )}
       <RemoveBox w={w} />

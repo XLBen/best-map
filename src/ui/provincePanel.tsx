@@ -9,6 +9,7 @@ import type { World } from '../../core/world';
 import { provinceDisplayColor, seaProvinceDefaultColor } from '../../core/world';
 import { type ViewMode, exec, mapKm, mode, openPanel, provinceSet, selectedProvince, world } from '../state';
 import { countryAt, countryRows, hasCountries, territoryCommand } from './domain/countries';
+import { execRegen } from './domain/regen-ask';
 import { brushNew } from './tools/provinces';
 import { focusOn } from './camera';
 import { MenuItem } from './components/MenuItem';
@@ -236,7 +237,7 @@ function ProvinceMulti({ w, ids }: { w: World; ids: number[] }) {
         onPointerLeave={clearBarPreview}
         onClick={() =>
           holdBarPreview(
-            exec({ op: 'regenerate_provinces', cells }, '正在划分…').then((ok) => {
+            execRegen({ op: 'regenerate_provinces', cells }, '正在划分…', REPARTITION_ASK).then((ok) => {
               if (ok) done();
               return ok;
             }),
@@ -410,13 +411,16 @@ function DivideBox({ w }: { w: World }) {
   );
 }
 
+// 第九十八轮：会换掉手改过的省份时先问（domain/regen-ask.ts）
+const REPARTITION_ASK = { title: '重新划分省份', action: '重新划分' };
+
 function RegenButton({ cmd, primary, children }: { cmd: Command; primary?: boolean; children: ComponentChildren }) {
   return (
     <button
       class={primary ? 'primary' : undefined}
       onPointerEnter={() => showProvinceCommand(cmd)}
       onPointerLeave={clearBarPreview}
-      onClick={() => holdBarPreview(exec(cmd, '正在划分省份…'))}
+      onClick={() => holdBarPreview(execRegen(cmd, '正在划分省份…', REPARTITION_ASK))}
     >
       {children}
     </button>

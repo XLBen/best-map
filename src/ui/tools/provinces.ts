@@ -9,6 +9,7 @@ import { signal } from '@preact/signals';
 import { provinceLand } from '../../../core/island-types';
 import { exec, previewProvinces, provinceSet, selectedProvince, showToast, sliderActive, world } from '../../state';
 import { Settle } from '../domain/exact';
+import { execRegen } from '../domain/regen-ask';
 import { EMPTY, type Pointer, type Preview, type ProvincePreview, type ToolHandler, isBusy, worldId } from './api';
 import { type Stroke, brushTool } from './brush';
 import { groupCount } from './gestures';
@@ -336,7 +337,8 @@ export function provinceRegenTool(): ToolHandler {
         showToast('要盖住省份的一大半才会重划', true);
         return;
       }
-      await exec({ op: 'regenerate_provinces', cells: s.cells }, '正在计算…');
+      // 第九十八轮：会换掉手改过的省份时先问
+      await execRegen({ op: 'regenerate_provinces', cells: s.cells }, '正在计算…', { title: '重新划分省份', action: '重新划分' });
     },
   });
 }

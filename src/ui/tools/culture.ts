@@ -3,6 +3,7 @@ import { hexToRgb } from '../../../core/export';
 import { type Culture, type PopValue, cultureById, cultureGroupById, dimensionValues, groupInfo, readComp, typicalTuple, valueLayer, worldCultures, worldDimensions } from '../../../core/human';
 import type { PopTuple, World } from '../../../core/world';
 import { popText } from '../domain/human';
+import { execRegen } from '../domain/regen-ask';
 import { exec, options, setOptions, world } from '../../state';
 import { type Pointer, type RGB, type ToolHandler, BLOCKED_RGB, EMPTY, WHITE, guard, mapDist } from './api';
 import { type Stroke, brushTool } from './brush';
@@ -229,6 +230,8 @@ export function hearthMarks(w: World): HearthMark[] {
   });
 }
 
+const HEARTH_ASK = { title: '挪动发源地', action: '挪动' };
+
 // 挪一个发源地（cell 为 null 是恢复自动）
 export function hearthCommand(m: Pick<HearthMark, 'group' | 'culture' | 'index'>, cell: number | null): Command {
   return m.culture ? { op: 'move_hearth', culture: m.culture, cell } : { op: 'move_hearth', group: m.group, ...(m.index ? { index: m.index } : {}), cell };
@@ -304,11 +307,12 @@ export function hearthTool(zoom: () => number): ToolHandler {
       drag = null;
       if (!w || !m) {
         // Shift+点：锁定的恢复自动
-        if (w && hover && p.shift && hover.locked && !guard('refuse')) await exec(hearthCommand(hover, null), '正在生成…');
+        if (w && hover && p.shift && hover.locked && !guard('refuse')) await execRegen(hearthCommand(hover, null), '正在生成…', HEARTH_ASK);
         return;
       }
       if (!target(w, p) || p.cell === m.cell) return;
-      await exec(hearthCommand(m, p.cell), '正在生成…');
+      // 第九十八轮：挪发源地会重新生成人文、跟着重算自动的城市——会换掉手改的东西时先问
+      await execRegen(hearthCommand(m, p.cell), '正在生成…', HEARTH_ASK);
     },
     cancel() {
       drag = null;

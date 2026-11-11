@@ -1,5 +1,6 @@
 import { RefreshCw } from 'lucide-preact';
-import { exec, world } from '../../state';
+import { world } from '../../state';
+import { execRegen } from '../domain/regen-ask';
 import { REGEN_BUSY, regenCountText } from './copy';
 import type { PageCtx } from './page-source';
 import { regenCommand } from './regen';
@@ -24,7 +25,8 @@ export function RegenBar({ ctx }: { ctx: PageCtx }) {
         class="small primary"
         onClick={() => {
           const now = world.value;
-          if (now) void exec(regenCommand(need, now.small, ctx.lib), REGEN_BUSY);
+          // 第九十八轮：会换掉手改的东西时先问、写清楚数（domain/regen-ask.ts）
+          if (now) void execRegen(regenCommand(need, now.small, ctx.lib), REGEN_BUSY);
         }}
       >
         <RefreshCw /> 重新生成

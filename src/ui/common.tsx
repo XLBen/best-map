@@ -1,4 +1,5 @@
 import { X } from 'lucide-preact';
+import type { ComponentChildren } from 'preact';
 
 // 几个面板共用的小部件
 
@@ -38,14 +39,23 @@ export function Seg<T extends string | number>({
 }
 
 // 弹窗的标题栏（第二十九轮）：名字，右边一个小的关上（onClose 没有时不画，比如还没有世界时的新建向导）
-export function ModalHead({ title, onClose, closeTitle = '关闭', disabled = false }: { title: string; onClose?: () => void; closeTitle?: string; disabled?: boolean }) {
+// extra（第九十八轮）：标题右边、关闭之前的一个小按钮（新建向导的“帮助”）
+export function ModalHead({ title, onClose, closeTitle = '关闭', disabled = false, extra }: { title: string; onClose?: () => void; closeTitle?: string; disabled?: boolean; extra?: ComponentChildren }) {
+  const close = onClose && (
+    <button class="icon-btn" onClick={onClose} title={closeTitle} disabled={disabled}>
+      <X />
+    </button>
+  );
   return (
     <div class="modal-head">
       <h2>{title}</h2>
-      {onClose && (
-        <button class="icon-btn" onClick={onClose} title={closeTitle} disabled={disabled}>
-          <X />
-        </button>
+      {extra ? (
+        <span class="row">
+          {extra}
+          {close}
+        </span>
+      ) : (
+        close
       )}
     </div>
   );

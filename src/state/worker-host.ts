@@ -15,7 +15,7 @@ import { EngineWorker, type RawWorker, type SpawnMemory } from '../engine-spawn'
 import type { LightSnapshot, Request, Response, Snapshot } from '../protocol';
 import { seedRivers, reseedRivers } from '../render/overlay';
 import { lightWorld, mergeSnapshot } from './snapshot-merge';
-import { CANCELLED, EngineHost, type WorkerLike } from '../sandbox';
+import { CANCELLED, EngineHost, STOPPED_WORLD, type WorkerLike } from '../sandbox';
 import { STOP_AFTER_MS, Stall } from '../stall';
 import { noteTimings } from './cost-gate';
 import { meshFor } from './mesh';
@@ -278,7 +278,8 @@ export function call(req: Request, label: string | null, safeReason?: string, af
 function engineReset(message: string, calm = false) {
   hostHooks.dropPreviews();
   hostHooks.resetAutosaveIds();
-  showToast(calm && canRedo.peek() ? `${message}。重做记录已清空` : message, !calm);
+  // 取消的是新建、打开（回到了原来的世界）：这句话和新建有关，向导里也写一遍
+  showToast(calm && canRedo.peek() ? `${message}。重做记录已清空` : message, !calm, message === STOPPED_WORLD ? 'open' : undefined);
   recovering = true;
   recoveryStarted(host?.mirror.doc() ?? null);
   if (labelled === 0) busy.value = RECOVERING;
@@ -433,7 +434,7 @@ export async function handle(r: Response, fresh = false, restart = fresh, quiet 
     // 它自己停下的那一种（soft，第九十七轮）没有恢复这一回事，在这里说：世界回到了这一步之前（重做记录还在，不用提）
     if (r.stopped) {
       if (r.soft) showToast(r.error);
-    } else if (!quiet) showToast(r.error, true);
+    } else if (!quiet) showToast(r.error, true, restart ? 'open' : undefined);
     return false;
   }
   if (r.snapshot) {
@@ -483,6 +484,9 @@ export function idleWithin(ms = docWait.ms): Promise<boolean> {
   });
 }
 
+// 现在的命令记录（主线程手上的那一份，不问计算程序）：还没有世界时 null。第九十八轮：重新生成之前数手改（core/regen-loss.ts）要它
+export const commandsNow = (): readonly Command[] | null => host?.mirror.doc()?.commands ?? null;
+
 // 现在的世界文件。behind：还有一步在算，不在这一份里
 export async function docNow(wait = docWait.ms): Promise<{ doc: WorldDoc; behind: boolean } | null> {
   const idle = await idleWithin(wait);
@@ -522,7 +526,9 @@ export async function thumbnail(settings: Partial<Settings>, gen: WorldgenInput,
   const req: Request = { kind: 'thumb', settings, gen, width, height, content };
   const r = findScripts([settings, gen]).length ? await scratchCall(req) : await call(req, null);
   if (!r.ok) {
-    showToast(r.error, true);
+    // 这张缩略图用不上了（点了一张、世界换了，排着的几张被丢掉——回的是“这一步没做：世界已换”）：不用说。
+    // 第九十八轮以前这一句会弹在顶上，还被新建向导照搬过去。真的没画出来（形态的脚本出错……）才说；缩略图只有新建向导要
+    if (r.id !== CANCELLED) showToast(r.error, true, 'open');
     return null;
   }
   return r.thumb ?? null;

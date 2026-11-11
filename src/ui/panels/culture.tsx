@@ -2,7 +2,7 @@ import { useMemo, useState } from 'preact/hooks';
 import type { Command } from '../../../core/commands';
 import { defaultTotalPop, dimensionValues, groupInfo, humanLegend, populationSummary, typicalTuple, worldCultureGroups, worldCultures, worldDimensions, worldEra } from '../../../core/human';
 import type { World } from '../../../core/world';
-import { askUser, exec, openPanel, options, setOptions, togglePanel, world } from '../../state';
+import { exec, openPanel, options, setOptions, togglePanel, world } from '../../state';
 import { Seg } from '../common';
 import { Slider } from '../components/Slider';
 import { OptionSlider } from '../shell/OptionSlider';
@@ -30,7 +30,8 @@ import {
   toggleGroup,
 } from '../domain/human';
 import { LibraryPick } from '../components/LibraryPick';
-import { ADD_DIMENSION_NOTE, GEN_RULES_NOTE } from '../copy';
+import { ADD_DIMENSION_NOTE, GEN_RULES_NOTE, REGEN_KEEPS } from '../copy';
+import { execRegen, execRemoval } from '../domain/regen-ask';
 import { GEN_OPEN_TIP, GEN_TITLE, popDensityNote } from '../packs/copy';
 import { openGenSettings } from '../packs/open-era';
 import { addDimensionCommand, dimensionOptions } from '../../../core/packs/add-dimension';
@@ -224,7 +225,7 @@ export function HearthBar() {
   return (
     <>
       <span class="bar-note">锁定 {locked.length} 个</span>
-      <button class="bar-btn" onClick={() => void exec(cmd, '正在生成…')} title="锁定的发源地都恢复自动">
+      <button class="bar-btn" onClick={() => void execRegen(cmd, '正在生成…')} title="锁定的发源地都恢复自动">
         全部恢复自动
       </button>
     </>
@@ -369,7 +370,8 @@ function GenerateBox({ w, onDone }: { w: World; onDone: () => void }) {
         class="primary"
         disabled={!cmd}
         onClick={async () => {
-          if (cmd && (await exec(cmd, '正在生成…'))) onDone();
+          // 第九十八轮：没有人文时也可能有自己放的地标（连城市地标一起生成时整个换掉）：会换掉时先问
+          if (cmd && (await execRegen(cmd, '正在生成…', { title: '生成人文', action: '生成' }))) onDone();
         }}
       >
         生成
@@ -413,8 +415,9 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
   const total = sum?.total ?? 0;
   const def = era ? defaultTotalPop(w, w.derived, era) : total;
   const manual = w.causes.popManual?.some((x) => x === 1) ?? false;
+  // 第九十八轮：会换掉手改的东西时先问（domain/regen-ask.ts），没有就直接做
   const run = async (cmd: Command | null, busy = '正在生成…') => {
-    if (cmd && (await exec(cmd, busy))) onDone();
+    if (cmd && (await execRegen(cmd, busy))) onDone();
   };
   if (edit) {
     const cmd = regenerateWith(edit, w.small, library.value);
@@ -498,28 +501,18 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
         />
         {era && <p class="hint">{popDensityNote(era.popDensity)}</p>}
       </section>
-      <section class="row wrap">
-        <button onClick={() => void run(regenerateCommand(w.small, library.value))} title="拖过的发源地、手改过的格不动">
-          重新生成
-        </button>
-        <button onClick={() => setEdit(defaultChoice(w.small, true, library.value))} title="换一个库，或改文化组、总人口">
-          换库、文化组…
-        </button>
-        <button
-          onClick={async () => {
-            const v = await askUser({
-              title: '删除人文',
-              text: '人口与文化圈都删除，可以撤销。',
-              choices: [
-                { value: 'cancel', label: '取消' },
-                { value: 'ok', label: '删除', primary: true },
-              ],
-            });
-            if (v === 'ok') await exec({ op: 'remove_human' }, '正在计算…');
-          }}
-        >
-          删除人文
-        </button>
+      <section>
+        <div class="row wrap">
+          <button onClick={() => void run(regenerateCommand(w.small, library.value))} title={REGEN_KEEPS.human}>
+            重新生成
+          </button>
+          <button onClick={() => setEdit(defaultChoice(w.small, true, library.value))} title="换一个库，或改文化组、总人口">
+            换库、文化组…
+          </button>
+          <button onClick={() => void execRemoval({ op: 'remove_human' }, '删除人文')}>删除人文</button>
+        </div>
+        {/* 第九十八轮：重新生成留着什么，写出来（以前只在按钮的悬停里） */}
+        <p class="hint">{REGEN_KEEPS.human}</p>
       </section>
       <section class="row wrap">
         <button class="small" onClick={toLibrary('culture')}>

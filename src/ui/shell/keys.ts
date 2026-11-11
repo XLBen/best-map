@@ -44,6 +44,9 @@ pushEscape(ESC_RANK.selection, () =>
   }),
 );
 
+// ? 键（全角的 ？ 也算）；带着 ⌘、Ctrl、Alt 的不算
+export const isHelpKey = (e: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey'>): boolean => (e.key === '?' || e.key === '？') && !e.metaKey && !e.ctrlKey && !e.altKey;
+
 export function onKeyDown(e: KeyboardEvent) {
   const mod = e.metaKey || e.ctrlKey;
   // ⌘S 保存到“我的地图”，⇧⌘S 另存为。任何时候都不让浏览器弹出“存储网页”；向导、说明、弹窗开着时不保存。
@@ -59,6 +62,16 @@ export function onKeyDown(e: KeyboardEvent) {
   // Esc：一层层退出，先后见 escape.ts 的 ESC_RANK（这里只问最上面开着的一层）
   if (e.key === 'Escape') {
     runEscape(e, 'bubble');
+    return;
+  }
+  // ?：开关帮助（第九十八轮）。没有世界、向导和别的弹窗开着时也行；正在框里打字时是打字。问话开着时到不了这里（Ask.tsx 先拦下了）
+  if (isHelpKey(e)) {
+    if (typing(e.target)) return;
+    e.preventDefault();
+    if (!e.repeat) {
+      helpOpen.value = !helpOpen.value;
+      if (helpOpen.value) openPanel.value = null;
+    }
     return;
   }
   if (typing(e.target) || helpOpen.value || wizardOpen.value || packDialog.value || mapsDialog.value || backupsDialog.value || versionsDialog.value) return;

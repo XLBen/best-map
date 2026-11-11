@@ -75,7 +75,7 @@ export const hoverProvinceCell = signal<number>(-1);
 // 地图上鼠标旁的说明（工具预览的一句话）。warn：做不了；caution：做得了，但要留意（比如合并后是一省两块）
 export const cursorHint = signal<{ x: number; y: number; text: string; warn?: boolean; caution?: boolean } | null>(null);
 
-// 顶栏按钮弹出的面板：同一时间只开一个。world：世界（新建、保存、打开、导出）；more：更多（历史、偏好、上手说明）
+// 顶栏按钮弹出的面板：同一时间只开一个。world：世界（新建、保存、打开、导出）；more：更多（历史、偏好、帮助）
 // river / province：选中的河、省底部条上的“⋯”（不常用的按钮收在里面）
 // 选“哪一种”（同一个 TypePicker，见 App.tsx 的 TYPE_PANELS）：rivertype / laketype 选中的这条河、这个湖，
 // newrivertype / newlaketype 新画的河、新放的湖，islandtype / chaintype 放岛、画岛链用哪一种岛
@@ -213,7 +213,7 @@ export {
 export { FLASH_MS, type NoteAction, changeNote, describeChange, flash, flashCells, holdNote, noteAction, noteSkipped, showToast, skippedNote, toast } from './state/notes';
 export { type MapKind, type Prefs, type ProjectionPref, type Reference, type WheelPref, loadReference, nameMode, parseMapKind, parsePrefs, prefs, reference, setNameMode, setPrefs, setReference } from './state/prefs';
 export { type ToolOptions, brushRange, lakeRange, mapKm, options, reachRange, setOptions } from './state/options';
-export { DOC_WAIT_MS, busy, docNow, editsIdle, formThumbnail, getDoc, idleWithin, knowIsolation, onlyEditsPending, safeMode, scriptRunning, scriptsIsolated, stalled, stopBusy, stopScripts, thumbnail, whenEditsIdle } from './state/worker-host';
+export { DOC_WAIT_MS, busy, commandsNow, docNow, editsIdle, formThumbnail, getDoc, idleWithin, knowIsolation, onlyEditsPending, safeMode, scriptRunning, scriptsIsolated, stalled, stopBusy, stopScripts, thumbnail, whenEditsIdle } from './state/worker-host';
 export { type ProgressView, cancelling, progressView } from './state/progress';
 export { type Ask, type AskChoice, ask, askText, askUser } from './state/ask';
 export { confirmImport, showScripts, trustFormScripts, trustHandledElsewhere } from './state/script-trust';

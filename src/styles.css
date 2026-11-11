@@ -2112,6 +2112,28 @@ button.card.dashed {
     grid-template-columns: 1fr;
   }
 }
+/* 新建向导的第一屏（第九十八轮）：一句“挑一张开始”、右边“换一批”“自定义…”，下面就是缩略图；
+   “自定义…”收着时一行小字写现在用的是什么，展开的几段在缩略图下面 */
+.wizard-lead {
+  margin: var(--sp-3) 0 var(--sp-2);
+}
+.wizard-lead h5 {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+.wizard-lead .row {
+  margin: 0;
+}
+.wizard-summary {
+  margin: var(--sp-2) 0 0;
+}
+.wizard-custom {
+  margin-top: var(--sp-3);
+}
+.modal-head .row {
+  margin: 0;
+}
 .thumbs {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -2170,7 +2192,14 @@ button.thumb {
     position: static;
   }
 }
-/* 上手说明 */
+/* 帮助（第九十八轮以前叫上手说明）：最上面“怎么开始”的几句是正文的颜色 */
+.help-start {
+  margin: var(--sp-1) 0 var(--sp-2);
+  padding-left: 22px;
+}
+.help-start li {
+  margin: var(--sp-1) 0;
+}
 .steps {
   padding-left: 22px;
 }

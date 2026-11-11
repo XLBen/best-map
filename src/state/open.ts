@@ -88,7 +88,7 @@ async function open(req: Extract<Request, { kind: 'init' | 'load' }>, label: str
   meshReady = prebuildMesh(settings, hostOpts.build);
   await r;
   // 被停下、而原来没有世界可回（向导里新建到一半）：这里说一句（有世界时恢复那边说“回到了这一步之前”）
-  if (stopped && !opts.quiet && !world.peek()) showToast(error);
+  if (stopped && !opts.quiet && !world.peek()) showToast(error, false, 'open');
   return ok ? { ok: true } : { ok: false, error, ...(stopped ? { stopped } : {}) };
 }
 
@@ -106,7 +106,7 @@ export async function openDoc(doc: WorldDoc, opts: OpenOptions = {}): Promise<Op
   try {
     checkDoc(doc);
   } catch (e) {
-    if (!opts.quiet) showToast((e as Error).message, true);
+    if (!opts.quiet) showToast((e as Error).message, true, 'open');
     return { ok: false, error: (e as Error).message };
   }
   return open({ kind: 'load', doc }, '正在打开世界…', opts, '打开', doc.settings);
@@ -176,7 +176,7 @@ export async function resumeLast(): Promise<boolean | null> {
     if (r.stopped) {
       // 用户停下的：不问“没能打开”，和取消一样进向导；记的那一笔不擦（连着两次停下，下次先问）
       noteNotResumed('cancelled');
-      showToast(STOP_TEXT.openStopped);
+      showToast(STOP_TEXT.openStopped, false, 'open');
       return false;
     }
     // 有原因的没打开：马上就问，不用下次再问

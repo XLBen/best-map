@@ -25,7 +25,7 @@ import { EE_HALF_W } from '../../render/projection';
 import type { World } from '../../../core/world';
 import { exportFullMap, snapshotCanvas } from '../map/export';
 import { HistoryPanel } from '../panels';
-import { BACKUP_TEXT, FILE_TEXT, LIBRARY_NOTE, SAVE_TEXT, VERSION_TEXT } from '../copy';
+import { BACKUP_TEXT, FILE_TEXT, HELP_KEY_TIP, LIBRARY_NOTE, SAVE_TEXT, VERSION_TEXT } from '../copy';
 import { fileLine, pickFile, reloadSaved, resumeFileHere, saveNote, stopFileHere, takeOverHere } from '../shell/save-note';
 import { openLibrary } from '../packs/panel-store';
 import { fileNameOf } from '../../maps';
@@ -526,7 +526,7 @@ function ExportSection() {
   );
 }
 
-// “更多”：历史、偏好、上手说明
+// “更多”：历史、偏好、帮助（第九十八轮以前叫“上手说明”）
 export function MorePanel() {
   return (
     <>
@@ -545,12 +545,13 @@ export function MorePanel() {
         <p class="hint">自动：滚轮缩放，双指滑动平移；认错时选“缩放”或“平移”</p>
       </section>
       <button
+        title={HELP_KEY_TIP}
         onClick={() => {
           helpOpen.value = true;
           openPanel.value = null;
         }}
       >
-        <CircleHelp /> 上手说明
+        <CircleHelp /> 帮助
       </button>
     </>
   );

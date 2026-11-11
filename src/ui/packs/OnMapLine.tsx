@@ -1,7 +1,8 @@
 import { LocateFixed } from 'lucide-preact';
 import { useMemo } from 'preact/hooks';
 import type { ContentKind } from '../../../core/content/registry';
-import { exec, openPanel, world } from '../../state';
+import { openPanel, world } from '../../state';
+import { execRegen } from '../domain/regen-ask';
 import { focusOn } from '../camera';
 import { ON_MAP, ON_MAP_UNUSED, REGEN_BUSY } from './copy';
 import { type OnMapFix, onMapOf } from './on-map';
@@ -24,7 +25,7 @@ export function OnMapLine({ kind, id, item, ctx, onSegment }: { kind: ContentKin
         return void runTrusted(fix.cmd, fix.busy);
       case 'regen': {
         const now = world.value;
-        if (now && need) void exec(regenCommand(need, now.small, ctx.lib), REGEN_BUSY);
+        if (now && need) void execRegen(regenCommand(need, now.small, ctx.lib), REGEN_BUSY);
         return;
       }
       case 'segment':
