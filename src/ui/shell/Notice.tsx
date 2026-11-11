@@ -1,14 +1,17 @@
 import { Pencil, Square, Undo2, X } from 'lucide-preact';
 import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
-import { busy, canUndo, cancelExport, changeNote, exportProgress, holdNote, scriptRunning, showToastReason, stalled, stopBusy, stopScripts, toast, undo, world } from '../../state';
+import { busy, canUndo, cancelExport, changeNote, exportProgress, holdNote, progressView, scriptRunning, showToastReason, stalled, stopScripts, toast, undo, wizardOpen, world } from '../../state';
 import { installLateClickGuard, lateClicks } from '../../notice-timer';
 import { MISHAP_TEXT, STOP_TEXT } from '../copy';
+import { BusyLine } from './BusyLine';
 
 // 顶部中间的提示条：脚本算了很久（带“停下”）> 出错 > 正在计算 > 一般提示 > 改完后的一句话（带撤销、“换一个”）。
 // “停下”排在出错前面：一段一直报平安的慢脚本看门狗不会停，“停下”是唯一的办法，不能被前一步的出错提示（6 秒）挡住。
 // 只写改了什么；“28 格地势变了……”这类细节放在鼠标悬停的提示里
 // 第九十六轮：不是脚本的请求几秒没算完（state/worker-host.ts 的 stalled）时“正在计算…”旁也有“停止”——同样排在出错前面；
 // 出错的提示翻成了人话，原话不一样时多一个“原因”（点了换成能展开、能复制的那一条，shell/MishapBanner.tsx）
+// 第九十七轮：一步做了 1 秒以上（state/progress.ts 的 progressView）时“正在计算…”换成 步名 + 进度条 +“取消”（shell/BusyLine.tsx）。
+// 和第九十六轮的“停止”是同一个按钮：只是不用等几秒没动静才出现
 
 export function Notice() {
   const t = toast.value;
@@ -27,18 +30,28 @@ export function Notice() {
       </div>
     );
   }
-  // 计算程序几秒没有回过一条：可以停下（世界回到这一步之前）。还没有世界时（启动时打开上次的世界）“停止”在中间那一块上（App.tsx）。
-  // 这时“正在计算…”会一直在：这期间说的话（“已导出。还在算的那一步不在里面”、出错）排在它下面，不被它挡住
-  if (b && world.value && stalled.value) {
+  // 久的一步（做了 1 秒以上；或者计算程序几秒没有动静）：进度和“取消”。还没有世界时（启动时打开上次的世界）在中间那一块上（App.tsx）。
+  // 这一条会在一阵子：这期间说的话（“已导出。还在算的那一步不在里面”、出错）排在它下面，不被它挡住。
+  // 新建向导开着时进度和“取消”在向导里（Wizard.tsx）：这里不再出一份，页面上只有一个“取消”
+  if (b && world.value && !wizardOpen.value && (progressView.value || stalled.value)) {
     return (
       <>
-        <BusyNotice text={b} stop />
+        <BusyNotice text={b} />
         {t && (t.error ? <ErrorNotice t={t} /> : <div class="notice">{t.text}</div>)}
       </>
     );
   }
   if (t?.error) return <ErrorNotice t={t} />;
-  if (b && world.value) return <BusyNotice text={b} />;
+  // 短的一步、正在恢复世界、向导开着时：转圈和那一句。这期间说的话（“已取消，回到了原来的世界”——恢复要一阵，等它完了那一句早过期了）
+  // 同样排在它下面，不被它挡住
+  if (b && world.value) {
+    return (
+      <>
+        <BusyNotice text={b} plain={wizardOpen.value} />
+        {t && <div class="notice">{t.text}</div>}
+      </>
+    );
+  }
   const ex = exportProgress.value;
   if (ex !== null && world.value) {
     return (
@@ -70,17 +83,11 @@ function ErrorNotice({ t }: { t: NonNullable<typeof toast.value> }) {
   );
 }
 
-// “正在计算…”；stop：带“停止”
-function BusyNotice({ text, stop = false }: { text: string; stop?: boolean }) {
+// “正在计算…”；久了换成步名、进度条、“取消”（BusyLine）。plain：只是转圈和那一句（向导开着时）
+function BusyNotice({ text, plain = false }: { text: string; plain?: boolean }) {
   return (
-    <div class="notice">
-      <span class="spinner" />
-      {text}
-      {stop && (
-        <button class="pill-btn busy-stop" onClick={() => void stopBusy()} title={STOP_TEXT.tip}>
-          <Square /> {STOP_TEXT.stop}
-        </button>
-      )}
+    <div class="notice busy">
+      <BusyLine text={text} tip={STOP_TEXT.tip} plain={plain} />
     </div>
   );
 }

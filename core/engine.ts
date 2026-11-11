@@ -2,28 +2,25 @@ import { coastStyleCached, fjordData, landStyle } from './coast-style';
 import { prepareClimatePlane } from './climate';
 import { DOC_VERSION, checkDoc } from './doc-version';
 import { type RegenBaseOf, regenBaseOf } from './regen-base';
-import { type Command, CommandError, Dirty, type RemovedItem, addArrayUndo, applyCommand, revert } from './commands';
-import { cloneSmall, copySmall, restoreSmall, type SmallCopy } from './small-copy';
+import { type Applied, type Command, CommandError, Dirty, type RemovedItem, applyCommand, applyCommandSteps, revert } from './commands';
+import { cloneSmall, copySmall, type SmallCopy } from './small-copy';
 import type { ContentRef } from './content/unused';
 import { type TidyPlan, planTidy } from './tidy';
-import { lakeProvinceFix } from './provinces';
 import { type SolveResult } from './constraints';
 import { warmClimateSphereSteps } from './planet-climate';
 import { warmElevationSteps } from './elevation';
-import { type GeoFeature, applyNameCarry, carryNames, detectFeatures, mergeNameCarry, prepareFeatures } from './features';
+import { type GeoFeature, detectFeatures, prepareFeatures } from './features';
 import type { Mesh } from './mesh';
 import { type PreviewPatch, previewPatch } from './preview-world';
 import { scriptsEnabled } from './script';
 import { resolveTerrain, shareTerrainBase, warmTerrainSteps } from './terrain';
-import { SLOTS } from './human/groups';
-import { applyPopFix, moveCells, populationFix } from './human/population';
-import { computePopLayers } from './human/layers';
 import { type Derived, type Settings, type World, createWorld, kmPerUnit, settingsSchema } from './world';
 import type { WorldDoc, Timings, EngineBase, DerivedState, DoneStep, Checkpoint, UndoneStep, DocTail, PreviewResult, ProvincesPreview } from './engine-types';
 import { type RecomputeState, recomputeDerived, warmWater } from './engine-recompute';
+import { type FixState, type WaterBefore, carryStepNames, fixLakeProvinces, fixPopulation, waterMask } from './engine-fixes';
 export { passStats } from './engine-recompute';
 import { UNDO_KEEP_STEPS, UNDO_RECORD_BYTES, droppedUndo, undoRecordBytes } from './undo-budget';
-import { onlyRestyled, drain, landAndFailing, provinceOnly, diffWorlds, undoDepth, UNDO_BYTES, keptBytes, sameContent, privatize, cloneWorld } from './engine-helpers';
+import { drain, landAndFailing, provinceOnly, diffWorlds, undoDepth, UNDO_BYTES, keptBytes, sameContent, privatize, cloneWorld } from './engine-helpers';
 export type { WorldDoc, Timings, EngineBase, Checkpoint, DocTail, PreviewExtras, PreviewResult, ProvincesPreview } from './engine-types';
 
 // 引擎：持有世界、命令历史与推导缓存。命令改原因 → 标记从哪层开始重算 → 流水线
@@ -134,6 +131,13 @@ export class Engine {
   // 整步要么生效要么不生效：命令本身做不了（applyCommand 已经复原了原因）、或者之后的重算出错，
   // 都回到执行前的样子（原因、推导、历史、重做记录、状态编号都与执行前相同）再把错误抛出去
   exec(cmd: Command): string {
+    return drain(this.execSteps(cmd));
+  }
+
+  // 同 exec，分阶段（第九十七轮）：重算的各步之间、生成人文的各步之间停一下（yield）。一口气走完（drain）与 exec 完全相同。
+  // 计算 Worker 在停着的地方让出线程、看看要不要取消：不要了就往里抛一个错（steps.throw）——和中途出错一样，整步不生效
+  // （落进下面的 catch、或者 applyCommandSteps 的 catch），世界、历史、重做记录都与执行前相同。撤销、重做、换一个同理
+  *execSteps(cmd: Command): Generator<void, string> {
     const adopted = this.adoptPreview(cmd);
     if (adopted !== null) {
       this.stateId = ++states;
@@ -143,7 +147,7 @@ export class Engine {
     const fresh = this.dirty === Dirty.None;
     const prev = this.world.derived.features;
     const water0 = this.waterMask();
-    const { summary } = this.applyOnly(cmd, true);
+    const { summary } = yield* this.applySteps(cmd, true);
     if (this.lastNoop) return summary;
     const stateBefore = this.stateId;
     this.stateId = ++states;
@@ -152,7 +156,7 @@ export class Engine {
     this.dropUndone();
     this.keepBefore(fresh);
     try {
-      this.update();
+      yield* this.updateSteps();
       if (fresh) this.carryNames(prev);
       this.fixLakeProvinces();
       this.fixPopulation(water0);
@@ -190,7 +194,16 @@ export class Engine {
   // skipNoop：什么都没改的命令不记进历史（重放存档时照旧记，历史与文件一一对应）。
   // changed：命令有没有改动原因或小数据
   private applyOnly(cmd: Command, skipNoop = false): { summary: string; changed: boolean; removed: RemovedItem[]; added: ContentRef[] } {
-    const r = applyCommand(this.world, cmd, { ensureDerived: () => this.update() });
+    return this.noteApplied(cmd, applyCommand(this.world, cmd, { ensureDerived: () => this.update() }), skipNoop);
+  }
+
+  // 同 applyOnly，分阶段（第九十七轮，见 commands.ts 的 applyCommandSteps：只有生成人文这类命令中间会停）
+  private *applySteps(cmd: Command, skipNoop = false): Generator<void, { summary: string; changed: boolean; removed: RemovedItem[]; added: ContentRef[] }> {
+    return this.noteApplied(cmd, yield* applyCommandSteps(this.world, cmd, { ensureDerived: () => this.update(), derivedSteps: () => this.updateSteps() }), skipNoop);
+  }
+
+  // 命令做完以后记进历史（applyOnly 的后半段，原样；同步的和分阶段的共用）
+  private noteApplied(cmd: Command, r: Applied, skipNoop: boolean): { summary: string; changed: boolean; removed: RemovedItem[]; added: ContentRef[] } {
     this.lastNoop = skipNoop && !r.changed;
     this.lastRemoved = r.removed;
     this.lastSkipped = r.skipped;
@@ -303,6 +316,11 @@ export class Engine {
 
   // 撤销：原因退回去；存着这一步之前的推导时直接换回（与重算逐值一致：推导只取决于原因），否则重算
   undo(): boolean {
+    return drain(this.undoSteps());
+  }
+
+  // 同 undo，分阶段（见 execSteps）
+  *undoSteps(): Generator<void, boolean> {
     this.lastPreview = null;
     const fresh = this.dirty === Dirty.None;
     const h = this.revertLast();
@@ -320,7 +338,7 @@ export class Engine {
     }
     this.undone.push(step);
     try {
-      this.update();
+      yield* this.updateSteps();
     } catch (e) {
       // 重算出错：这一步放回去（照原来的编号），推导从头重算（撤销之前的原因算过一次没出错）
       this.undone.pop();
@@ -338,6 +356,11 @@ export class Engine {
   // 重做：命令重新作用于原因（推导此时与原来执行前相同，生成的名字也相同）；存着这一步之后的推导时直接换回。
   // 出错时（命令做不了、重算出错）回到重做之前的样子，这一步留在重做记录里
   redo(): boolean {
+    return drain(this.redoSteps());
+  }
+
+  // 同 redo，分阶段（见 execSteps）
+  *redoSteps(): Generator<void, boolean> {
     this.lastPreview = null;
     const fresh = this.dirty === Dirty.None;
     const h = this.undone.pop();
@@ -351,7 +374,7 @@ export class Engine {
       this.stateId = stateBefore;
     };
     try {
-      this.applyOnly(h.cmd);
+      yield* this.applySteps(h.cmd);
     } catch (e) {
       h.state = after;
       putBack();
@@ -365,7 +388,7 @@ export class Engine {
       this.recomputed = Math.max(this.recomputed, step.dirty) as Dirty;
     } else this.keepBefore(fresh);
     try {
-      this.update();
+      yield* this.updateSteps();
       this.shareWithLast();
     } catch (e) {
       try {
@@ -383,6 +406,11 @@ export class Engine {
   // 撤掉的那一步之前的推导，就是新的一步之前的推导：留给新的一步撤销用。
   // 新命令做不了、或者重算出错：原来那一步放回去，世界、历史、重做记录都与换之前相同
   replaceLast(cmd: Command): string {
+    return drain(this.replaceLastSteps(cmd));
+  }
+
+  // 同 replaceLast，分阶段（见 execSteps）
+  *replaceLastSteps(cmd: Command): Generator<void, string> {
     this.lastPreview = null;
     const stateBefore = this.stateId;
     // 换之前看到的地物与小数据：新的一步按它们留名字（换掉的岛还叫原来的名字）
@@ -403,7 +431,7 @@ export class Engine {
     };
     let summary: string;
     try {
-      summary = this.applyOnly(cmd).summary;
+      summary = (yield* this.applySteps(cmd)).summary;
     } catch (e) {
       restore();
       throw e;
@@ -414,7 +442,7 @@ export class Engine {
     const step = this.done[this.done.length - 1];
     if (before && step.dirty > Dirty.Human) this.keep(step, before);
     try {
-      this.update();
+      yield* this.updateSteps();
       if (shown) this.carryNames(shown.features, shown.small);
       this.fixLakeProvinces();
       this.fixPopulation(water0);
@@ -434,77 +462,18 @@ export class Engine {
     return summary;
   }
 
-  // 名字跟着地方走（见 features.ts 的 carryNames）：最后一步重算之后，与这一步之前的地物 prev 比，
-  // 锚点挪了、名字被新出来的地物抢了的地物留着原来的名字，落不到地物上的改名挪过去。记进这一步的命令
-  // （重放、重做时照用，所以从头重放与一步一步编辑一字不差），再重新起名。只改名字、省份的步，没识别地物时不做
-  // prevSmall：prev 那时的小数据（副本），默认是这一步之前的
+  // 一步做完之后的三样整理（第九十七轮搬到 engine-fixes.ts）：名字跟着地方走、湖与陆地省份的整理、人口的修补
   private carryNames(prev: GeoFeature[], prevSmall?: SmallCopy) {
-    const step = this.done[this.done.length - 1];
-    if (!this.features || !step || step.dirty <= Dirty.None || !prev.length) return;
-    const w = this.world;
-    // 只重算了人文的几层（第二十二轮）：地物还是那些，名字变了的都是换了风格（当地的文化变了）的，起名的办法变了，
-    // 没有要留的名字（与整个比一遍的结果相同，省下三遍起名）
-    if (step.dirty === Dirty.Human && step.cmd.op !== 'batch' && onlyRestyled(prev, w.derived.features)) return;
-    const carry = carryNames(w, w.derived.features, restoreSmall(prevSmall ?? step.undo), prev);
-    if (!carry) return;
-    applyNameCarry(w.small, carry);
-    step.cmd = { ...step.cmd, nameCarry: mergeNameCarry(step.cmd.nameCarry, carry) };
-    this.dirty = Dirty.Names;
-    this.update();
+    carryStepNames(this as unknown as FixState, prev, prevSmall);
   }
-
-  // 湖与陆地省份的整理（见 provinces.ts 的 lakeProvinceFix）：这一步改了推导（放湖、删湖、湖干了、地形变了）之后，
-  // 按新的湖把格放进对的省份。结果记进这一步的命令（重放、重做时照用，不用推导）与撤销记录；省份不进推导，不用重算
   private fixLakeProvinces() {
-    const step = this.done[this.done.length - 1];
-    if (!step || step.dirty <= Dirty.None || step.cmd.provinceFix) return;
-    // 只画了人文（第二十二轮）：湖、陆海、岛的种类都没变，不用整理
-    if (step.dirty === Dirty.Human && step.cmd.op !== 'batch') return;
-    const w = this.world;
-    const before = w.causes.province.slice();
-    const fix = lakeProvinceFix(w, w.derived);
-    if (!fix) return;
-    addArrayUndo(step.undo, 'province', fix.cells, before);
-    step.cmd = { ...step.cmd, provinceFix: fix };
+    fixLakeProvinces(this as unknown as FixState);
   }
-
-  // 有人文时这一步之前的水面（海、湖）与宜居度（第八十四轮）：改了陆海、宜居度之后修补人口用（见 fixPopulation）
-  private waterMask(): { water: Uint8Array; hab: Float32Array } | null {
-    const w = this.world;
-    if (!w.small.human || !w.causes.popTotal) return null;
-    const n = w.mesh.n;
-    const land = w.causes.land;
-    const lake = w.derived.lake;
-    const out = new Uint8Array(n);
-    for (let i = 0; i < n; i++) if (!land[i] || lake[i] === 1) out[i] = 1;
-    return { water: out, hab: w.derived.habitability };
+  private waterMask(): WaterBefore | null {
+    return waterMask(this.world);
   }
-
-  // 人口的修补（第二十二轮，见 human/population.ts 的 populationFix）：这一步改了陆海、湖之后，变成水面的格没有人了，
-  // 新的干的陆地按宜居度补上人；第八十四轮：宜居度变了的地方一带的人按新的宜居度在本国里重新分（总数不变）。结果记进这一步的命令（popFix，重放、重做时照用）与撤销记录，再重算人文的几层与名字
-  private fixPopulation(water0: { water: Uint8Array; hab: Float32Array } | null) {
-    const step = this.done[this.done.length - 1];
-    const w = this.world;
-    if (!water0 || !step || step.dirty <= Dirty.Human || step.cmd.popFix || !w.small.human || !w.causes.popTotal) return;
-    const fix = populationFix(w, w.derived, water0.water, water0.hab);
-    if (!fix) return;
-    const c = w.causes;
-    const before = { t: c.popTotal!.slice(), g: fix.cells.length ? c.popGroup!.slice() : c.popGroup!, s: fix.cells.length ? c.popShare!.slice() : c.popShare! };
-    applyPopFix(w, fix);
-    const slots = fix.cells.flatMap((i) => Array.from({ length: SLOTS }, (_, k) => i * SLOTS + k));
-    addArrayUndo(step.undo, 'popTotal', fix.moves ? [...new Set([...fix.cells, ...moveCells(fix.moves)])].sort((a, b) => a - b) : fix.cells, before.t);
-    if (fix.cells.length) {
-      addArrayUndo(step.undo, 'popGroup', slots, before.g);
-      addArrayUndo(step.undo, 'popShare', slots, before.s);
-    }
-    step.cmd = { ...step.cmd, popFix: fix };
-    // 第八十四轮：只挪了人数（成分、陆海都没变）时只重算人口的几层（地名、国家的一层不看人数），不再走一遍人文
-    if (!fix.cells.length) {
-      computePopLayers(w, w.derived);
-      return;
-    }
-    this.dirty = Dirty.Human;
-    this.update();
+  private fixPopulation(water0: WaterBefore | null) {
+    fixPopulation(this as unknown as FixState, water0);
   }
 
   // 推导里的数组发出去了（Worker 只发变了的数组，按引用比较上一次发的）：之后重算不能就地改它们，先复制

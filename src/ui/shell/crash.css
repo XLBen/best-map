@@ -47,14 +47,11 @@
   padding-right: 2px;
 }
 
-/* 启动时中间那一块上的“停止” */
+/* 启动时中间那一块：一行（第九十七轮起里面是 shell/BusyLine.tsx，样式在 progress.css） */
 .loading {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-}
-.wizard-stop {
-  justify-content: flex-end;
 }
 
 /* 地图的画面暂时不可用、恢复不了：盖在地图中间 */

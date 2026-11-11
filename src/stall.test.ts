@@ -92,4 +92,35 @@ describe('多久没应答就给“停止”', () => {
     clock.advance(1500);
     expect(seen).toEqual([true, false, true]);
   });
+
+  it('第九十七轮：“走到哪一步了”的消息也算它还活着——一步一步往下说着的不算卡住；一步里停了 5 秒才算', () => {
+    const { clock, seen, stall } = setup();
+    stall.set(1);
+    for (let k = 0; k < 10; k++) {
+      clock.advance(2000);
+      stall.progress();
+    }
+    expect(seen).toEqual([]);
+    clock.advance(STOP_AFTER_MS + 100);
+    expect(seen).toEqual([true]);
+  });
+
+  it('要等多久可以是一个函数（测试里改短）：很短时看得勤一些', () => {
+    const clock = new FakeClock();
+    const seen: boolean[] = [];
+    let ms = 40;
+    const stall = new Stall(clock, (on) => seen.push(on), () => ms);
+    stall.set(1);
+    clock.advance(30);
+    expect(seen).toEqual([]);
+    clock.advance(30);
+    expect(seen).toEqual([true]);
+    stall.set(0);
+    ms = STOP_AFTER_MS;
+    stall.set(1);
+    clock.advance(STOP_AFTER_MS - 600);
+    expect(seen).toEqual([true, false]);
+    clock.advance(700);
+    expect(seen).toEqual([true, false, true]);
+  });
 });

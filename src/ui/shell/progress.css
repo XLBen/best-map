@@ -1,0 +1,44 @@
+/* 第九十七轮：久的一步的进度——步名、一条连续的进度条、“取消”（shell/BusyLine.tsx）。
+   顶上的提示条、启动时中间那一块、新建向导里是同一个 */
+
+.progress-bar {
+  flex: none;
+  display: block;
+  width: 120px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--press);
+  overflow: hidden;
+}
+.progress-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  /* 每 0.1 秒给一个新的长度，中间匀着走：看上去是连续的 */
+  transition: width 0.15s linear;
+}
+/* 步名一步一步换，字数不一样：留出一样的宽，提示条不跟着忽宽忽窄 */
+.busy-text.long {
+  min-width: 10em;
+}
+.loading .progress-bar {
+  width: 160px;
+}
+/* 新建向导里：一行，靠右是“取消” */
+.wizard-busy {
+  align-items: center;
+  gap: var(--sp-2);
+}
+.wizard-busy .progress-bar {
+  flex: 1;
+  width: auto;
+}
+/* 向导里：顶上提示条说的那一句（向导挡着它） */
+.wizard-note {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-md);
+}
+.wizard-note.error {
+  color: var(--danger-text);
+}

@@ -1,6 +1,6 @@
 import type { Command } from '../core/commands';
 import type { DocTail, WorldDoc } from '../core/engine';
-import type { MirrorLog, Request, Response, ScriptPing } from './protocol';
+import type { MirrorLog, Request, Response, ScriptPing, StagePing } from './protocol';
 
 // 计算 Worker 的看护（第三批）：用户写的脚本只在 Worker 里跑，可能卡死、把 Worker 弄崩。主线程这边：
 // - 看门狗：只在脚本运行期间计时（Worker 进入脚本、每 250 毫秒报一次平安、算完时各发一条消息），
@@ -21,6 +21,9 @@ import type { MirrorLog, Request, Response, ScriptPing } from './protocol';
 // - 第九十六轮：不是脚本的请求也能停（stopAny）：算得久、卡住了都一样——停掉 Worker，世界用命令记录回到这一步之前；
 //   正在新建、打开的被停下时不换安全模式再开（不是脚本的事），原来有世界就回到原来的世界。
 //   消息解不出来（onmessageerror）当作 Worker 坏了，和崩了走同一条路
+// - 第九十七轮：带提示的一步走到哪了（Worker 发来的 stage，和脚本的那一条同一条路）交给界面；
+//   “取消”先试轻的（cancelEdits）：请 Worker 在阶段之间自己停下，世界原样退回、Worker 不换；它回的 soft 只有这里确实要过才作数。
+//   新建、打开，和已经几秒没动静的，还是 stopAny
 // 不碰 DOM、不碰信号：时钟、Worker 都可以换成假的（见 sandbox.test.ts）
 
 // ---------- 时钟 ----------
@@ -117,14 +120,19 @@ export class Watchdog {
 
 const LABEL_MAX = 60;
 const ERROR_MAX = 2000;
+// 一步的名字、第几步的上限（第九十七轮）：名字是程序里写死的短词，命令最多几万条
+const STEP_MAX = 40;
+const COUNT_MAX = 10_000_000;
 
 export type WorkerMessage =
   | { type: 'reply'; reply: Response }
   | { type: 'script'; ping: ScriptPing }
   // 写好了一个检查点（已经发给存储 Worker）：写的时候的纪元、每一步的编号（与命令记录比）
-  | { type: 'checkpoint'; epoch: number; ids: number[] };
+  | { type: 'checkpoint'; epoch: number; ids: number[] }
+  // 带提示的一步走到哪了（第九十七轮）
+  | { type: 'stage'; ping: StagePing };
 
-// 只认三种：带 id 的回复、脚本的进入 / 平安 / 算完、写好检查点的通知。别的（包括脚本自己伪造的怪消息）一律不要。
+// 只认四种：带 id 的回复、脚本的进入 / 平安 / 算完、写好检查点的通知、走到哪一步了。别的（包括脚本自己伪造的怪消息）一律不要。
 // 招呼（hello）由开 Worker 的那一层（engine-spawn.ts）收，到不了这里
 export function readWorkerMessage(data: unknown): WorkerMessage | null {
   if (data === null || typeof data !== 'object' || Array.isArray(data)) return null;
@@ -139,8 +147,14 @@ export function readWorkerMessage(data: unknown): WorkerMessage | null {
     if (typeof m.label !== 'string') return null;
     return { type: 'script', ping: { kind: 'script', phase: m.phase, label: m.label.slice(0, LABEL_MAX) } };
   }
+  if (m.kind === 'stage') {
+    const count = (x: unknown): x is number => typeof x === 'number' && Number.isSafeInteger(x) && x >= 0 && x <= COUNT_MAX;
+    if (typeof m.req !== 'number' || !Number.isSafeInteger(m.req) || typeof m.step !== 'string' || !m.step || !count(m.k) || !count(m.n) || m.k > m.n) return null;
+    return { type: 'stage', ping: { kind: 'stage', req: m.req, step: m.step.slice(0, STEP_MAX), k: m.k, n: m.n, ...(m.inner === true ? { inner: true } : {}) } };
+  }
   if (typeof m.id !== 'number' || !Number.isSafeInteger(m.id) || typeof m.ok !== 'boolean') return null;
-  if (!m.ok) return { type: 'reply', reply: { id: m.id, ok: false, error: typeof m.error === 'string' ? m.error.slice(0, ERROR_MAX) : '计算出错' } };
+  // soft（第九十七轮）：计算程序说这一步是它自己在阶段之间停下的。作不作数由 EngineHost 看（它要过才算）
+  if (!m.ok) return { type: 'reply', reply: { id: m.id, ok: false, error: typeof m.error === 'string' ? m.error.slice(0, ERROR_MAX) : '计算出错', ...(m.soft === true ? { soft: true } : {}) } };
   return { type: 'reply', reply: m as unknown as Response };
 }
 
@@ -251,6 +265,8 @@ export interface HostEvents {
   failed?(message: string): void;
   // 恢复到一半不恢复了：打开了别的世界（换模式另开了 Worker），或者恢复用的 Worker 也出了事、另行处理
   abandoned?(): void;
+  // 第九十七轮：一个还在等的请求走到哪一步了（req 是那个请求；恢复世界时自己发的打开也说）
+  stage?(ping: StagePing, req: Request): void;
 }
 
 export interface HostOptions {
@@ -266,13 +282,15 @@ export interface HostOptions {
 // cancelled：用户停下了不是脚本的请求（第九十六轮）
 type Why = 'hang' | 'stopped' | 'crash' | 'cancelled';
 
-// 用户停下了不是脚本的请求时说的话：有世界时回到了这一步之前；还没有世界（启动时打开上次的世界）只说停了
-export const STOPPED_BACK = '已停止，回到了这一步之前';
-export const STOPPED_ONLY = '已停止';
+// 用户取消了不是脚本的请求时说的话（第九十七轮起叫“取消”，和进度条旁的按钮一个说法；第九十六轮叫“停止”）：
+// 有世界时回到了这一步之前；取消的是新建、打开时回到了原来的世界；还没有世界（启动时打开上次的世界）只说取消了
+export const STOPPED_BACK = '已取消，世界回到了这一步之前';
+export const STOPPED_WORLD = '已取消，回到了原来的世界';
+export const STOPPED_ONLY = '已取消';
 
-// 给用户的话。world：有世界要恢复（恢复后重做记录就没了）；step：有在等的请求（这一步没做）
-function stoppedText(why: Why, label: string | null, world = true, step = true): string {
-  if (why === 'cancelled') return world ? STOPPED_BACK : STOPPED_ONLY;
+// 给用户的话。world：有世界要恢复（恢复后重做记录就没了）；step：有在等的请求（这一步没做）；opening：停下的是新建、打开
+function stoppedText(why: Why, label: string | null, world = true, step = true, opening = false): string {
+  if (why === 'cancelled') return world ? (opening ? STOPPED_WORLD : STOPPED_BACK) : STOPPED_ONLY;
   const who = label ? `“${label}”的脚本` : '脚本';
   const head = why === 'hang' ? `${who}超过 4 秒没算完，已停止` : why === 'stopped' ? `已停止${who}` : '计算程序没有响应';
   return `${head}${step ? '，这一步没做' : ''}${world ? '。重做记录已清空' : ''}`;
@@ -300,6 +318,8 @@ interface Pending {
 export const CANCELLED = 0;
 
 const opens = (req: Request) => req.kind === 'init' || req.kind === 'load';
+// 能请计算程序自己在阶段之间停下的（第九十七轮）：改动世界的一步
+const edits = (req: Request) => req.kind === 'exec' || req.kind === 'undo' || req.kind === 'redo' || req.kind === 'replaceLast';
 
 export class EngineHost {
   private worker: WorkerLike | null = null;
@@ -327,6 +347,8 @@ export class EngineHost {
   private held = false;
   // 最近一次新建、打开时交给当前 Worker 的存储通道的编号（没有时为 null：不写检查点）
   private storeToken: number | null = null;
+  // 第九十七轮：请当前 Worker 取消了编号不超过它的改动（没要过时为 0）。Worker 回的 soft 只对这些请求作数
+  private softUpTo = 0;
 
   constructor(
     private readonly spawnWorker: () => WorkerLike,
@@ -393,16 +415,35 @@ export class EngineHost {
 
   // 第九十六轮：界面上的“停止”不只停脚本——有请求在等就能停（算得久、卡住了都一样）。
   // 正在跑脚本时和 stop() 一样；别的：停掉 Worker，在等的请求都回 {ok:false, stopped:true}，有世界就用命令记录回到这一步之前
+  // 第九十七轮：正在新建、打开时点的“取消”是不要这个世界了——哪怕那一刻正好有脚本在跑，也不当成“停下脚本”
+  // （那条路会换安全模式把它接着打开）
   stopAny(): boolean {
     if (!this.worker) return false;
     const label = this.watchdog.running;
-    if (label !== null) {
+    if (label !== null && !this.opening) {
       this.recover('stopped', label);
       return true;
     }
     if (!this.pending.size) return false;
     this.recover('cancelled', null);
     return true;
+  }
+
+  // 第九十七轮：“取消”轻的那一种——请计算程序在下一个阶段之间自己停下：正在算的那一步原样退回（引擎照“中途出错”的路，
+  // 重做记录还在），排着的改动不算了，都回 {ok:false, stopped:true, soft:true}；Worker 还是那一个，不用恢复。
+  // 只管改动世界的请求（执行、撤销、重做、换一个）；没有这样的在等时返回 false。它正卡在一个阶段里时听不到——
+  // 调用方看它多久没动静（stall.ts），到时候改用 stopAny
+  cancelEdits(): boolean {
+    if (!this.worker || ![...this.pending.values()].some((p) => edits(p.req))) return false;
+    this.softUpTo = this.nextId - 1;
+    this.post({ kind: 'cancel', upTo: this.softUpTo }, () => {}, true);
+    return true;
+  }
+
+  // 有没有新建、打开还没回复（不算恢复时自己发的）
+  get opening(): boolean {
+    for (const p of this.pending.values()) if (opens(p.req) && !p.internal) return true;
+    return false;
   }
 
   // 有没有发出去还没回复的请求（恢复时自己发的也算）
@@ -429,6 +470,7 @@ export class EngineHost {
     this.ranScripts = false;
     this.held = false;
     this.storeToken = null;
+    this.softUpTo = 0;
     return w;
   }
 
@@ -461,6 +503,11 @@ export class EngineHost {
       this.watchdog.ping(m.ping.phase, m.ping.label);
       return;
     }
+    if (m.type === 'stage') {
+      const at = this.pending.get(m.ping.req);
+      if (at) this.events.stage?.(m.ping, at.req);
+      return;
+    }
     if (m.type === 'checkpoint') {
       // 消息按顺序到：写检查点之前的回复（带着命令记录）都已经收到，步号此刻应当与命令记录一模一样
       const token = this.storeToken;
@@ -480,6 +527,13 @@ export class EngineHost {
         this.mirrorSafe = this.safe;
         this.mirrorReason = this.safeReason;
       }
+    }
+    // 计算程序说这一步是它自己停下的：只有这里确实要过（cancelEdits）、而且是改动世界的一步才作数——标成用户取消的；
+    // 不然只当一条普通的出错（脚本伪造不出“被取消了”）
+    if (!r.ok && r.soft) {
+      const asked = r.id <= this.softUpTo && edits(p.req);
+      p.done(asked ? { id: r.id, ok: false, error: STOPPED_BACK, stopped: true, soft: true } : { id: r.id, ok: false, error: r.error });
+      return;
     }
     p.done(r);
     // 换模式另开的 Worker 第一次打开就失败了：它里面没有世界，原来的世界只在命令记录里，按原来的模式打开回来
@@ -517,7 +571,7 @@ export class EngineHost {
     const doc = this.mirror.doc();
     const waiting = [...this.pending.values()];
     this.pending.clear();
-    const message = stoppedText(why, label, doc !== null, waiting.length > 0);
+    const message = stoppedText(why, label, doc !== null, waiting.length > 0, waiting.some((p) => opens(p.req) && !p.internal));
     const reason = safeReasonText(why, label);
     const wasSafe = this.safe;
     const quiet = this.quiet;

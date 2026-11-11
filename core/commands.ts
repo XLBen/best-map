@@ -11,6 +11,7 @@ import { allKinds, itemId, itemName, kindOf } from './content/registry';
 import { originTarget, recordedOrigin, setOrigin, tidyOrigins } from './content/origin';
 import { type ContentRef, refName, removeCommand, unusedContent } from './content/unused';
 import { CommandError } from './errors';
+import { drain } from './progress';
 import { applyNameCarry } from './features';
 import { applyPopFix, moveCells } from './human/population';
 import { retitle, titleBefore } from './human/retitle';
@@ -21,7 +22,7 @@ import { resolveTerrain } from './terrain';
 import type { SmallState, World } from './world';
 import { type ApplyContext, type ArrayKey, AUTO_ARRAYS, Dirty, formatIssues, getArray, HUMAN_ARRAYS, POP_ARRAYS, type RemovedItem, type RunResult, type UndoRecord } from './commands/shared';
 import { runFeatureOp } from './commands/features';
-import { runHumanOp } from './commands/human';
+import { isHumanGen, runHumanGenSteps, runHumanOp } from './commands/human';
 import { runNatureOp } from './commands/nature';
 import { runProvinceOp } from './commands/provinces';
 import { runSettlementOp } from './commands/settlements';
@@ -153,11 +154,7 @@ function contentDiff(world: World, before: ContentBefore, originBefore: SmallSta
 // changed：命令有没有改动原因或小数据（没改动时推导也不会变）。
 // provinceNames：这一步新起的省名。起名要看推导（河、山、冷暖），重放时推导还没算到这一步，起出来的名字可能
 // 与当时不同，所以记进命令；命令里记着的就照用（没有记的：这一步没有新起的省名）
-export function applyCommand(
-  world: World,
-  input: Command,
-  ctx: ApplyContext,
-): {
+export interface Applied {
   dirty: Dirty;
   summary: string;
   undo: UndoRecord;
@@ -171,7 +168,39 @@ export function applyCommand(
   added: ContentRef[];
   // 第三十轮：缺了内容跳过的步骤（“没有城市等级：没有放城市和道路”……），界面显示一次
   skipped: string[];
-} {
+}
+export function applyCommand(world: World, input: Command, ctx: ApplyContext): Applied {
+  const a = beginApply(world, input);
+  let result: RunResult;
+  try {
+    result = settleApply(world, a, run(world, a.cmd, ctx));
+  } catch (e) {
+    failApply(world, a);
+    throw e;
+  }
+  return finishApply(world, a, result);
+}
+
+// 同 applyCommand，分阶段（第九十七轮）：分阶段的命令（生成人文、国家，见 commands/human.ts 的 runHumanGenSteps）每一步之间停一下（yield），
+// 别的命令一步走完、中间不停。一口气走完（drain）与 applyCommand 完全相同（两个都只是下面四段的壳）。
+// 停着的时候不要了：往里抛一个错（steps.throw）——和命令做不了一样落进下面的 catch，原因、小数据原样退回，再把这个错抛出去
+export function* applyCommandSteps(world: World, input: Command, ctx: ApplyContext): Generator<void, Applied> {
+  const a = beginApply(world, input);
+  let result: RunResult;
+  try {
+    result = settleApply(world, a, stepped(a.cmd) ? yield* runSteps(world, a.cmd, ctx) : run(world, a.cmd, ctx));
+  } catch (e) {
+    failApply(world, a);
+    throw e;
+  }
+  return finishApply(world, a, result);
+}
+
+// applyCommand 的四段（第九十七轮从它的身子原样拆出来，先后不变）：开头（校验、记下之前的样子）、命令做完之后（国名、城市、记着的名字与整理）、
+// 做不成时（原样放回）、收尾（撤销记录、内容的增减）。拆开是为了同步的 applyCommand 和分阶段的 applyCommandSteps 共用同一份、
+// 而重的活都在普通函数里（不在生成器里）
+type Applying = ReturnType<typeof beginApply>;
+function beginApply(world: World, input: Command) {
   const { provinceNames: stored, provinceOrig: storedOrig, nameCarry: carryInput, provinceFix: fixInput, popFix: popInput, ...raw } = input;
   const carry = carryInput === undefined ? undefined : nameCarrySchema.safeParse(carryInput);
   if (carry && !carry.success) throw new CommandError(`命令里的地名无效：${formatIssues(carry.error)}`);
@@ -203,39 +232,47 @@ export function applyCommand(
   const originBefore = world.small.origin;
   // 第九十一轮：称号会读的内容（政体的称号、等级的高低、文化的倾向……）这一步换了时，没手改过的国名、统治者的称号跟着换（human/retitle.ts）
   const titlesBefore = world.small.countries ? titleBefore(world.small) : null;
-  let result: RunResult;
-  try {
-    result = run(world, cmd, ctx);
-    // 国名变了：和手改国名一样重算人文的几层与名字
-    if (titlesBefore && retitle(world, titlesBefore) && result.dirty < Dirty.Human) result = { ...result, dirty: Dirty.Human };
-    // 第二十四轮：有城市时每步之后整理（首都格上有城市、挂着连着的城市还在）
-    if (world.small.cities) tidyCities(world);
-    if (stored) {
-      for (const [id, name] of Object.entries(stored)) {
-        const p = world.small.provinces[Number(id)];
-        if (!p || idsBefore.has(id)) continue;
-        p.name = name;
-        // 原文跟着记下的名字（没记原文的名字没有原文）
-        const orig = storedOrig?.[id];
-        if (orig) p.orig = orig;
-        else delete p.orig;
-      }
+  return { stored, storedOrig, nameCarry, provinceFix, popFix, cmd, keys, before, smallBefore, fieldsBefore, heightsBefore, fragmentBefore, humanBefore, idsBefore, contentBefore, originBefore, titlesBefore };
+}
+
+function settleApply(world: World, a: Applying, result: RunResult): RunResult {
+  const { stored, storedOrig, nameCarry, provinceFix, popFix, idsBefore, titlesBefore } = a;
+  // 国名变了：和手改国名一样重算人文的几层与名字
+  if (titlesBefore && retitle(world, titlesBefore) && result.dirty < Dirty.Human) result = { ...result, dirty: Dirty.Human };
+  // 第二十四轮：有城市时每步之后整理（首都格上有城市、挂着连着的城市还在）
+  if (world.small.cities) tidyCities(world);
+  if (stored) {
+    for (const [id, name] of Object.entries(stored)) {
+      const p = world.small.provinces[Number(id)];
+      if (!p || idsBefore.has(id)) continue;
+      p.name = name;
+      // 原文跟着记下的名字（没记原文的名字没有原文）
+      const orig = storedOrig?.[id];
+      if (orig) p.orig = orig;
+      else delete p.orig;
     }
-    if (nameCarry) applyNameCarry(world.small, nameCarry);
-    if (provinceFix) applyProvinceFix(world, provinceFix);
-    if (popFix) applyPopFix(world, popFix);
-    // 第二十九轮：不在世界里了的项，来源一起去掉
-    tidyOrigins(world);
-  } catch (e) {
-    // 失败时恢复，保证命令要么完整生效要么不生效
-    keys.forEach((k, idx) => getArray(world, k)!.set(before[idx]));
-    world.small = restoreSmall(smallBefore);
-    world.causes.fields = fieldsBefore;
-    if (!heightsBefore) delete world.causes.islandHeight;
-    if (!fragmentBefore) delete world.causes.fragment;
-    for (const k of HUMAN_ARRAYS) if (!humanBefore.includes(k)) delete world.causes[k];
-    throw e;
   }
+  if (nameCarry) applyNameCarry(world.small, nameCarry);
+  if (provinceFix) applyProvinceFix(world, provinceFix);
+  if (popFix) applyPopFix(world, popFix);
+  // 第二十九轮：不在世界里了的项，来源一起去掉
+  tidyOrigins(world);
+  return result;
+}
+
+function failApply(world: World, a: Applying): void {
+  const { keys, before, smallBefore, fieldsBefore, heightsBefore, fragmentBefore, humanBefore } = a;
+  // 失败时恢复，保证命令要么完整生效要么不生效
+  keys.forEach((k, idx) => getArray(world, k)!.set(before[idx]));
+  world.small = restoreSmall(smallBefore);
+  world.causes.fields = fieldsBefore;
+  if (!heightsBefore) delete world.causes.islandHeight;
+  if (!fragmentBefore) delete world.causes.fragment;
+  for (const k of HUMAN_ARRAYS) if (!humanBefore.includes(k)) delete world.causes[k];
+}
+
+function finishApply(world: World, a: Applying, result: RunResult): Applied {
+  const { provinceFix, keys, before, smallBefore, fieldsBefore, heightsBefore, fragmentBefore, humanBefore, idsBefore, contentBefore, originBefore } = a;
   const undo: UndoRecord = { arrays: [], fields: [], ...smallBefore };
   if (!heightsBefore && world.causes.islandHeight) undo.dropHeights = true;
   if (!fragmentBefore && world.causes.fragment) undo.dropFragment = true;
@@ -309,11 +346,36 @@ export function revert(world: World, undo: UndoRecord) {
 }
 
 function run(world: World, cmd: Command, ctx: ApplyContext): RunResult {
-  const r = runOp(world, cmd, ctx);
+  return stamped(world, cmd, runOp(world, cmd, ctx));
+}
+
+// 带 from 的启用命令执行完记下来源
+function stamped(world: World, cmd: Command, r: RunResult): RunResult {
   const from = (cmd as { from?: string[] }).from;
   const target = from ? originTarget(cmd) : null;
   if (target) setOrigin(world.small, target.kind, target.id, from!, (cmd as { fromId?: string }).fromId);
   return r;
+}
+
+// 分阶段的命令（第九十七轮）：生成、重新生成人文和国家，或者里面有这样一条的批量。别的命令照旧一步走完（run）
+const stepped = (cmd: Command): boolean => (cmd.op === 'batch' ? cmd.commands.some(stepped) : isHumanGen(cmd));
+function* runSteps(world: World, cmd: Command, ctx: ApplyContext): Generator<void, RunResult> {
+  if (cmd.op === 'batch') return stamped(world, cmd, yield* runBatchSteps(world, cmd, ctx));
+  if (isHumanGen(cmd)) return stamped(world, cmd, (yield* runHumanGenSteps(world, cmd, ctx)) as RunResult);
+  return run(world, cmd, ctx);
+}
+
+// 批量：一条一条执行；里面分阶段的那一条走分阶段的路（两条之间不另外停）
+function* runBatchSteps(world: World, cmd: Extract<Command, { op: 'batch' }>, ctx: ApplyContext): Generator<void, RunResult> {
+  let dirty: Dirty = Dirty.None;
+  const skipped: string[] = [];
+  const inner = { ...ctx, inBatch: true };
+  for (const c of cmd.commands) {
+    const r = stepped(c) ? yield* runSteps(world, c, inner) : run(world, c, inner);
+    dirty = Math.max(dirty, r.dirty) as Dirty;
+    for (const x of r.skipped ?? []) if (!skipped.includes(x)) skipped.push(x);
+  }
+  return { dirty, summary: cmd.label ?? `批量 · ${cmd.commands.length} 条`, ...(skipped.length ? { skipped } : {}) };
 }
 
 // 整理本世界（tidy_content）：逐项用“移出”的那条命令（与资源库里移出一样：生态、河湖的种类、场照旧的删法，其余 set_content）
@@ -334,17 +396,8 @@ function tidyContent(world: World, items: readonly ContentRef[] | undefined, ctx
 
 function runOp(world: World, cmd: Command, ctx: ApplyContext): RunResult {
   switch (cmd.op) {
-    case 'batch': {
-      let dirty: Dirty = Dirty.None;
-      const skipped: string[] = [];
-      const inner = { ...ctx, inBatch: true };
-      for (const c of cmd.commands) {
-        const r = run(world, c, inner);
-        dirty = Math.max(dirty, r.dirty) as Dirty;
-        for (const x of r.skipped ?? []) if (!skipped.includes(x)) skipped.push(x);
-      }
-      return { dirty, summary: cmd.label ?? `批量 · ${cmd.commands.length} 条`, ...(skipped.length ? { skipped } : {}) };
-    }
+    case 'batch':
+      return drain(runBatchSteps(world, cmd, ctx));
     case 'tidy_content':
       return tidyContent(world, cmd.items, ctx);
   }

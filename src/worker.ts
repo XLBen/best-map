@@ -8,12 +8,14 @@ import { planetFormIssues, previewTerrain } from '../core/terrain';
 import { renderThumbnail } from '../core/thumbnail';
 import type { Mesh } from '../core/mesh';
 import { type PackedMesh, unpackMesh } from '../core/mesh-pack';
+import { setStageSink } from '../core/progress';
 import { setScriptHost, setScriptsEnabled } from '../core/script';
 import { type Settings, buildMeshFor, meshKey, settingsSchema } from '../core/world';
 import { probeIsolation } from './isolation-probe';
 import type { CheckpointPut, TakeReply } from './checkpoint-store';
-import type { CheckpointReady, Hello, MirrorLog, Request, Response, ScriptPing } from './protocol';
+import type { CheckpointReady, Hello, MirrorLog, Request, Response, ScriptPing, StagePing } from './protocol';
 import { SnapshotSender } from './worker-snapshot';
+import { REPLAY_PING_MS, Stopped, channelRest, runSteps } from './worker-steps';
 
 // 计算 Worker：持有引擎；每次状态变化后把原因与推导的副本发回主线程。
 // 用户的脚本在这里跑：主线程尽量从 data: 地址开它（不透明的来源，页面的 CSP 管着），这样脚本读不到这个浏览器里
@@ -56,6 +58,23 @@ setScriptHost({
     scriptLabel = '';
   },
 });
+
+// ---------- 到哪一步了（第九十七轮，见 core/progress.ts） ----------
+// 带提示的一步（新建、打开、执行、撤销、重做、换一个）在做的时候，流水线、生成人文的各步开头各发一条；别的（预览、缩略图、整理的计划、
+// 写检查点时的重算、空闲预热）不发。只是多发几条消息，不改任何计算
+// stageJob：正在做的那个请求的编号（0：没有，不发）。stageInner：正在重放命令，里面的小步只当名字
+let stageJob = 0;
+let stageInner = false;
+function stage(step: string, k: number, n: number) {
+  if (stageJob) post({ kind: 'stage', req: stageJob, step, k, n, ...(stageInner ? { inner: true } : {}) });
+}
+setStageSink(stage);
+
+// ---------- 取消（第九十七轮，见 worker-steps.ts） ----------
+// 主线程说“编号不超过 cancelUpTo 的那几步不要了”：正在算的在下一个阶段之间停下，排着的轮到时不算
+let cancelUpTo = 0;
+const rest = channelRest();
+const paced = <R>(id: number, steps: Generator<void, R>) => runSteps(steps, () => id <= cancelUpTo, { now: () => performance.now(), rest });
 
 // ---------- 主线程保存的命令记录 ----------
 // 每次改动世界的回复都带上上次送到主线程以来变了的命令；引擎换了一个（新建、打开）时纪元加一、从头发（from 为 0），
@@ -186,7 +205,7 @@ function restore(cp: Checkpoint | null, doc: WorldDoc, mesh: Mesh): Engine | nul
   }
 }
 
-function post(msg: Hello | CheckpointReady | ScriptPing) {
+function post(msg: Hello | CheckpointReady | ScriptPing | StagePing) {
   (self as DedicatedWorkerGlobalScope).postMessage(msg);
 }
 
@@ -293,6 +312,12 @@ self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => {
     reply({ id, ok: true });
     return;
   }
+  // 第九十七轮：不要正在算的这一步了。同样立即回复；正在算的那一步下一次让出线程回来时看到（worker-steps.ts）
+  if (req.kind === 'cancel') {
+    if (Number.isSafeInteger(req.upTo)) cancelUpTo = Math.max(cancelUpTo, req.upTo);
+    reply({ id, ok: true });
+    return;
+  }
   queue(() => handle(id, req));
 };
 
@@ -302,7 +327,12 @@ self.onmessageerror = () => {
   throw new Error('计算程序收到的消息解不出来');
 };
 
+// 带提示、要说到哪一步了的请求
+const STAGED = new Set<Request['kind']>(['init', 'load', 'exec', 'undo', 'redo', 'replaceLast']);
+
 async function handle(id: number, req: Request) {
+  stageJob = STAGED.has(req.kind) ? id : 0;
+  stageInner = false;
   try {
     // light：这一步只重算了名字（或什么都没重算）时发轻快照。fresh：新建、打开（带上是不是安全模式）
     // regen（第九十轮）：新建、打开、撤销、重做的回复带上“上一次生成时的内容”（只带和现在不一样的项，见 core/regen-base.ts）；
@@ -319,6 +349,7 @@ async function handle(id: number, req: Request) {
       case 'init': {
         useSafeMode(req.safe);
         useStore(req.build, safeMode ? null : req.store);
+        stage('mesh', 1, 1);
         const e = new Engine(req.settings, meshFor(req.settings));
         // 第三十轮：新建时缺了内容跳过的步骤（没勾基础、自然、地名……）也回给界面，说一次
         const skipped: string[] = [];
@@ -337,9 +368,11 @@ async function handle(id: number, req: Request) {
         useStore(req.build, safeMode ? null : req.store);
         // 先收存储 Worker 发来的检查点和网格（存着这个世界的网格时不必再建）
         const got = await receiveCheckpoint(store);
+        stage('mesh', 1, 1);
         const mesh = meshFor(req.doc.settings, got.mesh);
+        if (got.cp && BUILD && !safeMode) stage('restore', 1, 1);
         const restored = restore(got.cp, req.doc, mesh);
-        useEngine(restored ?? Engine.fromDoc(req.doc, mesh));
+        useEngine(restored ?? replay(req.doc, mesh));
         withSnap('已打开世界文件', false, true);
         if (restored) ckKey = restored.stepIds().join(',');
         // 恢复的世界还没有任何缓存（网格是新的）：先发快照让地图显示出来，再在空闲时预热（下一次改地形就不必等）
@@ -347,7 +380,7 @@ async function handle(id: number, req: Request) {
         return;
       }
       case 'exec': {
-        const summary = engine!.exec(req.cmd);
+        const summary = await paced(id, engine!.execSteps(req.cmd));
         // 什么都没改（比如在陆地上画陆地）：世界不变，不发快照（命令记录也没变）
         // 第三十轮：缺了内容跳过的步骤也回给界面（显示一次）
         const skipped = engine!.lastSkipped;
@@ -357,11 +390,11 @@ async function handle(id: number, req: Request) {
         return;
       }
       case 'undo':
-        engine!.undo();
+        await paced(id, engine!.undoSteps());
         withSnap('撤销', true, false, undefined, undefined, true);
         return;
       case 'redo':
-        engine!.redo();
+        await paced(id, engine!.redoSteps());
         withSnap('重做', true, false, undefined, undefined, true);
         return;
       case 'previewWorld': {
@@ -394,6 +427,7 @@ async function handle(id: number, req: Request) {
         }
       }
       case 'cancelPreview':
+      case 'cancel':
         reply({ id, ok: true });
         return;
       case 'preview':
@@ -413,7 +447,7 @@ async function handle(id: number, req: Request) {
         return;
       }
       case 'replaceLast':
-        withSnap(engine!.replaceLast(req.cmd), true);
+        withSnap(await paced(id, engine!.replaceLastSteps(req.cmd)), true);
         return;
       case 'doc':
         reply({ id, ok: true, doc: engine!.toDoc() });
@@ -449,6 +483,33 @@ async function handle(id: number, req: Request) {
       }
     }
   } catch (e) {
-    reply({ id, ok: false, error: (e as Error).message });
+    // 用户不要这一步了（引擎已经把世界退回这一步之前）：不是出错，标上 soft
+    if (e instanceof Stopped) reply({ id, ok: false, error: e.message, soft: true });
+    else reply({ id, ok: false, error: (e as Error).message });
+  } finally {
+    stageJob = 0;
+    stageInner = false;
   }
+}
+
+// 重放命令打开世界（没有检查点、对不上时）：每做完一条说一声“第几条 / 共几条”（最多每 REPLAY_PING_MS 一次）；
+// 重放期间里面的小步（流水线、生成人文的各步）只当名字；最后那一次重算是照常的几步
+function replay(doc: WorldDoc, mesh: Mesh): Engine {
+  const n = doc.commands.length;
+  if (!n) return Engine.fromDoc(doc, mesh);
+  let at = -Infinity;
+  const say = (k: number) => {
+    stageInner = false;
+    stage('replay', k, n);
+    stageInner = k < n;
+  };
+  say(0);
+  return Engine.fromDoc(doc, mesh, {
+    onStep: (k) => {
+      const now = performance.now();
+      if (k + 1 < n && now - at < REPLAY_PING_MS) return;
+      at = now;
+      say(k + 1);
+    },
+  });
 }

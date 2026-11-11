@@ -16,9 +16,10 @@ import type { LightSnapshot, Request, Response, Snapshot } from '../protocol';
 import { seedRivers, reseedRivers } from '../render/overlay';
 import { lightWorld, mergeSnapshot } from './snapshot-merge';
 import { CANCELLED, EngineHost, type WorkerLike } from '../sandbox';
-import { Stall } from '../stall';
+import { STOP_AFTER_MS, Stall } from '../stall';
 import { noteTimings } from './cost-gate';
 import { meshFor } from './mesh';
+import { cancelling, jobDone, jobQueued, jobShowing, noteStage, recoveryEnded, recoveryStarted } from './progress';
 import { showToast } from './notes';
 import { options, setOptions, sizesFor } from './options';
 import {
@@ -68,8 +69,11 @@ export const safeMode = signal<{ reason: string } | null>(null);
 // fetch('data:…') 被拒）全部通过（见 engine-spawn.ts、isolation-probe.ts）。没隔离时信任的问话里老实说
 export const scriptsIsolated = signal(false);
 
-// 第九十六轮：计算程序已经连着几秒（stall.ts 的 STOP_AFTER_MS）没有回过一条，而有带提示的请求在等——“正在计算…”旁出现“停止”
+// 第九十六轮：计算程序已经连着几秒（stall.ts 的 STOP_AFTER_MS）没有任何消息，而有带提示的请求在等。
+// 第九十七轮起按钮不靠它出现（久的一步 1 秒后就有进度条和“取消”，见 state/progress.ts）；它决定“取消”用哪一种（见 stopBusy）
 export const stalled = signal(false);
+// 多久没动静算卡住（测试里改短）
+export const stallWait = { ms: STOP_AFTER_MS };
 // 时钟就是 sandbox.ts 的那一种（这里用真的）
 const stall = new Stall(
   {
@@ -79,7 +83,12 @@ const stall = new Stall(
       return () => clearInterval(h);
     },
   },
-  (on) => (stalled.value = on && !recovering),
+  (on) => {
+    stalled.value = on && !recovering;
+    // 点过“取消”、请它自己停下，它却一直没动静（卡在一个阶段里，听不到）：结束它，用命令记录恢复
+    if (stalled.peek() && cancelling.peek()) host?.stopAny();
+  },
+  () => stallWait.ms,
 );
 // 发给计算程序、还没回来的带提示的请求有几个（回复到了、还在等网格和换快照的不算：那不是计算程序的事）
 let awaited = 0;
@@ -188,6 +197,11 @@ export function engineHost(): EngineHost {
       restored: engineRestored,
       failed: engineFailed,
       abandoned: recovered,
+      // 第九十七轮：走到哪一步了——也是它还活着、在往下算的证据（stall.ts）
+      stage: (ping, req) => {
+        stall.progress();
+        noteStage(ping, req);
+      },
     },
     undefined,
     {
@@ -228,12 +242,14 @@ export function call(req: Request, label: string | null, safeReason?: string, af
     labelled++;
     busy.value = label;
     stall.set(++awaited);
+    jobQueued(req);
   }
   return new Promise<Response>((resolve) => {
     // 不带提示的请求（预览、自动保存）不改世界，不挡排队
     pending.set(id, { edit: EDITS.has(req.kind) || !label, kind: req.kind });
     const finish = (r: Response) => {
       pending.delete(id);
+      if (label) jobDone(req, r.ok);
       if (label && --labelled === 0) busy.value = recovering ? RECOVERING : null;
       resolve(r);
       // 排在这条回复的处理（换上快照）之后再叫醒等着的
@@ -246,6 +262,8 @@ export function call(req: Request, label: string | null, safeReason?: string, af
         stall.progress();
         if (label) stall.set(--awaited);
         if (!after) return finish(r);
+        // 回复到了，还要等网格、换上快照：进度的最后一步
+        if (label && r.ok) jobShowing(req);
         after(r)
           .catch((e) => console.error(e))
           .finally(() => finish(r));
@@ -262,6 +280,7 @@ function engineReset(message: string, calm = false) {
   hostHooks.resetAutosaveIds();
   showToast(calm && canRedo.peek() ? `${message}。重做记录已清空` : message, !calm);
   recovering = true;
+  recoveryStarted(host?.mirror.doc() ?? null);
   if (labelled === 0) busy.value = RECOVERING;
 }
 
@@ -282,6 +301,7 @@ function engineFailed(message: string) {
 // 不再等恢复（恢复好了、恢复不了、打开了别的世界）
 function recovered() {
   recovering = false;
+  recoveryEnded();
   if (labelled === 0) busy.value = null;
 }
 
@@ -290,10 +310,20 @@ export function stopScripts() {
   host?.stop();
 }
 
-// 第九十六轮：“正在计算…”旁的“停止”——什么请求都能停（脚本的照旧）。停下 = 结束这个 Worker、用命令记录另开一个，
-// 世界回到这一步之前；启动时正在打开上次的世界也能停（那时还没有世界：只是不打开了，见 state/open.ts）
+// “取消”（第九十六轮叫“停止”；第九十七轮起久的一步 1 秒后进度条旁就有它）：什么请求都能取消，世界回到这一步之前。两种做法，界面上是一个按钮：
+//   - 轻的（第九十七轮）：正在算的是改动世界的一步（执行、撤销、重做、换一个），计算程序还有动静——请它在下一个阶段之间自己停下
+//     （sandbox.ts 的 cancelEdits）。引擎把世界原样退回，重做记录还在，计算程序不换，马上能接着用；
+//   - 重的（第九十六轮的 stopAny）：结束这个计算程序、用命令记录另开一个恢复世界（重做记录没了）。用在：
+//     正在新建、打开（原来的计算程序在开始时已经换掉了，要回到原来的世界只有重新打开它；启动时还没有世界，只是不打开了）；
+//     计算程序已经几秒没有任何消息（卡在一个阶段里，听不到“请停下”）——点了轻的以后才沉默满那么久的，到时候自动改用重的（见上面的 stall）。
+// 那一刻正好有脚本在跑不另外对待：脚本在一个阶段里面跑，轻的照样在这个阶段做完时停下；脚本卡死了有看门狗（4 秒）
 export function stopBusy(): boolean {
-  return host?.stopAny() ?? false;
+  if (!host) return false;
+  if (host.opening || stalled.peek() || !world.peek()) return host.stopAny();
+  if (cancelling.peek()) return true;
+  if (!host.cancelEdits()) return host.stopAny();
+  cancelling.value = true;
+  return true;
 }
 
 // 现在的计算 Worker（还没开时为 null，不去开）
@@ -399,8 +429,11 @@ const contentHolder = new ContentHolder();
 export async function handle(r: Response, fresh = false, restart = fresh, quiet = false): Promise<boolean> {
   if (!r.ok) {
     regenTrack.pending = null;
-    // 用户自己点“停止”停下的不当成报错说（恢复世界时已经说了“已停止，回到了这一步之前”）
-    if (!quiet && !r.stopped) showToast(r.error, true);
+    // 用户自己取消的不当成报错说。结束了计算程序的那一种在恢复世界时已经说了（engineReset）；
+    // 它自己停下的那一种（soft，第九十七轮）没有恢复这一回事，在这里说：世界回到了这一步之前（重做记录还在，不用提）
+    if (r.stopped) {
+      if (r.soft) showToast(r.error);
+    } else if (!quiet) showToast(r.error, true);
     return false;
   }
   if (r.snapshot) {

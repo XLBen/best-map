@@ -72,7 +72,8 @@ async function open(req: Extract<Request, { kind: 'init' | 'load' }>, label: str
   let stopped = false;
   // 等网格、换上快照都在 call 的 after 里：做完之前新建、打开一直算在 pending、busy 里（见 call）
   const r = call(safe === null ? req : { ...req, safe: true }, label, safe ?? undefined, async (res) => {
-    await meshReady;
+    // 没打开成（出错、被取消）的不等它的网格（第九十七轮）：取消了新建以后，提示不该还挂着等一张用不上的网格
+    if (res.ok) await meshReady;
     if (marked) void clearLoading();
     // 新的引擎（可能在新开的 Worker 里）：步号从 1 起，自动保存从头写（镜头不动时世界的纪元不变，要在这里清）
     if (res.ok) resetAutosaveIds();

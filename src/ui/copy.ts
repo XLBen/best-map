@@ -21,6 +21,33 @@ export { scriptTrustText } from '../trust';
 // 自救页在程序别的部分坏了时也要写得出字，那个文件不引用任何东西
 export { GL_TEXT, MISHAP_TEXT, OPEN_TWICE_TEXT, RESCUE_TEXT, STOP_TEXT } from '../crash-text';
 
+// 第九十七轮：久的一步（新建、打开、重新生成……）做到哪了。键是计算程序说的步名（core/progress.ts、src/worker.ts）；
+// 没列的步用那个请求自己的提示（“正在生成世界…”“正在计算…”）。按钮“取消”和点了以后的话在 STOP_TEXT
+export const PROGRESS_TEXT = {
+  steps: {
+    mesh: '正在划分格子…',
+    terrain: '正在造陆地和海…',
+    elevation: '正在算地形的高低…',
+    climate: '正在算气候…',
+    water: '正在画河…',
+    solve: '正在安排涂上去的生态…',
+    habitat: '正在算宜居度…',
+    features: '正在起地名…',
+    'human.cultures': '正在分文化…',
+    'human.population': '正在分人口…',
+    'human.countries': '正在划国家…',
+    'human.claims': '正在划国家…',
+    'human.blocs': '正在划国家…',
+    'human.capitals': '正在定首都…',
+    'human.country-mix': '正在划国家…',
+    settlements: '正在建城市和道路…',
+    provinces: '正在划分省份…',
+    show: '正在画地图…',
+  } as Readonly<Record<string, string>>,
+  // 打开世界时一步一步重做：第几步、共几步
+  replay: (k: number, n: number) => `正在重做第 ${k} / ${n} 步…`,
+} as const;
+
 // 选中的河、湖、地名、省份：名字的几个按钮
 export const NAME_TIPS = {
   reroll: '自动换一个名字',

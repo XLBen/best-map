@@ -5,7 +5,7 @@ import { engineFor } from '../core/testing/fixtures';
 import { settingsSchema } from '../core/world';
 import { EngineWorker, type RawWorker } from './engine-spawn';
 import type { MirrorLog, Request, Response } from './protocol';
-import { CANCELLED, EngineHost, Mirror, STOPPED_BACK, STOPPED_ONLY, type WorkerLike } from './sandbox';
+import { CANCELLED, EngineHost, Mirror, STOPPED_BACK, STOPPED_ONLY, STOPPED_WORLD, type WorkerLike } from './sandbox';
 import { FakeClock } from './testing/fake-clock';
 
 // 第九十六轮：不是脚本的请求也能停（stopAny）；消息解不出来当作 Worker 坏了；命令记录给得出和引擎一样的“变了的命令”
@@ -84,8 +84,8 @@ describe('停下不是脚本的请求', () => {
       { id: CANCELLED, ok: false, error: STOPPED_BACK, stopped: true },
       { id: CANCELLED, ok: false, error: STOPPED_BACK, stopped: true },
     ]);
-    // 说的是“已停止，回到了这一步之前”，而且标着是用户自己停的
-    expect(seen.reset).toEqual([['已停止，回到了这一步之前', true]]);
+    // 说的是“已取消，世界回到了这一步之前”（第九十七轮起叫“取消”），而且标着是用户自己停的
+    expect(seen.reset).toEqual([['已取消，世界回到了这一步之前', true]]);
     // 另开一个，打开的是这一步之前的世界（没算完的那一步不在里面）
     const w1 = FakeWorker.all[1];
     expect(w1.last().req).toEqual({ kind: 'load', doc: docOf([cmd(0.1), cmd(0.2)]) });
@@ -138,11 +138,12 @@ describe('停下不是脚本的请求', () => {
     // 原来的 Worker 已经换掉（一个 Worker 只装一个世界），新的在打开
     expect(FakeWorker.all.length).toBe(2);
     expect(host.stopAny()).toBe(true);
-    expect(replies.at(-1)).toEqual({ id: CANCELLED, ok: false, error: STOPPED_BACK, stopped: true });
+    // 第九十七轮：说的是“回到了原来的世界”
+    expect(replies.at(-1)).toEqual({ id: CANCELLED, ok: false, error: STOPPED_WORLD, stopped: true });
     expect(FakeWorker.all[1].terminated).toBe(true);
     // 第三个 Worker 打开的是原来的世界，不是安全模式
     expect(FakeWorker.all[2].last().req).toEqual({ kind: 'load', doc: docOf([cmd(0.1), cmd(0.2)]) });
-    expect(seen.reset).toEqual([[STOPPED_BACK, true]]);
+    expect(seen.reset).toEqual([[STOPPED_WORLD, true]]);
   });
 
   it('安全模式打开的世界里停下：还是按安全模式打开回来', () => {

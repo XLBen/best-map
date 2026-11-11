@@ -32,9 +32,12 @@ export const workerControl = {
   // 打开（load、init）也压着：holdOpen
   holdAll: false,
   holdOpen: false,
-  held: [] as (() => void)[],
+  // 第九十七轮：听得到“取消”——压着的改动（执行、撤销……）收到取消时回“自己停下了”（soft），世界不变；
+  // 关着（默认）时取消收到了也不理（像卡在一个阶段里的计算程序）
+  soft: false,
+  held: [] as { id: number; kind: Request['kind']; send: () => void; worker: FakeEngineWorker }[],
   release() {
-    for (const send of this.held.splice(0)) send();
+    for (const h of this.held.splice(0)) h.send();
   },
   reset() {
     this.loadError = null;
@@ -42,6 +45,7 @@ export const workerControl = {
     this.holdExec = false;
     this.holdAll = false;
     this.holdOpen = false;
+    this.soft = false;
     this.held.length = 0;
   },
 };
@@ -52,6 +56,8 @@ export class FakeEngineWorker {
   onerror: ((ev: unknown) => void) | null = null;
   onmessageerror: ((ev: unknown) => void) | null = null;
   sent: Request[] = [];
+  // 每个请求的编号（和 sent 对齐）：测试里替它说“走到哪一步了”时要用
+  ids: number[] = [];
   terminated = false;
   // 这个 Worker 里的“引擎”：做了的每一步
   done: { id: number; cmd: Command }[] = [];
@@ -108,15 +114,35 @@ export class FakeEngineWorker {
         return {};
     }
   }
+  // 替它说一句“走到哪一步了”（第九十七轮）：id 默认是最后一个请求的
+  stage(step: string, k = 1, n = 1, more: { inner?: boolean; id?: number } = {}) {
+    this.onmessage?.({ data: { kind: 'stage', req: more.id ?? this.ids[this.ids.length - 1], step, k, n, ...(more.inner ? { inner: true } : {}) } });
+  }
   postMessage(m: { id: number; req: Request }) {
     this.sent.push(m.req);
+    this.ids.push(m.id);
+    // 取消：立即回；听得到时，压着的、编号不超过 upTo 的改动回“自己停下了”
+    if (m.req.kind === 'cancel') {
+      const upTo = m.req.upTo;
+      queueMicrotask(() => {
+        if (this.terminated) return;
+        this.onmessage?.({ data: { id: m.id, ok: true } });
+        if (!workerControl.soft) return;
+        const edit = (k: Request['kind']) => k === 'exec' || k === 'undo' || k === 'redo' || k === 'replaceLast';
+        for (const h of workerControl.held.filter((x) => x.worker === this && x.id <= upTo && edit(x.kind))) {
+          workerControl.held.splice(workerControl.held.indexOf(h), 1);
+          this.onmessage?.({ data: { id: h.id, ok: false, error: '已取消', soft: true } });
+        }
+      });
+      return;
+    }
     const send = () => {
       if (this.terminated) return;
       const out = this.respond(m.req);
       this.onmessage?.({ data: 'error' in out ? { id: m.id, ok: false, error: out.error } : { id: m.id, ok: true, ...out } });
     };
     const open = m.req.kind === 'load' || m.req.kind === 'init';
-    if (workerControl.holdAll || (workerControl.holdOpen && open) || (workerControl.holdExec && m.req.kind === 'exec')) workerControl.held.push(send);
+    if (workerControl.holdAll || (workerControl.holdOpen && open) || (workerControl.holdExec && m.req.kind === 'exec')) workerControl.held.push({ id: m.id, kind: m.req.kind, send, worker: this });
     else queueMicrotask(send);
   }
   terminate() {

@@ -4,6 +4,7 @@ import { addLandmark, generateLandmarks, landmarkName, landmarkOf, moveLandmark,
 import type { Command } from './schema';
 import { type ApplyContext, Dirty, type RunResult } from './shared';
 import { CommandError } from '../errors';
+import { reportStage } from '../progress';
 import { generateSettlements, removeSettlements, settlementRules } from '../human/settle-gen';
 import { missingNotes } from '../content/missing';
 import { addRoad, editRoad, generateRoads, rerouteCity, roadKm, roadOf, setRoad } from '../human/roads';
@@ -35,6 +36,7 @@ export function runSettlementOp(world: World, cmd: Command, ctx: ApplyContext): 
     case 'generate_settlements':
     case 'regenerate_settlements': {
       const d = ctx.ensureDerived();
+      reportStage('settlements', 1, 1);
       const fresh = cmd.op === 'generate_settlements';
       const patch = { ...(cmd.seed !== undefined ? { seed: cmd.seed } : {}), ...(cmd.roads !== undefined ? { roads: cmd.roads } : {}), ...(cmd.landmarks !== undefined ? { landmarks: cmd.landmarks } : {}) };
       const k = generateSettlements(world, d, { rules: settlementRules(world, patch), fresh });

@@ -63,6 +63,8 @@ export function formatIssues(err: z.ZodError): string {
 export interface ApplyContext {
   // 需要推导结果的命令调用它，保证推导是最新的
   ensureDerived: () => Derived;
+  // 同上，分阶段（第九十七轮）：引擎执行命令时给，分阶段的命令（生成人文）用它，重算的各步之间也能停下。走完与 ensureDerived 相同
+  derivedSteps?: () => Generator<void, Derived>;
   // 在批量命令里（第十五轮：湖里的岛不能放进去——批量里前面几条改的东西还没算进推导，重放时却算进了）
   inBatch?: boolean;
 }

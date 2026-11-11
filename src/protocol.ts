@@ -39,6 +39,10 @@ export type Request =
   // 不要正在算的确切预览了（新的一笔、换了工具、要的是别的值）：Worker 在下一个阶段之间停下它（那个预览回 cancelled）。
   // 已经收到同一条命令的执行时不停（执行要直接采用它）。立即回复，不排队
   | { kind: 'cancelPreview' }
+  // 第九十七轮：不要正在算的这一步了（“取消”）。编号不超过 upTo 的执行、撤销、重做、换一个：正在算的在下一个阶段之间停下、
+  // 世界原样退回（引擎照“中途出错”的路，重做记录还在），排着还没算的不算了——都回 {ok:false, soft:true}。
+  // 新建、打开不走这里（主线程直接结束这个 Worker，见 sandbox.ts 的 stopAny）。立即回复，不排队
+  | { kind: 'cancel'; upTo: number }
   // 换一个：撤掉最后一步并执行新命令
   | { kind: 'replaceLast'; cmd: Command }
   | { kind: 'doc' }
@@ -135,6 +139,20 @@ export interface ScriptPing {
   label: string;
 }
 
+// Worker 主动发来的消息（不是回复，没有 id）：带提示的一步（新建、打开、执行、撤销、重做、换一个）走到哪了（第九十七轮）。
+// 和脚本的那一条走同一条路（sandbox.ts 的 readWorkerMessage 检查，EngineHost 交给界面）。只在步的边界上发（见 core/progress.ts）。
+//   req：是哪一个请求的（那个请求的编号；不叫 id——带 id 的只有回复）；step：这一步的名字（core/progress.ts 列着；另有 Worker 自己说的 mesh 建网格、restore 从检查点恢复、
+//   replay 重放命令）；k、n：这一串里的第几步、共几步（重放时是第几条命令、共几条）；
+//   inner：重放命令时里面的小步（流水线、生成人文的各步）——只当名字看，数第几步看 replay 的那几条
+export interface StagePing {
+  kind: 'stage';
+  req: number;
+  step: string;
+  k: number;
+  n: number;
+  inner?: boolean;
+}
+
 // 计算 Worker 开起来、自查完之后发的第一条消息（没有 id）：是不是在隔离的环境里（三项检查全部通过，见 isolation-probe.ts）。
 // 主线程只认 data: 地址开的 Worker 的第一条招呼
 export interface Hello {
@@ -184,5 +202,8 @@ export type Response =
       // 缩略图里星球形态的脚本出的错（thumb 的回复里，有形态时才有）
       issues?: ScriptIssue[];
     }
-  // stopped（第九十六轮）：不是 Worker 回的——用户点了“停止”，这个请求没算完就被停下了（sandbox.ts 的 stopAny）
-  | { id: number; ok: false; error: string; stopped?: boolean };
+  // stopped（第九十六轮）：用户点了“取消”（那时叫“停止”），这个请求没算完就被停下了。
+  // soft（第九十七轮）：是计算程序自己在阶段之间停的（引擎原样退回，重做记录还在；Worker 还是那一个）；
+  // 没有 soft 的 stopped 是主线程结束了这个 Worker、替它回的（sandbox.ts 的 stopAny：世界用命令记录另开一个恢复）。
+  // Worker 说的 soft 只有主线程确实要它取消过这一个请求时才作数（EngineHost.receive）
+  | { id: number; ok: false; error: string; stopped?: boolean; soft?: boolean };

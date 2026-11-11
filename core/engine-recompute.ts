@@ -20,6 +20,7 @@ import { computeHuman } from './human';
 import { type Derived, type World, emptyDerived } from './world';
 import type { Timings, EngineBase } from './engine-types';
 import { privatize } from './engine-helpers';
+import { reportStage } from './progress';
 
 // 统计（测试用）：一共算了多少遍“气候 → 水文 → 河的类型 → 植被”
 export const passStats = { passes: 0 };
@@ -72,7 +73,11 @@ export function* recomputeDerived(e: RecomputeState): Generator<void, Derived> {
   };
   let terrain = e.base?.terrain;
   let climate = e.dirty >= Dirty.Climate;
+  // 第九十七轮：到哪一步了（progress.ts）。只在每一步开头说一声，不改下面任何一行算的东西
+  const steps = stageCount(e, !terrain);
+  let step = 0;
   if (e.dirty >= Dirty.Elevation || !terrain) {
+    reportStage('elevation', ++step, steps);
     // 总是从固定初值求解：推导只取决于原因，与编辑历史无关，重放与撤销都逐值一致
     const el = computeElevation(w);
     terrain = el.elevation;
@@ -82,6 +87,7 @@ export function* recomputeDerived(e: RecomputeState): Generator<void, Derived> {
     yield;
   }
   if (climate || !e.base) {
+    reportStage('climate', ++step, steps);
     // 整个星球：只取决于纬度、海陆的两层先算（改了海陆时这一段很长），算完让出一次（预览可以在这里停下）
     if (w.mesh.kind === 'sphere') {
       const a = performance.now();
@@ -100,6 +106,7 @@ export function* recomputeDerived(e: RecomputeState): Generator<void, Derived> {
     lap('climate');
     yield;
   }
+  reportStage('water', ++step, steps);
   // 推导里的高程 = 地形挖出冰川的小洼（第八十六轮）、再挖出只挖河床的河。每次都从地形重新挖，结果只取决于原因；
   // 气候按没挖冰川的地形算（冷暖笔刷改冰川时不用重算气候的地形那一层）
   d.elevation.set(glacialLegacy.on ? terrain : glacialTerrain(w, terrain, d.ice));
@@ -166,6 +173,7 @@ export function* recomputeDerived(e: RecomputeState): Generator<void, Derived> {
   const eff = computeEffects(w, d);
   e.solve = { plans: [] };
   if (w.small.constraints.some((c) => c.mode === 'constraint')) {
+    reportStage('solve', ++step, steps);
     // 水文随修正场变化会影响湿地等类型，最多再迭代一轮
     for (let round = 0; round < 2; round++) {
       e.solve = solveConstraints(w, base, d, eff);
@@ -186,10 +194,12 @@ export function* recomputeDerived(e: RecomputeState): Generator<void, Derived> {
   d.conflicts = checkConstraints(w, d, e.solve);
   lap('vegetation');
   // 人文的几层（第二十一轮）：按自然的推导算。第二十二轮挪到认地物之前：地名跟着当地的文化，起名要看人口的几层
+  reportStage('habitat', ++step, steps);
   computeHuman(w, d);
   lap('human');
   // 只取决于海陆的那一段地物先认（改了海陆时这一段很长），认完让出一次
   if (e.features) {
+    reportStage('features', ++step, steps);
     const a = performance.now();
     if (prepareFeatures(w)) {
       const spent = performance.now() - a;
@@ -204,6 +214,15 @@ export function* recomputeDerived(e: RecomputeState): Generator<void, Derived> {
   e.lastTimings = timings;
   e.dirty = Dirty.None;
   return d;
+}
+
+// 这一次重算一共要说几步（第九十七轮）：高程、气候算不算看标记（和下面流水线里的两个 if 同一个条件——高程重算了气候也重算），
+// 水文、人文的几层总有，有“自然融入”的设定时多一步求解，认地物看开没开
+function stageCount(e: RecomputeState, noTerrain: boolean): number {
+  const elevation = e.dirty >= Dirty.Elevation || noTerrain;
+  const climate = elevation || e.dirty >= Dirty.Climate || !e.base;
+  const solve = e.world.small.constraints.some((c) => c.mode === 'constraint');
+  return (elevation ? 1 : 0) + (climate ? 1 : 0) + 2 + (solve ? 1 : 0) + (e.features ? 1 : 0);
 }
 
 // 空闲预热（第八十八轮，见 engine.ts 的 warmSteps）：冰盖（南界的噪声按格算一次）、挖过冰川的地形，按水文读到的高程（流水线里同样的两步）

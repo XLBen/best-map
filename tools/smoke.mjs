@@ -2,6 +2,7 @@
 //   node tools/smoke.mjs [--chrome <Chrome 的路径>] [--keep] [--show] [--shots <目录>]
 //     --keep：留下临时目录（Chrome 的用户目录）；--show：不用无头，看着它跑；
 //     --shots：把几处界面截成图存进那个目录（第二个页面顶上的那一条、“世界”菜单的第一行），给人看排版
+//     --only 12：新建以后直接走第十二段（改那一段时用，约一分半钟；交差要跑全的）
 //   要先打包（npm run build）：用的是 dist/。不进 vitest（要 Chrome）。
 //   做法：自己起一个只绑 127.0.0.1、随机空闲端口的静态服务器（跑完就关；不碰 5191 / 5196），Chrome 开在一个临时的用户目录里，
 //   经调试端口（WebSocket，Node 自带的）点页面、拖鼠标、读浏览器里存的自动保存。
@@ -35,6 +36,12 @@
 //    11. 启动时：记着连着两次没打开成 → 先问，不直接打开；打开卡住（冒烟把发给计算 Worker 的“打开”吞掉）→ 几秒后能“停止”→ 进向导、
 //        那一份还在；浏览器画不了地图（把 webgl2 换成拿不到）→ 整页的说明，已有的世界还能导出；
 //        程序的主体一运行就出错（第一次找 #app 说没有）→ 不是白的，是自救页，导出的是浏览器里存着的那一份。
+//   第九十七轮加的（接在后面，写在 tools/smoke-progress.mjs）：生成的进度与取消。
+//    12. 平常画一笔不闪进度条；开着一个世界时在向导里新建（整个星球、带人文）→ 约 1 秒后向导里出现步名、进度条、“取消”（页面上只有这一个）；步名在变、进度只增不减；
+//        点“取消”→ 说“已取消，回到了原来的世界”，每一个数组逐字节不变；再完整生成一次 → 步名一步一步换、做完之前没画到头、
+//        做完以后进度条和“取消”都没了，新世界照常自动保存；把计算 Worker 发“走到哪一步了”的那一下拖慢（调试协议）后画一笔 →
+//        顶上出现进度条和“取消”→ 点了说“已取消，世界回到了这一步之前”，数组逐字节不变，计算程序还是原来那一个。
+//   第九十六轮的第 8、11 段跟着改了：按钮叫“取消”，1 秒左右就出现（以前叫“停止”，5 秒没动静才出现）。
 //   退出码：有没过的 1
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -42,6 +49,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { progressSteps } from './smoke-progress.mjs';
 import { safetySteps } from './smoke-safety.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -54,6 +62,9 @@ const flag = (name, def) => {
 const chromePath = flag('--chrome', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
 const keep = argv.includes('--keep');
 const show = argv.includes('--show');
+const only = flag('--only', null);
+// 只走一段时走完就停（不算没过）
+const DONE = Symbol('走完了');
 const shots = flag('--shots', null);
 if (shots) mkdirSync(shots, { recursive: true });
 
@@ -345,6 +356,12 @@ try {
   const land0 = await p.eval(LAND);
   check(n0 > 0 && !!land0, `新建了一个世界，自动保存了 ${n0} 步`);
   check((await p.eval(BADGE)) === null, '顶栏没有“没保存”的记号');
+  if (only === '12') {
+    await progressSteps({ cdp, q: p, origin, check, sleep, stroke, count, READY, LAND, HEAD, ASK, clickMenuItem });
+    check(p.errors.length === 0, '页面里没有没接住的错', p.errors.slice(0, 3).join('；'));
+    console.log(`${failed ? `没过 ${failed} 项` : '都通过'}（只走了第 1、12 段，${((Date.now() - t0) / 1000).toFixed(0)} 秒）`);
+    throw DONE;
+  }
 
   console.log('2. 画一笔 → 等自动保存 → 刷新');
   await stroke(p, 0.5);
@@ -623,11 +640,17 @@ try {
   // 到这里为止（前七步）页面里不该有没接住的错；后面几步是故意弄出来的
   const errors = [...p.errors, ...q.errors];
   check(errors.length === 0, '前七步：页面里没有没接住的错', errors.slice(0, 3).join('；'));
-  await safetySteps({ cdp, q, origin, errors, check, sleep, stroke, count, ownWrite, READY, LAND, HEAD, ASK, clickMenuItem, closeMenu });
+  const { workers: tracked } = await safetySteps({ cdp, q, origin, errors, check, sleep, stroke, count, ownWrite, READY, LAND, HEAD, ASK, clickMenuItem, closeMenu });
+  // ---------- 第九十七轮 ----------
+  const before12 = q.errors.length;
+  await progressSteps({ cdp, q, origin, check, sleep, stroke, count, READY, LAND, HEAD, ASK, clickMenuItem, tracked });
+  check(q.errors.length === before12, '第十二段：页面里没有没接住的错', q.errors.slice(before12, before12 + 3).join('；'));
   console.log(`${failed ? `没过 ${failed} 项` : '都通过'}（${((Date.now() - t0) / 1000).toFixed(0)} 秒）`);
 } catch (e) {
-  failed++;
-  console.log(`  没过  ${e.message ?? e}`);
+  if (e !== DONE) {
+    failed++;
+    console.log(`  没过  ${e.message ?? e}`);
+  }
 } finally {
   try {
     ws?.close();
@@ -636,8 +659,16 @@ try {
   }
   chrome.kill();
   server.close();
+  // 等 Chrome 真的退出再删它的用户目录（它退出前还在往里写；第九十七轮：删的时候正好撞上过一次，报错把“都通过”变成了退出码 1）
+  await Promise.race([new Promise((r) => chrome.once('exit', r)), sleep(5000)]);
   await sleep(300);
   if (keep) console.log(`临时目录：${profile}`);
-  else rmSync(profile, { recursive: true, force: true, maxRetries: 5 });
+  else {
+    try {
+      rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      console.log(`（临时目录没删干净：${profile}）`);
+    }
+  }
 }
 process.exit(failed ? 1 : 0);

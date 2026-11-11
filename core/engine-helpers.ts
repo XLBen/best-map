@@ -19,13 +19,8 @@ export function onlyRestyled(prev: readonly GeoFeature[], cur: readonly GeoFeatu
   return true;
 }
 
-// 一口气走完分阶段的计算
-export function drain<R>(it: Generator<void, R>): R {
-  for (;;) {
-    const r = it.next();
-    if (r.done) return r.value;
-  }
-}
+// 一口气走完分阶段的计算（第九十七轮挪到 progress.ts，这里照旧导出）
+export { drain } from './progress';
 
 // 陆海的变化与执行后没涂成的格
 export function landAndFailing(a: World, b: World): Pick<PreviewExtras, 'failing' | 'landGained' | 'landLost'> {

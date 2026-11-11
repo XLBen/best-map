@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { diskRaw, memoryAutosaveIo, memoryDisk, type MemoryDisk } from '../autosave-io';
 import type { Command } from '../../core/commands';
 import { OPEN_GUARD_KEY } from '../open-guard';
-import { STOPPED_BACK } from '../sandbox';
+import { STOPPED_BACK, STOPPED_WORLD } from '../sandbox';
 import { FakeEngineWorker, docOf, nameCmd, tick, workerControl } from '../testing/fake-engine-worker';
 
 // 第九十六轮：计算程序不应答时——能导出、能保存（用主线程手上的命令记录）；什么请求都能停，世界回到这一步之前；
@@ -35,9 +35,9 @@ vi.mock('./export-host', async (orig) => ({
   download: (name: string, data: string) => void downloads.push({ name, text: data }),
 }));
 
-const { ask, autosaveNow, busy, canRedo, docNow, exec, newWorld, resumeLast, stalled, stopBusy, toast, undo, unsaved, world, worldState } = await import('../state');
+const { ask, autosaveNow, busy, canRedo, cancelling, docNow, exec, newWorld, redo, resumeLast, stalled, stopBusy, toast, undo, unsaved, world, worldState } = await import('../state');
 const { useAutosaveIo } = await import('./autosave');
-const { currentHost, docWait, docTailNow } = await import('./worker-host');
+const { currentHost, docWait, docTailNow, stallWait } = await import('./worker-host');
 const { openSettle } = await import('./open');
 const { useBackupIo } = await import('./backups');
 const { memoryBackupIo } = await import('../backups');
@@ -54,13 +54,16 @@ beforeEach(() => {
   toast.value = null;
   docWait.ms = 40;
   openSettle.ms = 20;
+  // 第九十七轮：多久没动静算卡住（真的是 5 秒）——点了“取消”、它又一直没动静时，到这时候结束它
+  stallWait.ms = 60;
   useBackupIo(memoryBackupIo());
   useAutosaveIo(memoryAutosaveIo(disk), null);
 });
 afterEach(async () => {
   workerControl.reset();
   ask.value?.resolve('cancel');
-  stopBusy();
+  // 还压着的直接结束（不等它自己停）
+  currentHost()?.stopAny();
   await tick();
   await autosaveNow().catch(() => {});
 });
@@ -173,7 +176,8 @@ describe('计算程序卡住时也能导出、能保存', () => {
 });
 
 describe('什么请求都能停', () => {
-  it('一步卡住了：停下——这一步没做，世界还在、回到这一步之前，说一句；之后照常能改', async () => {
+  // 第九十七轮：点了“取消”先请计算程序自己停下；这里的计算程序卡住了、听不到——过了“多久没动静算卡住”就结束它（下面几条都是这条路）
+  it('一步卡住了：取消——这一步没做，世界还在、回到这一步之前，说一句；之后照常能改', async () => {
     await opened();
     const before = mirrorDoc();
     const w0 = FakeEngineWorker.last;
@@ -236,7 +240,129 @@ describe('什么请求都能停', () => {
     await vi.waitFor(() => expect(busy.value).toBeNull(), { timeout: 5000 });
     expect(mirrorDoc()).toEqual(before);
     expect(FakeEngineWorker.last.done.map((h) => h.cmd)).toEqual(before.commands);
+    // 第九十七轮：说的是回到了原来的世界
+    expect(toast.value).toEqual({ text: STOPPED_WORLD, error: false });
+  });
+});
+
+describe('取消：计算程序还有动静时请它自己停下（第九十七轮）', () => {
+  it('正在算的一步：计算程序不换，世界、命令记录原样，重做记录还在，说“已取消，世界回到了这一步之前”；之后照常能改', async () => {
+    await opened([nameCmd(1), nameCmd(2)]);
+    await undo();
+    canRedo.value = true;
+    const before = mirrorDoc();
+    const state = worldState.value;
+    const w0 = FakeEngineWorker.last;
+    workerControl.soft = true;
+    workerControl.holdExec = true;
+    const running = exec(nameCmd(5), '改名');
+    await tick(2);
+    expect(stopBusy()).toBe(true);
+    // 点了以后、它停下之前：正在取消
+    expect(cancelling.value).toBe(true);
+    expect(await running).toBe(false);
+    expect(cancelling.value).toBe(false);
+    expect(busy.value).toBeNull();
+    // 没有结束它、没有另开
+    expect(w0.terminated).toBe(false);
+    expect(FakeEngineWorker.last).toBe(w0);
+    expect(w0.sent.at(-1)?.kind).toBe('cancel');
+    expect(mirrorDoc()).toEqual(before);
+    expect(worldState.value).toBe(state);
+    // 不当成报错说；重做记录还在，不说“已清空”
     expect(toast.value).toEqual({ text: STOPPED_BACK, error: false });
+    expect(canRedo.value).toBe(true);
+    workerControl.holdExec = false;
+    await exec(nameCmd(3), '改名');
+    expect(mirrorDoc().commands).toEqual(cmds([nameCmd(1), nameCmd(3)]));
+  });
+
+  it('排在后面的改动一起不要：都没做', async () => {
+    await opened();
+    const before = mirrorDoc();
+    workerControl.soft = true;
+    workerControl.holdExec = true;
+    const a = exec(nameCmd(5), '改名');
+    const b = exec(nameCmd(6), '改名');
+    await tick(2);
+    stopBusy();
+    expect(await a).toBe(false);
+    expect(await b).toBe(false);
+    expect(mirrorDoc()).toEqual(before);
+    expect(FakeEngineWorker.last.terminated).toBe(false);
+  });
+
+  it('请了它却一直没动静（卡在一个阶段里）：到时候结束它，世界用命令记录回到这一步之前', async () => {
+    await opened();
+    const before = mirrorDoc();
+    const w0 = FakeEngineWorker.last;
+    // 听不到取消
+    workerControl.holdExec = true;
+    const stuck = exec(nameCmd(2), '改名');
+    await tick(2);
+    expect(stalled.value).toBe(false);
+    expect(stopBusy()).toBe(true);
+    expect(cancelling.value).toBe(true);
+    expect(w0.terminated).toBe(false);
+    workerControl.holdExec = false;
+    expect(await stuck).toBe(false);
+    await vi.waitFor(() => expect(busy.value).toBeNull(), { timeout: 5000 });
+    expect(w0.terminated).toBe(true);
+    expect(cancelling.value).toBe(false);
+    expect(mirrorDoc()).toEqual(before);
+    expect(toast.value).toEqual({ text: STOPPED_BACK, error: false });
+  });
+
+  it('已经几秒没动静了才点：直接结束它，不再等', async () => {
+    await opened();
+    const w0 = FakeEngineWorker.last;
+    workerControl.holdExec = true;
+    const stuck = exec(nameCmd(2), '改名');
+    await vi.waitFor(() => expect(stalled.value).toBe(true), { timeout: 5000 });
+    workerControl.holdExec = false;
+    expect(stopBusy()).toBe(true);
+    expect(w0.terminated).toBe(true);
+    expect(w0.sent.some((r) => r.kind === 'cancel')).toBe(false);
+    expect(await stuck).toBe(false);
+    await vi.waitFor(() => expect(busy.value).toBeNull(), { timeout: 5000 });
+  });
+
+  it('它一直在说走到哪一步了：不算没动静，不结束它', async () => {
+    await opened();
+    const w0 = FakeEngineWorker.last;
+    workerControl.holdExec = true;
+    const slow = exec(nameCmd(2), '改名');
+    for (let k = 0; k < 12; k++) {
+      await new Promise((r) => setTimeout(r, 20));
+      w0.stage('climate', 2, 5);
+    }
+    expect(stalled.value).toBe(false);
+    workerControl.holdExec = false;
+    workerControl.release();
+    expect(await slow).toBe(true);
+    expect(w0.terminated).toBe(false);
+  });
+
+  it('撤销、重做也能取消', async () => {
+    await opened([nameCmd(1), nameCmd(2)]);
+    const before = mirrorDoc();
+    workerControl.soft = true;
+    workerControl.holdAll = true;
+    const u = undo();
+    await tick(2);
+    stopBusy();
+    await u;
+    workerControl.holdAll = false;
+    expect(mirrorDoc()).toEqual(before);
+    expect(toast.value).toEqual({ text: STOPPED_BACK, error: false });
+    workerControl.holdAll = true;
+    const r = redo();
+    await tick(2);
+    stopBusy();
+    await r;
+    workerControl.holdAll = false;
+    expect(mirrorDoc()).toEqual(before);
+    expect(FakeEngineWorker.last.terminated).toBe(false);
   });
 });
 

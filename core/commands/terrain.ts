@@ -11,6 +11,7 @@ import { repairProvinces } from '../provinces';
 import type { Command } from './schema';
 import { type ApplyContext, type ArrayKey, clearPop, Dirty, formatIssues, getArray, type RunResult } from './shared';
 import { CommandError } from '../errors';
+import { reportStage } from '../progress';
 import { checkForm, sameForm } from '../planet-form';
 import { removeSettlements } from '../human/settle-gen';
 import { missingNotes } from '../content/missing';
@@ -102,6 +103,8 @@ export function runTerrainOp(world: World, cmd: Command, ctx: ApplyContext): Run
   };
   switch (cmd.op) {
     case 'set_worldgen': {
+      // 第九十七轮：造陆地和海（重新采样整个生成器）是久的一步，说一声（progress.ts）
+      reportStage('terrain', 1, 1);
       const params = worldgenSchema.parse(cmd.params);
       // 星球形态：只能用在整个星球上，type 要与形态的 base 相同；脚本有语法错误时当场拒绝
       // （运行时出错不拒绝：那一部分按没有脚本算，见 planet-gen.ts）

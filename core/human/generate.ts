@@ -1,5 +1,6 @@
 import { recordedOrigin } from '../content/origin';
 import { CommandError } from '../errors';
+import { drain, reportStage } from '../progress';
 import type { CountryRules, Derived, HumanHearth, HumanState, SettlementRules, SmallState, World } from '../world';
 import type { GenContext, GenGroup, HumanStage } from './context';
 import { fillAddedDims } from './add-dimension';
@@ -115,12 +116,14 @@ export const stampedPacks = (small: Pick<SmallState, 'genStamp'>): readonly (rea
 
 // 生成（或重新生成）。keepManual：手改过的格（causes.popManual）不动。返回生成的状态
 // countryMode（第二十三轮，有 params.countries 时）：generate 重新长国家（keepLocked：锁定的留着，默认不留），keep 用现有的领土
-export function generateHuman(
-  world: World,
-  d: Derived,
-  params: HumanParams,
-  opts: { keepManual?: boolean; hearths?: HumanHearth[]; countryMode?: CountryPlan['mode']; keepLocked?: boolean; regenerate?: boolean } = {},
-): HumanState {
+type GenerateOpts = { keepManual?: boolean; hearths?: HumanHearth[]; countryMode?: CountryPlan['mode']; keepLocked?: boolean; regenerate?: boolean };
+export function generateHuman(world: World, d: Derived, params: HumanParams, opts: GenerateOpts = {}): HumanState {
+  return drain(generateHumanSteps(world, d, params, opts));
+}
+
+// 同 generateHuman，分阶段（第九十七轮）：每一步开头说一声到哪了（progress.ts），做完停一下（yield）。一口气走完（drain）与原来完全相同；
+// 计算 Worker 在两步之间让出线程、看看要不要取消——不要了就往里抛一个错，命令照“做不了”的路把世界原样退回（commands.ts 的 applyCommandSteps）
+export function* generateHumanSteps(world: World, d: Derived, params: HumanParams, opts: GenerateOpts = {}): Generator<void, HumanState> {
   const small = world.small;
   const era = ruleEra(small, params.packs);
   if (!era) throw new CommandError('世界里没有时代');
@@ -185,7 +188,14 @@ export function generateHuman(
   };
   // 第八十五轮：重新长国家时档案里留什么（archive-keep.ts）：长之前记下原来的
   const before = countries?.mode === 'generate' ? archiveBefore(world) : null;
-  for (const stage of STAGES) stage.run(ctx);
+  // 一共几步：生成的每一步，写了城市时最后多一步
+  const steps = STAGES.length + (params.settlements ? 1 : 0);
+  let step = 0;
+  for (const stage of STAGES) {
+    reportStage(`human.${stage.id}`, ++step, steps);
+    stage.run(ctx);
+    yield;
+  }
   fillAddedDims(ctx);
   if (before) writeArchive(world, before, countries!.rules.seed >>> 0, era);
   const state: HumanState = {
@@ -206,6 +216,7 @@ export function generateHuman(
   compactGroups(small, world.causes, autoGroups ? [autoGroups] : []);
   // 第二十四轮：城市、道路、地标（时代、人口、国家都定了之后）。重新生成时只换自动的（锁定的、自己放的留着）
   if (params.settlements) {
+    reportStage('settlements', ++step, steps);
     const p = params.settlements;
     const rules = opts.regenerate ? settlementRules(world, p) : { seed: (p.seed ?? seed) >>> 0, roads: p.roads ?? true, landmarks: p.landmarks ?? true };
     generateSettlements(world, d, { rules, fresh: !opts.regenerate });
@@ -219,6 +230,11 @@ export function generateHuman(
 // 按世界里记着的参数重新生成（拖过的发源地留着）；patch 换掉其中几项。
 // 国家（第二十三轮）：patch 写了 countries 时按它重新长（keepLocked 默认留着锁定的），没写时用现有的领土
 export function regenerateHuman(world: World, d: Derived, patch: Partial<HumanParams>, opts: { keepManual?: boolean; keepLocked?: boolean } = {}): HumanState {
+  return drain(regenerateHumanSteps(world, d, patch, opts));
+}
+
+// 同 regenerateHuman，分阶段（见 generateHumanSteps）
+export function* regenerateHumanSteps(world: World, d: Derived, patch: Partial<HumanParams>, opts: { keepManual?: boolean; keepLocked?: boolean } = {}): Generator<void, HumanState> {
   const h = world.small.human;
   if (!h) throw new CommandError('还没有生成人文');
   const fresh = patch.countries !== undefined;
@@ -234,5 +250,5 @@ export function regenerateHuman(world: World, d: Derived, patch: Partial<HumanPa
   // 换了时代、文化组时，不在新的组里的发源地不要了
   const ids = new Set(params.groups);
   const hearths = h.hearths.filter((x) => x.locked && ids.has(x.group));
-  return generateHuman(world, d, params, { keepManual: opts.keepManual, hearths, countryMode: fresh ? 'generate' : 'keep', keepLocked: opts.keepLocked ?? true, regenerate: true });
+  return yield* generateHumanSteps(world, d, params, { keepManual: opts.keepManual, hearths, countryMode: fresh ? 'generate' : 'keep', keepLocked: opts.keepLocked ?? true, regenerate: true });
 }

@@ -15,7 +15,7 @@
 ## 时代、文化、人口（第二十二轮）
 - `era.ts` 时代（第七十三轮起写国家格局 `patterns` 与民族主义 `nationalism`，`relations` 只剩集团的称号；从属的种类第七十四轮多了殖民地 `colony`，第七十五轮多了公司领地 `company`）、取值、取值组（第四十三轮）、文化组、文化的格式与世界里的列表（`worldEra`、`worldCultures`、`worldDimensions`……）；文化的倾向 `cultureTendency`（文化按时代 → 文化 → 组按时代 → 组）、风格 `styleOfCulture`、异端 / 异教 `faithRelation`
 - `pop-kinds.ts` 这五种登记进登记表
-- `context.ts` 生成各步共用的 `GenContext`；`generate.ts` 生成人文（分步、复制内容、重新生成；`generateHuman`、`regenerateHuman`、`humanBlockers`；用的包记在 `small.genStamp`，第五十一轮以前是 `human.packs`；第七十七轮：命令只写文化组的 id，各组占多少是组的比重 `cultureGroup.weight`，`human.groups` 只记 id，`countryRules` 只有种子）
+- `context.ts` 生成各步共用的 `GenContext`；`generate.ts` 生成人文（分步、复制内容、重新生成；`generateHuman`、`regenerateHuman`、`humanBlockers`；用的包记在 `small.genStamp`，第五十一轮以前是 `human.packs`；第七十七轮：命令只写文化组的 id，各组占多少是组的比重 `cultureGroup.weight`，`human.groups` 只记 id，`countryRules` 只有种子）；第九十七轮：`generateHumanSteps` / `regenerateHumanSteps` 分阶段（每一步开头 `reportStage('human.<步>')`，做完停一下；`generateHuman` 就是把它一口气走完）
 - `habitability.ts` 宜居度与偏好（第七十九轮 `preferenceProducts`、`preferenceFactorsAfter`：文化的偏好在组的双精度乘积上接着乘）；`cultures.ts` 文化圈；`culture-style.ts` 地名跟着文化
 - `population.ts` 人口、修补、笔刷（`paintPop`、`setCellPop`、`applyPopFix`；第七十九轮 `composeCell` 按候选的下标拼数查群体，`valueDistAt`；第八十四轮：首都一带多出来的人 `scalePopulation`，`populationFix` 带上一步的宜居度时宜居度变了的一带的人在本国里重新分 `habitabilityMoves`）；`religion-spread.ts` 宗教的发源地与传播（第八十四轮，`SPREAD_DIMS`、`spreadValues`、`spreadSlots`）；`gen-cache.ts` 跨几次生成的缓存（宗教的传播、过河翻山的倍数；键按内容 `viewKey`，`clearGenCaches`）；`groups.ts` 人口群体的编号与每格成分（`codeFor`：键已拼好）
 - `add-dimension.ts` 给已有的世界加一维（第五十四轮）：现有的人原地分开，文化比例逐值不变（`fillPopulation`）；生成时后加的维度最后分开（`fillAddedDims`）；群体的上限 `MAX_POP_GROUPS`。`era.ts` 的 `composedDims`、`filledDims` 分哪几维排列组合，`MAX_DIMENSIONS` 每个时代最多 8 维

@@ -5,6 +5,7 @@ import { classOfKind, fitProvincesToCountries, generateProvinces, isConnected, n
 import { provinceSeed } from '../province-rules';
 import { afterCountries, type ApplyContext, Dirty, nextId, type RunResult, styleLabel } from './shared';
 import { CommandError } from '../errors';
+import { reportStage } from '../progress';
 import { cutSeams, dropSeams, inheritSeams, seamsAfterCut } from '../seams';
 import { tidyCountries } from '../human/country-edit';
 import { cutProvinces } from '../select';
@@ -43,6 +44,7 @@ export function runProvinceOp(world: World, cmd: Command, ctx: ApplyContext): Ru
   switch (cmd.op) {
     case 'generate_provinces': {
       const d = ctx.ensureDerived();
+      reportStage('provinces', 1, 1);
       // 规则是世界里的省份划分（第七十八轮）；种子省略时沿用
       generateProvinces(world, d, cmd.seed ?? provinceSeed(small));
       // 锁定的省可能跨着国界（第二十三轮）
@@ -56,6 +58,7 @@ export function runProvinceOp(world: World, cmd: Command, ctx: ApplyContext): Ru
       const ids = regenTargets(world, cmd.cells);
       if (!ids.length) throw new CommandError('要涂满省份的一大半才会重新划分');
       const d = ctx.ensureDerived();
+      reportStage('provinces', 1, 1);
       // 碰到重新划分的省的切线不要了（看划分前的省份）
       const regen = new Set(ids);
       dropSeams(world, (p) => regen.has(p));

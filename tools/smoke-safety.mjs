@@ -64,11 +64,13 @@ export async function safetySteps({ cdp, q, origin, errors, check, sleep, stroke
   // 从“正在计算…”出来起算
   await q.until('正在计算', `!!document.querySelector('.notices .notice .spinner')`, 20000).catch(() => null);
   const tHang = Date.now();
-  const stop8 = await q.until('出现“停止”', `(() => { const b = document.querySelector('.notices .notice .busy-stop'); return b ? b.textContent.trim() : null; })()`, 20000).catch(() => null);
+  // 第九十七轮：“停止”并进了进度条旁的“取消”，一步做了 1 秒就出现（不用等 5 秒没动静）
+  const stop8 = await q.until('出现“取消”', `(() => { const b = document.querySelector('.notices .notice .busy-stop'); return b ? b.textContent.trim() : null; })()`, 20000).catch(() => null);
   const stopMs = Date.now() - tHang;
-  check(stop8 === '停止', `画了一笔，“正在计算…”出来 ${(stopMs / 1000).toFixed(1)} 秒后旁边出现“停止”（提示条：“${await q.eval(NOTICE)}”）`, `没有出现；提示条是：${await q.eval(NOTICE)}`);
-  check(stopMs > 3000 && stopMs < 8000, '是几秒以后才出现的（不是一开始就有，也不是等很久）', `${stopMs} 毫秒`);
-  await q.shot('正在计算-停止');
+  check(stop8 === '取消', `画了一笔，“正在计算…”出来 ${(stopMs / 1000).toFixed(1)} 秒后旁边出现进度条和“取消”（提示条：“${await q.eval(NOTICE)}”）`, `没有出现；提示条是：${await q.eval(NOTICE)}`);
+  check(stopMs > 500 && stopMs < 4000, '是 1 秒上下出现的（不是一开始就有，也不用等几秒）', `${stopMs} 毫秒`);
+  check((await q.eval(`document.querySelectorAll('.busy-stop').length`)) === 1, '页面上只有一个“取消”');
+  await q.shot('正在计算-取消');
   // 卡着的时候导出世界文件
   const dl0 = (await q.eval(LAST_DL)).n;
   const tExport = Date.now();
@@ -82,14 +84,14 @@ export async function safetySteps({ cdp, q, origin, errors, check, sleep, stroke
   await q.eval(closeMenu);
   // 卡着的时候自动保存没有丢东西（应答过的都在）
   check((await count(q)) === n8 + 1, `存着的还是 ${n8 + 1} 步（没算完的那一步没有写进去）`, `是 ${await count(q)} 步`);
-  // 停止
-  await q.until('“停止”还在', `!!document.querySelector('.notices .notice .busy-stop')`, 20000);
+  // 取消：计算程序卡着（听不到“请停下”），没动静满 5 秒就结束它、用命令记录恢复
+  await q.until('“取消”还在', `!!document.querySelector('.notices .notice .busy-stop')`, 20000);
   await q.eval(`document.querySelector('.notices .notice .busy-stop').click()`);
-  const said8b = await q.until('说已停止', `(() => { const t = ${NOTICE}; return t && t.includes('已停止') ? t : null; })()`, 10000).catch(() => null);
-  check(!!said8b && said8b.split('｜').includes('已停止，回到了这一步之前'), `点“停止”：“${said8b}”`, `说的是：${await q.eval(NOTICE)}`);
+  const said8b = await q.until('说已取消', `(() => { const t = ${NOTICE}; return t && t.includes('已取消') ? t : null; })()`, 15000).catch(() => null);
+  check(!!said8b && said8b.split('｜').some((x) => x.startsWith('已取消，世界回到了这一步之前')), `点“取消”：“${said8b}”`, `说的是：${await q.eval(NOTICE)}`);
   await q.until('世界恢复好', READY, 120000);
   check((await q.eval(LAND)) === land8, '世界还在，回到了这一步之前（陆地逐字节相同）', `之前 ${land8}，现在 ${await q.eval(LAND)}`);
-  check(!(await q.eval(`!!document.querySelector('.notices .notice .busy-stop')`)), '“停止”消失');
+  check(!(await q.eval(`!!document.querySelector('.notices .notice .busy-stop')`)), '“取消”消失');
   await stroke(q, 0.6);
   await q.until('这一笔画上了', `(${LAND}) !== ${JSON.stringify(land8)}`, 60000).catch(() => null);
   await q.until('算完', READY, 60000);
@@ -197,13 +199,13 @@ export async function safetySteps({ cdp, q, origin, errors, check, sleep, stroke
   const swallow = (await q.send('Page.addScriptToEvaluateOnNewDocument', { source: SWALLOW_LOAD })).identifier;
   await q.send('Page.navigate', { url: `${origin}/` });
   const tOpen = Date.now();
-  const stop11 = await q.until('中间那一块上出现“停止”', `(() => { const l = document.querySelector('.loading'); const b = l && l.querySelector('.busy-stop'); return b ? l.textContent.trim() : null; })()`, 30000).catch(() => null);
-  check(!!stop11 && stop11.includes('正在打开世界') && stop11.includes('停止'), `打开卡住了：${((Date.now() - tOpen) / 1000).toFixed(1)} 秒后“${stop11}”`, `没有出现；页面上是：${await q.eval(`document.querySelector('.loading')?.textContent ?? null`)}`);
-  await q.shot('正在打开-停止');
+  const stop11 = await q.until('中间那一块上出现“取消”', `(() => { const l = document.querySelector('.loading'); const b = l && l.querySelector('.busy-stop'); return b ? l.textContent.trim() : null; })()`, 30000).catch(() => null);
+  check(!!stop11 && stop11.includes('正在打开世界') && stop11.includes('取消'), `打开卡住了：${((Date.now() - tOpen) / 1000).toFixed(1)} 秒后“${stop11}”`, `没有出现；页面上是：${await q.eval(`document.querySelector('.loading')?.textContent ?? null`)}`);
+  await q.shot('正在打开-取消');
   await q.eval(`document.querySelector('.loading .busy-stop').click()`);
   await q.until('向导', `!!document.querySelector('.modal.wizard')`, 20000).catch(() => null);
   const said11 = await q.eval(NOTICE);
-  check((await q.eval(`!!document.querySelector('.modal.wizard')`)) && !(await q.eval(ASK)), `点“停止”：进向导，不问“没能打开”（顶上：“${said11}”）`);
+  check((await q.eval(`!!document.querySelector('.modal.wizard')`)) && !(await q.eval(ASK)) && (said11 ?? '').includes('已取消'), `点“取消”：进向导，不问“没能打开”（顶上：“${said11}”）`);
   check((await count(q)) === head11.count && (await q.eval(`!!document.querySelector('.modal.wizard .box.resume')`)), `上次的世界还在原处（${head11.count} 步），向导上面有“继续上次的世界”`, `存着 ${await count(q)} 步`);
   check(JSON.parse((await q.eval(`localStorage.getItem('map2.opening')`)) ?? '{}').n === 1, '记下了一次没打开成（连着两次，下次先问）');
   await q.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: swallow });
@@ -234,4 +236,6 @@ export async function safetySteps({ cdp, q, origin, errors, check, sleep, stroke
   const early = q.errors.at(-1) ?? '';
   check(!/冒烟/.test(early) && early.length > 0, `（故意引出来的那一个：${early.split('\n')[0].slice(0, 80)}）`);
   check(planted.length === 0, '后面几步：除了故意抛的，页面里没有别的没接住的错', planted.slice(0, 3).join('；'));
+  // 这个页面开着的 Worker 的名单（一直跟着变）：第十二段接着用，不再挂一遍
+  return { workers };
 }

@@ -1,4 +1,4 @@
-import type { SmallState, World } from '../world';
+import type { Derived, SmallState, World } from '../world';
 import { type Dimension, type Era, MAX_DIMENSIONS, cultureById, cultureGroupById, dimensionValues, popValueById, worldDimensions, worldEra } from '../human/era';
 import { CommandError } from '../errors';
 import type { Command } from './schema';
@@ -7,7 +7,8 @@ import { classAt, classCode, RETIRED_CLASSES } from '../human/terrain-class';
 import { classLift, groundUnder, putLift, restoreLift } from '../human/class-ground';
 import { RESOURCE_NONE, resourceAt, resourceCode } from '../human/resources';
 import { missingNotes, type MissingScope } from '../content/missing';
-import { defaultTotalPop, generateHuman, humanBlockers, regenerateHuman, ruleEra, stampedPacks } from '../human/generate';
+import { defaultTotalPop, generateHumanSteps, humanBlockers, regenerateHuman, regenerateHumanSteps, ruleEra, stampedPacks } from '../human/generate';
+import { drain } from '../progress';
 import { clearCountries } from '../human/countries';
 import { countryOf, mergeCountries, moveCapital, newCountry, paintCountry, removeCountry, setCountry, splitCountry, tidyCountries } from '../human/country-edit';
 import { restoreCountry, restorePop } from '../human/auto';
@@ -86,6 +87,76 @@ function paintClassGround(world: World, cmd: Extract<Command, { op: 'set_cell_cl
 }
 
 // 格的地形类别与资源、人文、国家、集团、人口的命令（第四十一轮从 runOp 拆出来，case 原样）；不是这一类的命令返回 undefined
+// 生成、重新生成人文和国家（第九十七轮从 runHumanOp 原样搬出，改成分阶段的）：生成的每一步之间停一下（yield），
+// 见 human/generate.ts 的 generateHumanSteps。一口气走完（runHumanOp 里的 drain）与原来完全相同
+const HUMAN_GEN_OPS = new Set<Command['op']>(['generate_human', 'regenerate_human', 'generate_countries', 'regenerate_countries']);
+export const isHumanGen = (cmd: Command): boolean => HUMAN_GEN_OPS.has(cmd.op);
+// 要推导时：引擎给了分阶段的（Engine.applySteps）就用它，重算的各步之间也能停
+function* derivedOf(ctx: ApplyContext): Generator<void, Derived> {
+  return ctx.derivedSteps ? yield* ctx.derivedSteps() : ctx.ensureDerived();
+}
+export function* runHumanGenSteps(world: World, cmd: Command, ctx: ApplyContext): Generator<void, RunResult | undefined> {
+  const { small } = world;
+  switch (cmd.op) {
+    case 'generate_human': {
+      const d = yield* derivedOf(ctx);
+      const scopes: MissingScope[] = ['world', ...(cmd.countries ? (['countries'] as const) : []), ...(cmd.settlements ? (['settlements'] as const) : [])];
+      // 第三十轮：缺了时代、文化时不生成（已有的人文去掉：生成是整个换掉），写明缺什么
+      const blockers = humanBlockers(world, cmd);
+      if (blockers.length) {
+        if (small.human) clearPop(world);
+        return { dirty: Dirty.Human, summary: '没有生成人文', skipped: [...blockers, ...missingNotes(small, ['world'])] };
+      }
+      const left = cmd.switchLibrary ? leaveLibrary(world, cmd.switchLibrary) : Dirty.None;
+      const h = yield* generateHumanSteps(world, d, {
+        packs: cmd.packs,
+        groups: cmd.groups,
+        seed: cmd.seed,
+        ...(cmd.countries ? { countries: cmd.countries } : {}),
+        ...(cmd.settlements ? { settlements: cmd.settlements } : {}),
+      });
+      afterCountries(world);
+      const era = worldEra(small);
+      const k = (small.countries ? ` · ${Object.keys(small.countries).length} 个国家` : '') + (cmd.settlements && small.cities ? ` · ${Object.keys(small.cities).length} 座城市` : '');
+      const skipped = missingNotes(small, scopes);
+      return { dirty: Math.max(Dirty.Human, left) as Dirty, summary: `生成人文“${era?.name ?? h.era}” · ${h.groups.length} 个文化组 · ${popText(h.totalPop)}${k}`, ...(skipped.length ? { skipped } : {}) };
+    }
+    case 'regenerate_human': {
+      const h = small.human;
+      if (!h) throw new CommandError('还没有生成人文');
+      const blockers = humanBlockers(world, { packs: cmd.packs ?? stampedPacks(small).map((p) => [...p]), groups: cmd.groups ?? h.groups });
+      if (blockers.length) throw new CommandError(blockers[0]);
+      const d = yield* derivedOf(ctx);
+      const left = cmd.switchLibrary ? leaveLibrary(world, cmd.switchLibrary) : Dirty.None;
+      // 换了库：总人口按新时代的默认（和新世界一样），不留旧时代的；没换时用记着的（改过总人口的留着）
+      const era = cmd.switchLibrary && cmd.packs ? ruleEra(small, cmd.packs) : undefined;
+      const patch = { packs: cmd.packs, groups: cmd.groups, totalPop: era ? defaultTotalPop(world, d, era) : undefined, seed: cmd.seed, countries: cmd.countries };
+      yield* regenerateHumanSteps(world, d, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)), { keepManual: cmd.keepManual ?? true });
+      afterCountries(world);
+      const skipped = missingNotes(small, ['world', ...(small.human?.countryRules ? (['countries'] as const) : [])]);
+      return { dirty: Math.max(Dirty.Human, left) as Dirty, summary: '重新生成人文', ...(skipped.length ? { skipped } : {}) };
+    }
+    case 'generate_countries':
+    case 'regenerate_countries': {
+      const h = small.human;
+      if (!h) throw new CommandError('还没有生成人文');
+      if (cmd.op === 'regenerate_countries' && !h.countryRules) throw new CommandError('还没有生成国家');
+      const blockers = humanBlockers(world, { packs: stampedPacks(small).map((p) => [...p]), groups: h.groups });
+      if (blockers.length) throw new CommandError(blockers[0]);
+      const d = yield* derivedOf(ctx);
+      const rules = cmd.seed !== undefined ? { seed: cmd.seed } : {};
+      // 生成：整个换掉（参数从默认起）；重新生成：按记着的参数，锁定的留着
+      if (cmd.op === 'generate_countries') delete h.countryRules;
+      yield* regenerateHumanSteps(world, d, { countries: rules }, { keepManual: true, keepLocked: cmd.op === 'regenerate_countries' ? (cmd.keepLocked ?? true) : false });
+      afterCountries(world);
+      const k = Object.keys(small.countries ?? {}).length;
+      const skipped = missingNotes(small, ['countries']);
+      return { dirty: Dirty.Human, summary: `${cmd.op === 'generate_countries' ? '生成' : '重新生成'}国家 · ${k} 个`, ...(skipped.length ? { skipped } : {}) };
+    }
+  }
+  return undefined;
+}
+
 export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunResult | undefined {
   const { causes, small, mesh } = world;
   const n = mesh.n;
@@ -164,61 +235,11 @@ export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunRe
       else delete small.cells;
       return { dirty: Dirty.None, summary };
     }
-    case 'generate_human': {
-      const d = ctx.ensureDerived();
-      const scopes: MissingScope[] = ['world', ...(cmd.countries ? (['countries'] as const) : []), ...(cmd.settlements ? (['settlements'] as const) : [])];
-      // 第三十轮：缺了时代、文化时不生成（已有的人文去掉：生成是整个换掉），写明缺什么
-      const blockers = humanBlockers(world, cmd);
-      if (blockers.length) {
-        if (small.human) clearPop(world);
-        return { dirty: Dirty.Human, summary: '没有生成人文', skipped: [...blockers, ...missingNotes(small, ['world'])] };
-      }
-      const left = cmd.switchLibrary ? leaveLibrary(world, cmd.switchLibrary) : Dirty.None;
-      const h = generateHuman(world, d, {
-        packs: cmd.packs,
-        groups: cmd.groups,
-        seed: cmd.seed,
-        ...(cmd.countries ? { countries: cmd.countries } : {}),
-        ...(cmd.settlements ? { settlements: cmd.settlements } : {}),
-      });
-      afterCountries(world);
-      const era = worldEra(small);
-      const k = (small.countries ? ` · ${Object.keys(small.countries).length} 个国家` : '') + (cmd.settlements && small.cities ? ` · ${Object.keys(small.cities).length} 座城市` : '');
-      const skipped = missingNotes(small, scopes);
-      return { dirty: Math.max(Dirty.Human, left) as Dirty, summary: `生成人文“${era?.name ?? h.era}” · ${h.groups.length} 个文化组 · ${popText(h.totalPop)}${k}`, ...(skipped.length ? { skipped } : {}) };
-    }
-    case 'regenerate_human': {
-      const h = small.human;
-      if (!h) throw new CommandError('还没有生成人文');
-      const blockers = humanBlockers(world, { packs: cmd.packs ?? stampedPacks(small).map((p) => [...p]), groups: cmd.groups ?? h.groups });
-      if (blockers.length) throw new CommandError(blockers[0]);
-      const d = ctx.ensureDerived();
-      const left = cmd.switchLibrary ? leaveLibrary(world, cmd.switchLibrary) : Dirty.None;
-      // 换了库：总人口按新时代的默认（和新世界一样），不留旧时代的；没换时用记着的（改过总人口的留着）
-      const era = cmd.switchLibrary && cmd.packs ? ruleEra(small, cmd.packs) : undefined;
-      const patch = { packs: cmd.packs, groups: cmd.groups, totalPop: era ? defaultTotalPop(world, d, era) : undefined, seed: cmd.seed, countries: cmd.countries };
-      regenerateHuman(world, d, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)), { keepManual: cmd.keepManual ?? true });
-      afterCountries(world);
-      const skipped = missingNotes(small, ['world', ...(small.human?.countryRules ? (['countries'] as const) : [])]);
-      return { dirty: Math.max(Dirty.Human, left) as Dirty, summary: '重新生成人文', ...(skipped.length ? { skipped } : {}) };
-    }
+    case 'generate_human':
+    case 'regenerate_human':
     case 'generate_countries':
-    case 'regenerate_countries': {
-      const h = small.human;
-      if (!h) throw new CommandError('还没有生成人文');
-      if (cmd.op === 'regenerate_countries' && !h.countryRules) throw new CommandError('还没有生成国家');
-      const blockers = humanBlockers(world, { packs: stampedPacks(small).map((p) => [...p]), groups: h.groups });
-      if (blockers.length) throw new CommandError(blockers[0]);
-      const d = ctx.ensureDerived();
-      const rules = cmd.seed !== undefined ? { seed: cmd.seed } : {};
-      // 生成：整个换掉（参数从默认起）；重新生成：按记着的参数，锁定的留着
-      if (cmd.op === 'generate_countries') delete h.countryRules;
-      regenerateHuman(world, d, { countries: rules }, { keepManual: true, keepLocked: cmd.op === 'regenerate_countries' ? (cmd.keepLocked ?? true) : false });
-      afterCountries(world);
-      const k = Object.keys(small.countries ?? {}).length;
-      const skipped = missingNotes(small, ['countries']);
-      return { dirty: Dirty.Human, summary: `${cmd.op === 'generate_countries' ? '生成' : '重新生成'}国家 · ${k} 个`, ...(skipped.length ? { skipped } : {}) };
-    }
+    case 'regenerate_countries':
+      return drain(runHumanGenSteps(world, cmd, ctx));
     case 'remove_countries': {
       if (!small.countries) throw new CommandError('还没有生成国家');
       // 第六十二轮：政体、派系留在世界里（世界保留全部内容，导入的、改过的不该跟着没了），不想要时“清理没用到的”

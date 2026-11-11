@@ -214,6 +214,7 @@ export { FLASH_MS, type NoteAction, changeNote, describeChange, flash, flashCell
 export { type MapKind, type Prefs, type ProjectionPref, type Reference, type WheelPref, loadReference, nameMode, parseMapKind, parsePrefs, prefs, reference, setNameMode, setPrefs, setReference } from './state/prefs';
 export { type ToolOptions, brushRange, lakeRange, mapKm, options, reachRange, setOptions } from './state/options';
 export { DOC_WAIT_MS, busy, docNow, editsIdle, formThumbnail, getDoc, idleWithin, knowIsolation, onlyEditsPending, safeMode, scriptRunning, scriptsIsolated, stalled, stopBusy, stopScripts, thumbnail, whenEditsIdle } from './state/worker-host';
+export { type ProgressView, cancelling, progressView } from './state/progress';
 export { type Ask, type AskChoice, ask, askText, askUser } from './state/ask';
 export { confirmImport, showScripts, trustFormScripts, trustHandledElsewhere } from './state/script-trust';
 export { type OpenOptions, type OpenResult, loadDoc, newWorld, openDoc, resumeLast, retryScripts } from './state/open';

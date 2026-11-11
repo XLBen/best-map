@@ -14,14 +14,13 @@ import {
   resumeLast,
   sheet,
   showToast,
-  stalled,
-  stopBusy,
   uiHidden,
   wizardOpen,
   world,
 } from '../state';
 import { SmokeBomb } from '../smoke-hooks';
 import { STOP_TEXT } from './copy';
+import { BusyLine } from './shell/BusyLine';
 import { CATEGORY_DEFS } from './defs/tools';
 import { Help } from './Help';
 import { MapView } from './MapView';
@@ -228,13 +227,8 @@ export function App() {
         <GlNote />
         {!w && !wizardOpen.value && (
           <div class="loading">
-            {busy.value ?? '正在准备…'}
-            {/* 第九十六轮：启动时打开上次的世界，几秒还没好：可以停下（那一份留着，进向导） */}
-            {busy.value && stalled.value && (
-              <button class="pill-btn busy-stop" onClick={() => void stopBusy()} title={STOP_TEXT.openTip}>
-                {STOP_TEXT.stop}
-              </button>
-            )}
+            {/* 第九十七轮：启动时打开上次的世界，过了 1 秒：到哪一步了、进度条、“取消”（那一份留着，进向导） */}
+            {busy.value ? <BusyLine text={busy.value} tip={STOP_TEXT.openTip} /> : '正在准备…'}
           </div>
         )}
         {!hidden && (
