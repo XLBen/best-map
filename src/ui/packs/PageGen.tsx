@@ -64,7 +64,7 @@ export function PageGen({ ctx }: { ctx: PageCtx }) {
           <More t={prov as GenTarget<unknown>} label="省份划分的其余几项" />
         </>
       ) : (
-        <p class="hint">本世界没有省份划分，按默认的划</p>
+        <p class="hint">这张地图没有省份划分，按默认的划</p>
       )}
     </div>
   );

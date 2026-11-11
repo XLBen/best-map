@@ -14,6 +14,9 @@ import { CityGlyph } from './panels/settlements';
 import { selectSettle } from './tools/settlements';
 import { iconOf } from '../render/settle-draw';
 import { cityIconOf } from './domain/settlements';
+import { IN_LIBRARY_TITLE } from './copy';
+import { cellTargets } from './packs/open-item';
+import { LibItemLines } from './shell/LibItemLine';
 
 // “这里”卡片里的档案（第二十一轮）：小地名、是山峰时的“xx峰 · 高度”、地形类别、资源、备注。
 // 钉住一格（右键点地图）时可以改；没钉住时只读，跟着鼠标
@@ -442,6 +445,8 @@ export function ArchiveBox({ w, cell, pinned }: { w: World; cell: number; pinned
     <section class="archive">
       <h5>档案</h5>
       {pinned ? <Editable a={a} w={w} /> : <ReadOnly a={a} w={w} />}
+      {/* 第九十二轮：这一格的生态、文化、地形类别、资源在资源库里的那一项（钉住时名字、颜色在这里直接改） */}
+      <LibItemLines title={IN_LIBRARY_TITLE} list={cellTargets(w, cell)} edit={pinned} />
     </section>
   );
 }

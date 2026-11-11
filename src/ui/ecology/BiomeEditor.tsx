@@ -248,7 +248,7 @@ function Buttons({ sp, t, onSelect }: { sp: Species; t: BiomeTarget; onSelect: (
   const w = world.value;
   const painting = options.value.biome === sp.id && tool.value === 'biome';
   const exportAll = () => {
-    const pack = biomesPack(t.inWorld ? '本世界的生态' : '生态', t.all, t.inWorld);
+    const pack = biomesPack(t.inWorld ? '这张地图的生态' : '生态', t.all, t.inWorld);
     download(packFileName(pack), JSON.stringify(pack, null, 2), 'application/json');
   };
   return (
@@ -278,7 +278,7 @@ function Buttons({ sp, t, onSelect }: { sp: Species; t: BiomeTarget; onSelect: (
           </button>
         </>
       )}
-      <button class="small" title="这一份的全部生态，存成资源包" onClick={exportAll}>
+      <button class="small" title="这一份的全部生态，存成文件" onClick={exportAll}>
         导出
       </button>
       {t.inWorld && (

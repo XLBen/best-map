@@ -2,13 +2,12 @@ import type { Command } from '../../../core/commands';
 import type { IslandType } from '../../../core/island-types';
 import { type MapStyle, styleRgba } from '../../../core/map-style';
 import { packFileName } from '../../../core/packs';
-import { saveItem } from '../../library';
-import { type NoteAction, askUser, download, execAdjust, knowIsolation, openPanel, openWaterTypeEditor, showToast } from '../../state';
+import { type NoteAction, askUser, download, execAdjust, knowIsolation, openPanel, openWaterTypeEditor } from '../../state';
 import { trustScripts, untrustedScripts } from '../../trust';
 import { scriptTrustText } from '../copy';
 import { category, setTool } from '../defs/tools';
 import { islandSwatch, requestIslandTypeEditor } from '../panels/island-types';
-import { type ItemRow, itemPack, saveableItem } from './rows';
+import { type ItemRow, itemPack } from './rows';
 import { isolationNote } from './script-trust';
 
 // 面板里一行的样子（色块、示例名字）和按钮做的事（先问脚本、存进资源库、导出、打开详细编辑）
@@ -74,15 +73,6 @@ export function sampleLine(row: ItemRow): string {
 }
 
 // ---------- 一项 ----------
-
-// 世界里自己做的一项存进资源库（“我的资源”这个库）
-export async function saveRow(row: ItemRow) {
-  const item = saveableItem(row);
-  if (item === null) return;
-  const r = await saveItem(row.kind.pack.key, item);
-  if (!r.ok) showToast(r.error, true);
-  else showToast(r.stored ? `“${row.name}”已存到我的库（我的资源）` : '存不进浏览器：只在这次打开的页面里', !r.stored);
-}
 
 // 单独这一项导出成文件
 export const exportRow = (row: ItemRow) => {

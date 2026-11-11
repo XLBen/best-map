@@ -1,0 +1,88 @@
+/* 第九十二轮：找得到、分得清。地图上点到的东西在资源库里的一行、面板顶上“改的是哪一份”、来源下拉的“更多”、存到我的库 */
+
+/* 档案、“这里”卡片里的一行：色块、名字（能改时是框）、“在资源库里打开” */
+.lib-item-lines {
+  margin-top: var(--sp-2);
+}
+.lib-item-line {
+  flex-wrap: wrap;
+}
+.lib-item-line input[type='color'] {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+}
+.lib-item-line .lib-item-open {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+/* 面板顶上一直在的一句：现在改的是哪一份。三种颜色、三种图标，一眼分得清 */
+.lp-editing {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 var(--sp-3) var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  background-color: var(--fill);
+}
+.lp-editing svg {
+  flex: none;
+}
+.lp-editing.world {
+  background-color: var(--accent-bg);
+  color: var(--text);
+}
+.lp-editing.mine {
+  background-color: var(--warn-bg);
+  color: var(--warn-text);
+}
+.lp-editing.readonly,
+.lp-editing.file {
+  color: var(--muted);
+}
+.lp-editing b {
+  font-weight: 600;
+}
+
+/* 来源下拉里收着的“更多” */
+.lp-menu-more {
+  color: var(--muted);
+}
+.lp-menu-more svg {
+  transition: transform 0.12s;
+}
+.lp-menu-more.open svg {
+  transform: rotate(90deg);
+}
+
+/* 没有时代的库：首页上“并进我的库” */
+.lp-merge {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0;
+}
+
+/* 挑选时每一步的一句人话 */
+.lp-pick-help {
+  margin: 0 var(--sp-3) var(--sp-1);
+}
+.lb-help {
+  margin: 0 0 var(--sp-1);
+}
+
+/* 面板开着（一栏，右边在 8 + 420 = 428 px）时提示条挪到剩下的地图中间：窄窗口里“已存到我的库……”这类话不再被面板盖住一半
+   （第九十二轮在 1024 px 宽的预览里看到的；两栏时见 lib-pick.css 的 .app.lib-wide） */
+@media (min-width: 901px) and (max-width: 1340px) {
+  .app.lib-open .notices {
+    left: calc((100% + 428px) / 2);
+    max-width: min(calc(100% - 468px), 440px);
+  }
+}

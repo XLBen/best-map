@@ -11,6 +11,7 @@ import { arrangeFor } from './page-arrange';
 import { applyArrange, linkChild, newChildIn, unlinkChild } from './page-actions';
 import { type OtherOpen, hasOther, sameOther } from './other-view';
 import { kindPickable, lookOf, shownPick } from './pick-view';
+import { unpickableNote } from './pick-help';
 import { PickBox } from './PickBox';
 import { CHILD_SEARCH_FROM, CHILD_SHOW, type ChildRow, type ChildSection, type InsideRow, shownRows } from './page-children';
 import { dragOutOf } from './page-drag';
@@ -33,7 +34,7 @@ function ChildLine({ s, r, parent, src, ctx, open, onOpen, Item }: { s: ChildSec
   const v = shownPick(src, ctx);
   const pick = v && kindPickable(v, s.kind.id) ? v : null;
   const ref = { kind: s.kind.id, id: r.id };
-  const note = pick ? lookOf(pick, ref).note : null;
+  const note = pick ? lookOf(pick, ref).note : v ? unpickableNote(v.look.here) : null;
   const swatch = swatchOf({ kind: s.kind, item: r.item });
   const canOut = !s.readonly;
   const up = kindOf(s.relation.parent);

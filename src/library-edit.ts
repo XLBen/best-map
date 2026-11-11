@@ -345,7 +345,7 @@ export function createLibEditor(backend: LibBackend = localBackend(), opts: LibE
         out.splice(b, 0, x);
         return out;
       }) as ResourcePack;
-      if (!done) return { ok: false, error: '不在同一个小包里' };
+      if (!done) return { ok: false, error: '只能在同一组里换先后' };
       commit(key, h, pack, { label: '换先后', before: h.pack, after: pack }, null);
       return { ok: true };
     },

@@ -40,6 +40,6 @@ export interface MarkInput {
 export function oneMark(m: MarkInput): { text: string; diff: boolean } | null {
   if (m.isDefault) return { text: m.inUse ? '在用' : '默认', diff: false };
   if (m.changed) return { text: '和库不同', diff: true };
-  if (m.modified) return { text: '本世界改过', diff: false };
+  if (m.modified) return { text: '这张地图改过', diff: false };
   return null;
 }

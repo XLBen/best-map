@@ -4,6 +4,7 @@ import { kindOf } from '../../../core/content/registry';
 import type { PackNode } from '../../../core/packs';
 import type { ImportGate, ImportGates, ImportNeed, ImportPreview, ImportRow } from '../../../core/packs/closure';
 import { infoOf } from '../../../core/packs/import-gates';
+import { bringsNote, bringsOf, haveNote } from './pick-help';
 
 // 资源库面板上勾选的样子（第六十五轮写给导入窗口，第六十七轮窗口并进面板）：每一行是什么状态、灰字写什么（列表、融入的子项、
 // 一项的页面顶上都用 rowLook）；列表头的“全选”勾哪些；右栏的清单按种类分小标题、取值挂到变量下面。都是算出来的，组件只画
@@ -51,7 +52,11 @@ export function rowLook(r: ContentRef, c: LookCtx): RowLook {
   const row = c.planned.get(key);
   if (row) {
     const state = row.state === 'rename' ? differsNote(c.here) : row.state === 'fix' ? fixNote(gate) : null;
-    if (row.role === 'pick') return { mark: 'on', picked, note: state };
+    // 第九十二轮：勾着的一行写它连带了几样（pick-help.ts）
+    if (row.role === 'pick') {
+      const n = state ? 0 : (bringsOf(c.planned.values(), c.planned).get(row.name) ?? 0);
+      return { mark: 'on', picked, note: n ? bringsNote(n) : state };
+    }
     if (row.role === 'child') return { mark: 'child', picked, note: state };
     // 跟着来的补回只有比重（勾的文化带来的组，第六十六轮）：写谁要它
     return { mark: 'follow', picked, note: row.state === 'rename' ? state : whyText(row.because) };
@@ -62,7 +67,8 @@ export function rowLook(r: ContentRef, c: LookCtx): RowLook {
     case 'full':
       return { mark: 'grey', picked, note: gate.reason, resolvable: false };
     case 'have':
-      return { mark: 'have', picked, note: null };
+      // 第九十二轮：不能勾的每一行都写明为什么
+      return { mark: 'have', picked, note: haveNote(c.here) };
     case 'fixable':
       return { mark: picked ? 'on' : 'off', picked, note: fixNote(gate) };
     default:

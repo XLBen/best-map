@@ -44,7 +44,7 @@ function fieldProblems(who: string, kind: string, item: unknown, fields: Readonl
   const out: string[] = [];
   for (const f of linkIds(kind, item, 'field')) {
     if (!ITEM_ID.test(f)) out.push(`${who}用到的自定义场“${f}”名字无效：只能用字母、数字、下划线和连字符`);
-    else if (!fields.has(f)) out.push(`${who}用到的自定义场 ${f} 不在资源包里，用时新建一个空的`);
+    else if (!fields.has(f)) out.push(`${who}用到的自定义场 ${f} 不在这个文件里，用时新建一个空的`);
   }
   return out;
 }
@@ -241,10 +241,10 @@ registerKind<Species>({
       const lakes = ctx.ids('lakeTypes');
       for (const b of biomes) {
         const who = `“${b.name || b.id}”`;
-        for (const t of b.effects?.invade?.targets ?? []) if (!known.has(t)) problems.push(`${who}侵占的 ${t} 不在资源包里，也不是内置生态：世界里没有它时无效`);
+        for (const t of b.effects?.invade?.targets ?? []) if (!known.has(t)) problems.push(`${who}侵占的 ${t} 不在这个文件里，也不是内置生态：世界里没有它时无效`);
         problems.push(...fieldProblems(who, 'biome', b, ctx.fields));
-        for (const r of linkIds('biome', b, 'riverType')) if (!rivers.has(r)) problems.push(`${who}用到的河流类型 ${r} 不在资源包里：没有这种河时按很远算`);
-        for (const r of linkIds('biome', b, 'lakeType')) if (!lakes.has(r)) problems.push(`${who}用到的湖泊类型 ${r} 不在资源包里：没有这种湖时按很远算`);
+        for (const r of linkIds('biome', b, 'riverType')) if (!rivers.has(r)) problems.push(`${who}用到的河流类型 ${r} 不在这个文件里：没有这种河时按很远算`);
+        for (const r of linkIds('biome', b, 'lakeType')) if (!lakes.has(r)) problems.push(`${who}用到的湖泊类型 ${r} 不在这个文件里：没有这种湖时按很远算`);
         problems.push(...badLists(who, b.feature?.names, ctx.lists));
         if (b.dispersal) problems.push(`${who}只在起源地附近长：只对原来的世界有效`);
         if (b.range) problems.push(`${who}只长在某处：只对原来的世界有效`);

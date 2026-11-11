@@ -157,7 +157,7 @@ const TYPE_ZH: Record<string, string> = { string: '文字', number: '数', boole
 const packErrorMap: z.core.$ZodErrorMap = (iss) => {
   if (iss.code === 'unrecognized_keys') return `${iss.path?.length ? '不认识的项' : '不认识的部分'}：${iss.keys.join('、')}`;
   if (iss.code === 'invalid_type') return iss.input === undefined ? '缺少这一项' : `应该是${TYPE_ZH[iss.expected] ?? iss.expected}`;
-  if (iss.code === 'invalid_value' && iss.path?.length === 1 && iss.path[0] === 'version') return `资源包格式是第 ${String(iss.input)} 版，只支持第 ${PACK_VERSION} 版`;
+  if (iss.code === 'invalid_value' && iss.path?.length === 1 && iss.path[0] === 'version') return `文件格式是第 ${String(iss.input)} 版，只支持第 ${PACK_VERSION} 版`;
   // 长短、多少：说人话（zod 的中文是“数值过小：期望 string >=1 字符”）
   if (iss.code === 'too_small' && iss.origin === 'string') return Number(iss.minimum) <= 1 ? '不能是空的' : `太短，至少 ${String(iss.minimum)} 个字`;
   if (iss.code === 'too_big' && iss.origin === 'string') return `太长，最多 ${String(iss.maximum)} 个字`;
@@ -168,7 +168,7 @@ const packErrorMap: z.core.$ZodErrorMap = (iss) => {
   return zh(iss);
 };
 
-const TOP_ZH: Record<string, string> = { format: '格式', id: '资源包的 id', name: '资源包的名字', author: '作者', description: '说明' };
+const TOP_ZH: Record<string, string> = { format: '格式', id: '库的 id', name: '库的名字', author: '作者', description: '说明' };
 
 // 出错的位置：“生态第 2 个「crystal」的 color”
 function where(path: readonly PropertyKey[], json: unknown): string {
@@ -226,10 +226,10 @@ function parseChildren(list: unknown[] | undefined, depth: number, out: PackNode
   const packs: PackNode[] = [];
   list.forEach((raw, k) => {
     const label = raw && typeof raw === 'object' && typeof (raw as { name?: unknown }).name === 'string' ? `“${(raw as { name: string }).name}”` : `第 ${k + 1} 个`;
-    const at = `${prefix}小包${label}里的`;
+    const at = `${prefix}分组${label}里的`;
     const r = nodeSchema(depth).safeParse(raw, { error: packErrorMap });
     if (!r.success) {
-      errors.push(...issuesText(r.error.issues, raw).map((e) => `${prefix}小包${label}：${e}`));
+      errors.push(...issuesText(r.error.issues, raw).map((e) => `${prefix}分组${label}：${e}`));
       return;
     }
     const data = r.data as Record<string, unknown>;
@@ -264,7 +264,7 @@ export function parsePack(json: unknown): PackParse {
 export type PackRead = { ok: true; pack: ResourcePack; legacy: 'wordPack' | null } | { ok: false; errors: string[] };
 
 export function readPack(text: string): PackRead {
-  if (text.length > PACK_MAX_CHARS) return { ok: false, errors: [`文件太大（超过 ${Math.round(PACK_MAX_CHARS / 1e6)} MB），不是资源包`] };
+  if (text.length > PACK_MAX_CHARS) return { ok: false, errors: [`文件太大（超过 ${Math.round(PACK_MAX_CHARS / 1e6)} MB），不是库的文件`] };
   let json: unknown;
   try {
     // 记事本存的 UTF-8 文件开头可能带一个看不见的 BOM
@@ -272,7 +272,7 @@ export function readPack(text: string): PackRead {
   } catch (e) {
     return { ok: false, errors: [`不是 JSON 文件（${(e as Error).message}）`] };
   }
-  if (Array.isArray(json)) return { ok: false, errors: ['旧版的生态文件不再能读：请用新版导出的资源包'] };
+  if (Array.isArray(json)) return { ok: false, errors: ['旧版的生态文件不再能读：请用新版导出的文件'] };
   if (json !== null && typeof json === 'object') {
     const o = json as Record<string, unknown>;
     if (o.format === PACK_FORMAT) {
@@ -287,7 +287,7 @@ export function readPack(text: string): PackRead {
       return r.ok ? { ...r, legacy: 'wordPack' } : r;
     }
   }
-  return { ok: false, errors: ['不认识的文件：不是资源包或地名风格'] };
+  return { ok: false, errors: ['不认识的文件：不是库的文件或地名风格'] };
 }
 
 // ---------- 内容 ----------
@@ -621,7 +621,7 @@ export function planPack(world: PackWorld, pack: PackNode, picks: PackPicks, opt
     ...itemCmds,
     ...(defaultStyle ? [{ op: 'set_name_style', id: defaultStyle } as Command] : []),
   ];
-  return { command: { op: 'batch', label: opts.label ?? `用上资源包“${pack.name}”`, commands }, added, skipped, fields, defaultStyle };
+  return { command: { op: 'batch', label: opts.label ?? `用上“${pack.name}”`, commands }, added, skipped, fields, defaultStyle };
 }
 
 // 命令带上来源（能记来源的命令才带：启用一项内容的几种，见 commands.ts 的 ORIGIN_OPS）。fromId：改了名时来源里的 id

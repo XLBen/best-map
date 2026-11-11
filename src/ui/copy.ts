@@ -1,10 +1,18 @@
 // 几处都要讲的同一句话：只写在这里（写法见 docs/开发说明.md 的“文字”）
 
 // 资源库：顶栏、“世界”菜单写它是什么
-export const LIBRARY_NOTE = '本世界和各个库里的文化、政体、生态、河湖、地名风格……';
+export const LIBRARY_NOTE = '这张地图和各个库里的文化、政体、生态、河湖、地名风格……';
 // 工具的选择器、缺内容的提示：去库里找
 export const LIBRARY_ADD_LABEL = '从资源库添加…';
-export const LIBRARY_ADD_TIP = '库里还有的，添加到本世界后就能选';
+export const LIBRARY_ADD_TIP = '库里还有的，添加到这张地图后就能选';
+
+// 第九十二轮：地图上点到的东西（档案、“这里”卡片）直达资源库里的那一项；名字、颜色在那一行上直接改
+export const OPEN_IN_LIBRARY = '在资源库里打开';
+export const OPEN_IN_LIBRARY_TIP = '打开这张地图里的这一项';
+export const QUICK_EDIT_TIP = '改的是这一种，用到它的都变';
+export const IN_LIBRARY_TITLE = '在资源库里';
+// 新建向导：有我的库时写一句
+export const WIZARD_MINE_NOTE = '“我的库”里有你存过的内容';
 
 // 没见过的脚本：打开世界、导入、换星球形态、资源包都问这一句（写在 trust.ts：state.ts 也用，它不引用界面）
 export { scriptTrustText } from '../trust';
@@ -42,7 +50,7 @@ export const ERA_PAGE_TIP = '打开资源库里的时代';
 
 // 省份面板（第七十八轮）：省份划分的规则在资源库里
 export const PROVINCE_RULES_NOTE = '省份多大在“生成设置”里改';
-export const PROVINCE_RULES_TIP = '打开资源库里本世界的省份划分';
+export const PROVINCE_RULES_TIP = '打开资源库里这张地图的省份划分';
 
 // 国家档案里的备注、统治者、家族、大事（第八十五轮）
 export const ARCHIVE_TEXT = {

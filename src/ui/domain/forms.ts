@@ -1,12 +1,12 @@
 import type { Command } from '../../../core/commands';
 import { WORLD_TYPE_INFO, type Worldgen, type WorldgenInput, type WorldType } from '../../../core/generate';
-import { itemKey, ownItems, packIdFor, sameItem, walkPacks } from '../../../core/packs';
+import { itemKey, ownItems, sameItem, walkPacks } from '../../../core/packs';
 import { LAYOUT_R, planetProfile } from '../../../core/planet-gen';
 import { type PlanetForm, planetFormSchema } from '../../../core/planet-form';
 import { planetKindName } from '../../../core/presets';
 import { FORMS_PATH } from '../../../core/packs/builtin-tree';
 import { newWorldContentCommands } from '../../../core/packs/import';
-import { type LibraryEntry, MY_PACK_NAME } from '../../library';
+import { type LibraryEntry, MY_PACK_KEY } from '../../library';
 
 // 星球形态的界面要用的几样（不碰界面和 Worker，测试里直接用）：
 // 向导、调整面板里列出的形态（内置的示例 + 资源库里装的）、形态编辑器的滑块、改脚本、存之前定 id
@@ -44,7 +44,7 @@ export function formChoices(entries: readonly LibraryEntry[]): FormChoice[] {
   if (hit) return hit;
   const out: FormChoice[] = [];
   const seen = new Map<string, FormChoice>();
-  const myKey = packIdFor(MY_PACK_NAME);
+  const myKey = MY_PACK_KEY;
   // 第五十一轮：同一种形态在每个库里都有，只列一次（键按默认的库：DEFAULT_PLANET），paths 记着它在哪几个库里
   const first = FORMS_PATH[0];
   for (const e of [...entries.filter((x) => x.key === first), ...entries.filter((x) => x.key !== first)]) {
@@ -70,7 +70,7 @@ export function formChoices(entries: readonly LibraryEntry[]): FormChoice[] {
 
 // 卡片上写的来处：内置的不写；“我的资源”里的写“我的资源”，别的写“来自「包名」”
 export function formSource(c: FormChoice): string {
-  return c.builtin ? '' : c.mine ? MY_PACK_NAME : `来自“${c.pack}”`;
+  return c.builtin ? '' : c.mine ? '我存的' : `来自“${c.pack}”`;
 }
 
 // 一种星球的叫法（像地球、一块超大陆……；内海、空白星球）：生成器的种类的说法（core/presets.ts 的 planetKindName）

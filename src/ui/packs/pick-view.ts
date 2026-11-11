@@ -43,7 +43,7 @@ export function pickView(src: SourceRef, ctx: PageCtx): PickView | null {
   const state = picksOf(src.key);
   const view: PickView | null =
     dest && ask && preview
-      ? { key: src.key, dest, ask, preview, state, look: { picks: new Set(state.picks.map(refKey)), planned: new Map(preview.rows.map((r) => [refKey(r), r])), gates: preview.gates, here: dest === 'world' ? '本世界' : '这个库' } }
+      ? { key: src.key, dest, ask, preview, state, look: { picks: new Set(state.picks.map(refKey)), planned: new Map(preview.rows.map((r) => [refKey(r), r])), gates: preview.gates, here: dest === 'world' ? '这张地图' : '这个库' } }
       : null;
   memo.set(src.key, { store, world: ctx.world, lib: ctx.lib, view });
   return view;

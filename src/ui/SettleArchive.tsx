@@ -5,6 +5,8 @@ import type { Command } from '../../core/commands';
 import { cityArchive, landmarkTypeById, pointTypeById } from '../../core/human';
 import type { World } from '../../core/world';
 import { iconOf } from '../render/settle-draw';
+import { settleTargets } from './packs/open-item';
+import { LibItemLines } from './shell/LibItemLine';
 import { type SettleRef, exec, nameMode, selectedSettle, world } from '../state';
 import { focusOn } from './camera';
 import { Line, ShareRow, StackBar, TextField } from './CountryArchive';
@@ -161,6 +163,7 @@ function CityView({ w, id }: { w: World; id: number }) {
             ))}
           </select>
         </Line>
+        <LibItemLines list={settleTargets(w, { kind: 'city', id })} edit />
         <Line label="国家">
           <CountryLink w={w} id={a.country} />
           <CapitalButton w={w} country={a.country} cell={a.cell} capital={a.capital} />
@@ -278,6 +281,7 @@ function LandmarkView({ w, id }: { w: World; id: number }) {
             ))}
           </select>
         </Line>
+        <LibItemLines list={settleTargets(w, { kind: 'landmark', id })} edit />
         <Line label="国家">
           <CountryLink w={w} id={l.country} />
         </Line>
@@ -349,6 +353,7 @@ function PointView({ w, id }: { w: World; id: number }) {
             ))}
           </select>
         </Line>
+        <LibItemLines list={settleTargets(w, { kind: 'point', id })} edit />
         {t?.description && <p class="hint">{t.description}</p>}
         {p.actsAsCity && (
           <Line label="挂在">

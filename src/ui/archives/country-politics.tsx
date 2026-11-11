@@ -24,7 +24,7 @@ export function GovernmentSection({ w, m }: { w: World; m: CountryMeta }) {
           return (
             <button
               class={`item ${on ? 'on' : ''}`}
-              title={`${g.description ?? ''}${!m.nameLocked && !on ? `\n国名改为“${next}”` : ''}${c.path ? '\n本世界还没有：选它时从资源库添加' : ''}`}
+              title={`${g.description ?? ''}${!m.nameLocked && !on ? `\n国名改为“${next}”` : ''}${c.path ? '\n这张地图还没有：选它时从资源库添加' : ''}`}
               onClick={() => void run(governmentCommand(w, m, c, lib))}
             >
               {g.color && <span class="swatch" style={{ background: g.color }} />}

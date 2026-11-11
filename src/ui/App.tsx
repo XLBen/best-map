@@ -25,7 +25,7 @@ import { BackupsDialog } from './maps/BackupsDialog';
 import { MapsDialog } from './maps/MapsDialog';
 import { PackDialog } from './packs/PackDialog';
 import { LibPanel } from './packs/LibPanel';
-import { libWide } from './packs/panel-store';
+import { libPanel, libWide } from './packs/panel-store';
 import { MorePanel, WorldMenu } from './panels/ActionsPanel';
 import { AdjustPanel } from './panels/AdjustPanel';
 import { LayersPanel } from './panels/LayersPanel';
@@ -208,7 +208,7 @@ export function App() {
   // 图标一种大小、一种粗细（顶栏的大一号，在 TopBar 里写）
   return (
     <LucideProvider size={16} strokeWidth={1.8}>
-      <div class={`app ${sheet.value ? 'with-sheet' : ''} ${libWide.value ? 'lib-wide' : ''}`}>
+      <div class={`app ${sheet.value ? 'with-sheet' : ''} ${libWide.value ? 'lib-wide' : libPanel.value ? 'lib-open' : ''}`}>
         <MapView />
         {!w && !wizardOpen.value && <div class="loading">{busy.value ?? '正在准备…'}</div>}
         {!hidden && (

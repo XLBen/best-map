@@ -5,6 +5,7 @@ import type { ContentRef } from '../../../core/content/links';
 import type { ImportNeed } from '../../../core/packs/closure';
 import type { PageCtx } from './pages';
 import type { RowLook } from './pick-look';
+import { HAVE_NOTE } from './copy';
 import { type PickView, boxOf, lookOf, pressOf, pressRow } from './pick-view';
 
 // 一行最左边的勾（第六十七轮，资源库面板的列表、融入的子项、一项的页面顶上）：
@@ -51,7 +52,7 @@ export function PickBox({ v, r, ctx, look: given }: { v: PickView; r: ContentRef
   const press = pressOf(look);
   if (look.mark === 'have') {
     return (
-      <span class="lp-pick have" title="已经有了">
+      <span class="lp-pick have" title={look.note ?? HAVE_NOTE}>
         <Check />
       </span>
     );

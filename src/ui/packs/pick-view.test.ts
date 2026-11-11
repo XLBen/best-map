@@ -228,7 +228,7 @@ describe('从库里添加…', () => {
 
 describe('读文件', () => {
   it('太大的不读进内存；读不了的弹窗写原因；读得了的是一个临时的库，面板换到它，能勾', async () => {
-    expect(await readFileAsPack({ name: '大.json', size: 1e9, text: () => Promise.reject(new Error('不该读')) })).toEqual({ ok: false, errors: ['文件太大（1000 MB），不是资源包'] });
+    expect(await readFileAsPack({ name: '大.json', size: 1e9, text: () => Promise.reject(new Error('不该读')) })).toEqual({ ok: false, errors: ['文件太大（1000 MB），不是库的文件'] });
     expect(await openFile({ name: '坏.json', size: 3, text: () => Promise.resolve('{x') })).toBeNull();
     expect(packDialog.value?.view).toBe('import');
     packDialog.value = null;

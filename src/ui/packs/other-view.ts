@@ -121,7 +121,7 @@ export function fitsUnder(onto: OntoParent | undefined, target: SourceRef, ctx: 
 // 一行的样子：rowLook 之上加两处——已有的写“本世界已有”，上级放不下的灰着写原因（勾着的照样能取消）
 export function otherLook(v: PickView, r: ContentRef, fits: boolean, onto?: OntoParent): RowLook {
   const look = lookOf(v, r);
-  if (look.mark === 'have') return { ...look, note: `${v.look.here}已有` };
+  if (look.mark === 'have') return look;
   if (!fits && onto) return { mark: 'grey', picked: look.picked, note: `放不到“${onto.title}”下面`, resolvable: false };
   return look;
 }

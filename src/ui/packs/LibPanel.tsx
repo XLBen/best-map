@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, FileUp, Lock, Plus, X } from 'lucide-preact';
+import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, FileUp, LibraryBig, Lock, Map as MapIcon, Plus, X } from 'lucide-preact';
 import { memo } from 'preact/compat';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { canApply, packFileName } from '../../../core/packs';
@@ -6,9 +6,12 @@ import { panelLibrary } from '../../library';
 import { copyLibrary, createLibrary, deleteLibrary, libEdits } from '../../library-edit';
 import { askText, askUser, download, showToast, world } from '../../state';
 import { kindOf } from '../../../core/content/registry';
-import { type Crumb, type PageCtx, type Route, type SourceMenuItem, type SourceRef, WORLD_SOURCE, crumbs, entryOf, itemOf, kindReadonly, sourceKind, sourceMenu, sourceTitle } from './pages';
+import { type Crumb, type PageCtx, type Route, type SourceMenuItem, type SourceRef, WORLD_SOURCE, crumbs, entryOf, itemOf, sourceKind, sourceMenu, sourceTitle } from './pages';
 import { closeLibrary, copyToMine, finishPicking, goBack, goDepth, lastPress, libPanel, livePanel, openBasket, openLibraryAt, pickThis, pickingIn, setSource, startPicking } from './panel-store';
-import { ADD_TO_WORLD, BACK_TO_WORLD, COPY_LIBRARY, COPY_LIBRARY_TIP, EXPORT_FILE, NOT_WORLD_NOTE, OPEN_IN_WORLD, OPEN_IN_WORLD_TIP, PICK_DONE, PICK_ENTER, PICK_ENTER_TIP, TIDY, TIDY_TIP, pickHeadAfter, pickHeadBefore, pickPending, readonlyLine } from './copy';
+import { ADD_TO_WORLD, BACK_TO_WORLD, COPY_LIBRARY, COPY_LIBRARY_TIP, EXPORT_FILE, KEEP_FILE, KEEP_FILE_TIP, NEW_LIBRARY, OPEN_IN_WORLD, OPEN_IN_WORLD_TIP, PICK_DONE, PICK_ENTER, PICK_ENTER_TIP, PICK_HELP, READ_FILE, READ_FILE_TIP, SAVE_ALL_TIP, SAVE_TO_MINE, SOURCE_MORE, SOURCE_MORE_TIP, SOURCE_TIP, TIDY, TIDY_TIP, pickHeadAfter, pickHeadBefore, pickPending } from './copy';
+import { showAllSources } from './lib-prefs';
+import { saveAllToMine } from './save-mine-run';
+import { type SourceGroup, editingLine, editingText, sourceMenuView } from './source-view';
 import { addNow } from './pick-add';
 import { shownPick } from './pick-view';
 import { PageGen } from './PageGen';
@@ -67,8 +70,10 @@ async function newLibrary(src: SourceRef, ctx: PageCtx) {
 
 // 第七十九轮：顶上一行（标题的下拉、撤销、更多、文件、重新生成）都是 memo：面板里别处变了（勾选、翻页、拖滑块）不重画它们，
 // ctx 只在世界、资源库换了时是新的（见 LibPanel）
-const SourcePicker = memo(function SourcePicker({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
+const SourcePicker = memo(function SourcePicker({ src, ctx, picking, canAdd }: { src: SourceRef; ctx: PageCtx; picking: boolean; canAdd: boolean }) {
   const [open, setOpen] = useState(false);
+  // “更多”：平时收着（第九十二轮）；正在看的那一份在里面时一打开就展开着
+  const [more, setMore] = useState<boolean | null>(null);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -79,7 +84,8 @@ const SourcePicker = memo(function SourcePicker({ src, ctx }: { src: SourceRef; 
     return () => window.removeEventListener('pointerdown', off, true);
   }, [open]);
   const file = useRef<HTMLInputElement>(null);
-  const m = sourceMenu(src, ctx);
+  const v = sourceMenuView(sourceMenu(src, ctx), { all: showAllSources(), picking, canPick: canAdd, hasWorld: !!ctx.world });
+  const moreOpen = more ?? v.moreOpen;
   const row = (x: SourceMenuItem) => {
     const n = x.src.t === 'lib' ? pickCount(x.src.key) : 0;
     return (
@@ -95,37 +101,65 @@ const SourcePicker = memo(function SourcePicker({ src, ctx }: { src: SourceRef; 
       </button>
     );
   };
+  const group = (g: SourceGroup) => (
+    <>
+      <h6 class="lp-menu-group">{g.title}</h6>
+      {g.items.map(row)}
+    </>
+  );
+  const extras = (
+    <>
+      <button
+        class="item lp-menu-new"
+        onClick={() => {
+          setOpen(false);
+          void newLibrary(src, ctx);
+        }}
+      >
+        <Plus />
+        <span class="grow">{NEW_LIBRARY}</span>
+      </button>
+      <button class="item" title={READ_FILE_TIP} onClick={() => file.current?.click()}>
+        <FileUp />
+        <span class="grow">{READ_FILE}</span>
+      </button>
+    </>
+  );
   return (
     <div class="lp-source" ref={box}>
-      <button class={`lp-source-btn ${open ? 'open' : ''}`} onClick={() => setOpen(!open)} title="换一个库">
+      <button class={`lp-source-btn ${open ? 'open' : ''}`} onClick={() => setOpen(!open)} title={SOURCE_TIP}>
         <b class="ellipsis">{sourceTitle(src, ctx)}</b>
         <ChevronDown />
       </button>
       {open && (
         <div class="lp-source-menu">
-          {row(m.world)}
-          <h6 class="lp-menu-group">内置的库</h6>
-          {m.builtin.map(row)}
-          {m.mine.length > 0 && <h6 class="lp-menu-group">我的库</h6>}
-          {m.mine.map(row)}
-          {m.imported.length > 0 && <h6 class="lp-menu-group">导入的库</h6>}
-          {m.imported.map(row)}
-          {m.files.length > 0 && <h6 class="lp-menu-group">读进来的文件</h6>}
-          {m.files.map(row)}
-          <button
-            class="item lp-menu-new"
-            onClick={() => {
-              setOpen(false);
-              void newLibrary(src, ctx);
-            }}
-          >
-            <Plus />
-            <span class="grow">新建一个库</span>
-          </button>
-          <button class="item" title="读资源包文件，不运行脚本" onClick={() => file.current?.click()}>
-            <FileUp />
-            <span class="grow">读文件…</span>
-          </button>
+          {v.top.map(row)}
+          {v.pickEntry && (
+            <button
+              class="item"
+              title={PICK_ENTER_TIP}
+              onClick={() => {
+                setOpen(false);
+                startPicking();
+              }}
+            >
+              <Plus />
+              <span class="grow">{PICK_ENTER}</span>
+            </button>
+          )}
+          {v.groups.map(group)}
+          {v.more ? (
+            <>
+              <button class={`item lp-menu-more ${moreOpen ? 'open' : ''}`} title={SOURCE_MORE_TIP} aria-expanded={moreOpen} onClick={() => setMore(!moreOpen)}>
+                <ChevronRight />
+                <span class="grow">{SOURCE_MORE}</span>
+              </button>
+              {moreOpen && v.more.map(group)}
+              {moreOpen && extras}
+            </>
+          ) : (
+            extras
+          )}
         </div>
       )}
       <input
@@ -208,7 +242,7 @@ const MoreMenu = memo(function MoreMenu({ src, ctx }: { src: SourceRef; ctx: Pag
         <div class="lp-source-menu right">
           {e && (k === 'builtin' || k === 'imported') && item(COPY_LIBRARY, COPY_LIBRARY_TIP, () => void copyToMine(src))}
           {e && k === 'mine' && item('改名…', '', () => void renameLibrary(e.key, e.pack.name))}
-          {e && k === 'file' && item('存到我的库…', '查过脚本后存进资源库', () => installFile(e.key))}
+          {e && k === 'file' && item(KEEP_FILE, KEEP_FILE_TIP, () => installFile(e.key))}
           {e &&
             k === 'file' &&
             item('不看这个文件', '从下拉里去掉，勾的也去掉', () => {
@@ -217,60 +251,67 @@ const MoreMenu = memo(function MoreMenu({ src, ctx }: { src: SourceRef; ctx: Pag
             })}
           {e && k !== 'file' && item(EXPORT_FILE, '整个库存成一个文件', () => download(packFileName(e.pack), JSON.stringify(e.pack, null, 2), 'application/json'))}
           {e && k === 'mine' && item('删除这个库…', '用过它的世界不受影响', () => void removeLibrary(e.key, e.pack.name))}
-          {k === 'world' && item('存到我的库…', '挑几样存成一个资源包', () => (packDialog.value = { view: 'export' }))}
+          {/* 第九十二轮：和一项的页面上的“存到我的库”是同一个动作、同一个去向（save-mine-run.ts） */}
+          {k === 'world' && item(`${SAVE_TO_MINE}…`, SAVE_ALL_TIP, () => void saveAllToMine(ctx))}
+          {k === 'world' && item(`${EXPORT_FILE}…`, '挑几样存成一个文件', () => (packDialog.value = { view: 'export' }))}
           {k === 'world' && item(`${TIDY}…`, TIDY_TIP, () => void tidyWorld())}
-          {item('资源包…', '资源库里的包：导出、删除', openPackList)}
+          {item('管理库…', '加进来的库、我的库：导出、删除', openPackList)}
         </div>
       )}
     </div>
   );
 });
 
-// 读进来的文件：顶上一条“装进资源库…”
+// 读进来的文件：顶上一条“加进资源库…”
 const FileBar = memo(function FileBar({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
   const e = entryOf(src, ctx);
   if (!e?.file) return null;
   return (
     <div class="lp-filebar">
       <span class="hint grow ellipsis" title={e.file}>
-        文件：{e.file}，没存进资源库
+        文件：{e.file}，没加进资源库
       </span>
-      <button class="small" onClick={() => installFile(e.key)}>
-        存到我的库…
+      <button class="small" title={KEEP_FILE_TIP} onClick={() => installFile(e.key)}>
+        {KEEP_FILE}
       </button>
     </div>
   );
 });
 
-// 看的不是本世界时顶上一行（第八十一轮）：只读的库写“这是“X”，只能看”，一项的页面上能在本世界打开（本世界有它时）或添加到本世界；
-// 我的库写“改这里不影响当前世界”。挑选时、读进来的文件（FileBar）不写
-const SourceBanner = memo(function SourceBanner({ src, ctx, route }: { src: SourceRef; ctx: PageCtx; route: Route }) {
-  if (src.t === 'world' || !ctx.world) return null;
-  const e = entryOf(src, ctx);
-  if (!e || e.file) return null;
+// 面板顶上一直在的一句（第九十二轮，source-view.ts）：现在改的是哪一份——“改的是：这张地图”“改的是：我的库“X”（新地图会用）”“只能看：X”，
+// 三种颜色、三种图标。挑选时写挑了加到哪一份。看的不是这张地图时右边一个按钮：只读的库里一项的页面上“在这张地图里打开 / 添加到这张地图…”，别的“回到这张地图”
+const EDITING_ICON = { world: MapIcon, mine: LibraryBig, readonly: Lock };
+const EditingBar = memo(function EditingBar({ src, ctx, route, pickTo }: { src: SourceRef; ctx: PageCtx; route: Route; pickTo: SourceRef | null }) {
+  const line = editingLine(src, ctx, pickTo);
+  if (!line) return null;
+  const I = EDITING_ICON[line.tone];
   const kind = route.p === 'item' ? kindOf(route.kind) : undefined;
-  const readonly = kind ? kindReadonly(src, kind, ctx) : sourceKind(src, ctx) !== 'mine' ? '只读' : null;
-  if (!readonly) return <p class="hint lp-banner">{NOT_WORLD_NOTE}</p>;
+  const readonly = line.tone === 'readonly';
   const inWorld = route.p === 'item' && kind && itemOf(WORLD_SOURCE, kind, route.id, ctx) !== undefined;
+  const away = !pickTo && src.t !== 'world' && !!ctx.world;
   return (
-    <div class="lp-readonly lp-banner">
-      <Lock />
-      <span class="grow ellipsis">{readonlyLine(e.pack.name)}</span>
-      {route.p === 'item' && kind ? (
-        inWorld ? (
-          <button class="small primary" title={OPEN_IN_WORLD_TIP} onClick={() => openLibraryAt(WORLD_SOURCE, [{ p: 'home' }, { p: 'item', kind: route.kind, id: route.id }])}>
-            {OPEN_IN_WORLD}
+    <div class={`lp-editing ${line.tone}`} title={editingText(line)}>
+      <I />
+      <span class="grow ellipsis">
+        {line.head}：<b>{line.name}</b>
+        {line.note && `（${line.note}）`}
+      </span>
+      {away &&
+        (readonly && route.p === 'item' && kind ? (
+          inWorld ? (
+            <button class="small primary" title={OPEN_IN_WORLD_TIP} onClick={() => openLibraryAt(WORLD_SOURCE, [{ p: 'home' }, { p: 'item', kind: route.kind, id: route.id }])}>
+              {OPEN_IN_WORLD}
+            </button>
+          ) : canApply(kind) ? (
+            <button class="small primary" onClick={() => pickThis(route)}>
+              {ADD_TO_WORLD}
+            </button>
+          ) : null
+        ) : (
+          <button class="small" onClick={() => setSource(WORLD_SOURCE)}>
+            {BACK_TO_WORLD}
           </button>
-        ) : canApply(kind) ? (
-          <button class="small primary" onClick={() => pickThis(route)}>
-            {ADD_TO_WORLD}
-          </button>
-        ) : null
-      ) : (
-        <button class="small" onClick={() => setSource(WORLD_SOURCE)}>
-          {BACK_TO_WORLD}
-        </button>
-      )}
+        ))}
     </div>
   );
 });
@@ -372,6 +413,11 @@ export function LibPanel() {
     const e = seen ? entryOf({ t: 'lib', key: seen }, ctx) : undefined;
     if (e && !e.file && !e.mine && pickingIn({ t: 'lib', key: seen }, ctx)) rememberFrom(seen);
   }, [seen]);
+  // 挑选时顶上写挑了加到哪一份：清单上“加到”选的那一份（没算出来时是进入挑选前看的那一份）
+  const pickDest = live?.pick ? (shownPick(live.source, ctx)?.dest ?? null) : null;
+  const back = live?.pick?.back.source;
+  const destKey = !live?.pick ? null : pickDest ? (pickDest === 'world' ? 'world' : pickDest.lib) : back?.t === 'lib' ? back.key : 'world';
+  const pickTo = useMemo<SourceRef | null>(() => (destKey === null ? null : destKey === 'world' ? WORLD_SOURCE : { t: 'lib', key: destKey }), [destKey]);
   if (!st || !live) return null;
   const { stack } = live;
   const src = live.source;
@@ -399,7 +445,7 @@ export function LibPanel() {
         <div class={`lp-head ${pick ? 'picking' : ''}`}>
           <span class="lp-title">
             {pick && <span class="lp-pick-word">{pickHeadBefore}</span>}
-            <SourcePicker src={src} ctx={ctx} />
+            <SourcePicker src={src} ctx={ctx} picking={pick} canAdd={canAdd} />
             {pick && <span class="lp-pick-word">{pickHeadAfter}</span>}
             {count > 0 && <span class="lp-picked">已勾 {count}</span>}
           </span>
@@ -422,7 +468,8 @@ export function LibPanel() {
           </span>
         </div>
         <FileBar src={src} ctx={ctx} />
-        {!pick && <SourceBanner src={src} ctx={ctx} route={route} />}
+        <EditingBar src={src} ctx={ctx} route={route} pickTo={pickTo} />
+        {pick && <p class="hint lp-pick-help">{PICK_HELP}</p>}
         {stack.length > 1 && <NavBar list={list} />}
         <div class="lp-body" ref={body} onScroll={(e) => scrolls.current.set(key, (e.currentTarget as HTMLDivElement).scrollTop)}>
           <Page route={route} src={src} ctx={ctx} />

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { WORLD_TYPES, WORLD_TYPE_INFO, type WorldgenInput, type WorldType } from '../../core/generate';
 import { type PlanetForm, hasFormScripts } from '../../core/planet-form';
-import { CLIMATE_BELT_NOTE } from './copy';
+import { CLIMATE_BELT_NOTE, WIZARD_MINE_NOTE } from './copy';
 import {
   CLIMATE_ZONES,
   type ClimateZone,
@@ -294,6 +294,8 @@ export function Wizard() {
     <div class="wizard-content">
       <LibraryPick value={human.library} onChange={(key) => setHuman(chooseLibrary(human, key, lib))} options={libraryOptions(lib, true)} labelOf={(key) => packLabel(lib, [key])} disabled={creating} />
       <p class="hint">决定时代、文化和政体。建好后可以从别的库添加内容。</p>
+      {/* 第九十二轮：“存到我的库”存进去的那个库就在这里选 */}
+      {libraryOptions(lib, true).some((o) => !o.builtin) && <p class="hint">{WIZARD_MINE_NOTE}</p>}
       <Toggle on={openGen} onChange={setOpenGen} disabled={creating}>
         {GEN_AFTER_CREATE}
       </Toggle>

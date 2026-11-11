@@ -1,25 +1,55 @@
 // 资源库面板上的字（第八十一轮）：同一件事只写一处，叫法见 docs/dev/ui-design.md 的“统一的叫法”
 
 // ---------- 存、导出、删除 ----------
+// 第九十二轮：存到我的库只有一个动作、一个去向（save-mine.ts）：一个新建地图时选得到的“我的库”
 export const SAVE_TO_MINE = '存到我的库';
-export const SAVE_TO_MINE_TIP = '别的世界也能用';
-export const SAVE_BACK_TIP = (lib: string) => `写回“${lib}”，以后新建世界用这一份`;
+export const SAVE_TO_MINE_TIP = '新建地图时选“我的库”就带上';
+// 还没有我的库时先说的一句（base：复制哪个库来做它）
+export const firstSaveText = (base: string) => `还没有“我的库”：把“${base}”复制一份叫“我的库”，以后存的都放在里面。新建地图时选“我的库”就带上。`;
+// “⋯ → 存到我的库…”：这张地图里改过的、自己做的都存
+export const SAVE_ALL_TIP = '这张地图里改过的、自己做的都存';
+export const saveAllText = (n: number, names: readonly string[], mine: string | null, base: string) =>
+  `把这张地图里改过的、自己做的 ${n} 项（${names.join('、')}${n > names.length ? ' 等' : ''}）存到“${mine ?? '我的库'}”。${mine ? `新建地图时选“${mine}”就带上。` : firstSaveText(base)}`;
+// 没有时代的库（以前存的）首页上
+export const NO_ERA_NOTE = '这个库没有时代，新建地图时选不到';
+export const NOT_WHOLE_NOTE = '这个库不够完整，新建地图时选不到';
+export const MERGE_TO_MINE = '并进我的库';
+export const MERGE_TO_MINE_TIP = '里面的都存到我的库，这个库留着';
+// 读进来的文件整个留在资源库里（另成一个库，不是存进我的库）
+export const KEEP_FILE = '加进资源库…';
+export const KEEP_FILE_TIP = '查过脚本后整个留下，成为一个库';
 export const EXPORT_FILE = '导出文件';
 // 整个内置的库复制一份来改（只有整个库才用这个词）
 export const COPY_LIBRARY = '复制成我的库';
 export const COPY_LIBRARY_TIP = '复制一份来改';
 export const DELETE = '删除';
-export const DELETE_WORLD_TIP = '从本世界删除；自己做的存到我的库';
+export const DELETE_WORLD_TIP = '从这张地图删除；自己做的先存到我的库';
 export const TIDY = '删除没用到的';
 export const TIDY_TIP = '生成后没用到的，地图不变';
 
-// ---------- 看的是哪一份 ----------
-export const NOT_WORLD_NOTE = '改这里不影响当前世界';
-export const readonlyLine = (name: string) => `这是“${name}”，只能看`;
-export const OPEN_IN_WORLD = '在本世界打开';
-export const OPEN_IN_WORLD_TIP = '打开本世界里的这一项来改';
-export const ADD_TO_WORLD = '添加到本世界…';
-export const BACK_TO_WORLD = '回到本世界';
+// ---------- 看的是哪一份（第九十二轮：面板顶上一直写着，source-view.ts） ----------
+export const WORLD_NAME = '这张地图';
+export const EDITING = '改的是';
+export const VIEW_ONLY = '只能看';
+export const PICKING_TO = '挑了加到';
+export const MINE_EDIT_NOTE = '新地图会用';
+export const OPEN_IN_WORLD = '在这张地图里打开';
+export const OPEN_IN_WORLD_TIP = '打开这张地图里的这一项来改';
+export const ADD_TO_WORLD = '添加到这张地图…';
+export const BACK_TO_WORLD = '回到这张地图';
+// 来源下拉
+export const SOURCE_TIP = '看哪一份';
+export const SOURCE_MORE = '更多';
+export const SOURCE_MORE_TIP = '直接改我的库、看内置的库、读文件';
+export const SOURCE_GROUPS = { mine: '我的库', builtin: '内置的库', imported: '加进来的库', files: '读进来的文件' };
+export const NEW_LIBRARY = '新建一个库';
+export const READ_FILE = '读文件…';
+export const READ_FILE_TIP = '读一个库的文件，不运行脚本';
+
+// ---------- 搜索（第九十二轮：这张地图的首页也有） ----------
+export const SEARCH_WORLD = '搜索这张地图里的内容';
+export const SEARCH_LIB = '搜索整个库';
+export const SEARCH_TIP = '名字、外文名都能搜';
 
 // ---------- 改了什么时候用上 ----------
 // 第九十轮：“即时 / 要重新生成 / 只影响新地图”三种标记的字在 timing.ts（TIMING_LABEL、TIMING_TIP）
@@ -45,6 +75,10 @@ export const PICK_DONE = '完成';
 export const pickHeadBefore = '从';
 export const pickHeadAfter = '挑选';
 export const pickPending = (n: number) => `勾了 ${n} 项还没添加`;
+// 第九十二轮：挑选时每一步一句人话（pick-help.ts）
+export const PICK_HELP = '勾要的，再点右边的“添加”。灰的行写着为什么不能选';
+export const BASKET_HELP = '下面这些会一起加进来；点 × 去掉';
+export const HAVE_NOTE = '已经有了';
 
 // ---------- 生成设置（第八十一轮） ----------
 export const GEN_TITLE = '生成设置';

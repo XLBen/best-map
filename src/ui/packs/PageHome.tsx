@@ -13,7 +13,8 @@ import { searchSource } from './page-search';
 import { openRoute } from './panel-store';
 import { type PickView, cardPicks, shownPick } from './pick-view';
 import { tidyWorld } from './tidy';
-import { GEN_CARD_NOTE, GEN_TITLE, TIDY, TIDY_TIP } from './copy';
+import { mergeIntoMine } from './save-mine-run';
+import { GEN_CARD_NOTE, GEN_TITLE, MERGE_TO_MINE, MERGE_TO_MINE_TIP, SEARCH_LIB, SEARCH_TIP, SEARCH_WORLD, TIDY, TIDY_TIP } from './copy';
 import { genPage, genSummary } from './gen-settings';
 
 // 首页与“生态与水系”这一层（第五十九轮）：几段，每种内容一张带个数的卡片（数据见 pages.ts 的 homePage）。
@@ -198,7 +199,7 @@ function EraCard({ era, a, v }: { era: NonNullable<ReturnType<typeof homePage>['
 
 // 搜整个库：每种一段，行和列表上的一样（能勾、点了在右栏打开）
 function SearchHits({ src, ctx, q, v }: { src: SourceRef; ctx: PageCtx; q: string; v: PickView | null }) {
-  const hits = useMemo(() => searchSource(src, ctx, q), [src.t === 'lib' ? src.key : '', ctx.lib, ctx.world, q]);
+  const hits = useMemo(() => searchSource(src, ctx, q), [src.t, src.t === 'lib' ? src.key : '', ctx.lib, ctx.world, q]);
   if (!hits.length) return <p class="hint lp-note">没有找到</p>;
   return (
     <>
@@ -252,9 +253,10 @@ export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
   }
   const a: Arranging | null = canArrange(src, ctx) ? { src, ctx, arrange } : null;
   const clean = src.t === 'world' && ctx.world ? cleanableSet(ctx.world).size : 0;
-  const search = src.t === 'lib' && (
+  // 第九十二轮：这张地图的首页也能搜（以前只有库的首页有）
+  const search = (
     <div class="lp-tools lp-home-search">
-      <input class="grow" type="search" placeholder="搜索整个库" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
+      <input class="grow" type="search" placeholder={src.t === 'world' ? SEARCH_WORLD : SEARCH_LIB} title={SEARCH_TIP} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
     </div>
   );
   if (q.trim()) {
@@ -270,7 +272,16 @@ export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
       {search}
       {src.t === 'world' && <GenCard ctx={ctx} />}
       {p.era && <EraCard era={p.era} a={a} v={v} />}
-      {p.note && <p class="hint">{p.note}</p>}
+      {p.note && (
+        <div class="lp-merge">
+          <span class="hint grow">{p.note}</span>
+          {p.mergeKey && (
+            <button class="small primary" title={MERGE_TO_MINE_TIP} onClick={() => void mergeIntoMine(p.mergeKey!, ctx)}>
+              {MERGE_TO_MINE}
+            </button>
+          )}
+        </div>
+      )}
       {clean > 0 && (
         <button class="lp-clean" title={TIDY_TIP} onClick={() => void tidyWorld()}>
           <Eraser />

@@ -9,7 +9,7 @@ import { type PlanetForm, planetFormSchema } from '../../../core/planet-form';
 import { planetProfile } from '../../../core/planet-gen';
 import { engineFor, FANTASY_PACK } from '../../../core/testing/fixtures';
 import { builtinPacks } from '../../../core/packs/builtin-tree';
-import { type LibraryEntry, MY_PACK_NAME } from '../../library';
+import { type LibraryEntry, MY_PACK_KEY } from '../../library';
 import {
   FORM_KNOBS,
   blankForm,
@@ -53,21 +53,21 @@ describe('列出来的形态', () => {
     ]);
     expect(list[0].form).toBe(TWIN_CONTINENTS);
     expect(formChoices([BUILTIN]).map((c) => c.form)).toEqual([...FANTASY_FORMS]);
-    expect(list.map(formSource)).toEqual(['', '', '', '我的资源', '来自“x”']);
+    expect(list.map(formSource)).toEqual(['', '', '', '我存的', '来自“x”']);
   });
 
   it('只有“我的资源”这个包里的算自己的（编辑它改的是它本身）；别的自己导出的包里的编辑时是副本', () => {
-    const mine = entry(MY_PACK_NAME, pack(MY_PACK_NAME, [mineForm]), { mine: true });
+    const mine = entry(MY_PACK_KEY, pack(MY_PACK_KEY, [mineForm]), { mine: true });
     const exported = entry('我的星球', pack('我的星球', [{ ...mineForm, id: 'my_2', name: '万岛' }]), { mine: true, installedAt: 2 });
     const list = formChoices([BUILTIN, mine, exported]);
     expect(list.slice(3).map((c) => [c.key, c.mine, formSource(c)])).toEqual([
-      [`${MY_PACK_NAME}:my_1`, true, '我的资源'],
+      [`${MY_PACK_KEY}:my_1`, true, '我存的'],
       ['我的星球:my_2', false, '来自“我的星球”'],
     ]);
     // 没改过就“存进资源库”：用的就是原来那一个（同一个对象），不再存一份——一模一样的在列表里只列一次，存了也看不到
     const builtin = list[0];
     expect(finalForm(structuredClone(builtin.form), builtin.form, builtin.mine, list.map((c) => c.form))).toBe(builtin.form);
-    expect(formChoices([BUILTIN, entry(MY_PACK_NAME, pack(MY_PACK_NAME, [structuredClone(TWIN_CONTINENTS)]), { mine: true })]).map((c) => c.key)).toEqual(formChoices([BUILTIN]).map((c) => c.key));
+    expect(formChoices([BUILTIN, entry(MY_PACK_KEY, pack(MY_PACK_KEY, [structuredClone(TWIN_CONTINENTS)]), { mine: true })]).map((c) => c.key)).toEqual(formChoices([BUILTIN]).map((c) => c.key));
   });
 
   it('叫法：星球的类型与向导的卡片相同；向导里没有的“内海”用生成器的名字', () => {

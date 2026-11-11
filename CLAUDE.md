@@ -52,6 +52,8 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 | 地图模式、底图 | `src/ui/map/modes.ts`、`src/ui/defs/layers.ts`、`src/render/colors.ts` |
 | 画风 | `core/map-style.ts`、`core/packs/map-styles.ts`、`src/render/style-uniforms.ts` 的 `styleUniforms` |
 | 地名风格 | `core/name-styles.ts`、`core/packs/names/*.json` |
+| 资源库里找东西：首页搜索、文化的卡片、地图上点到的东西直达库里那一项、档案里直接改名字颜色 | `src/ui/packs/page-search.ts`、`page-layout.ts` 的 `WORLD_OWN_CARDS`、`open-item.ts`、`src/ui/shell/LibItemLine.tsx`、`panel-store.ts` 的 `openWorldItem`；设计见 `docs/dev/history/第92轮.md` |
+| 改的是哪一份、来源下拉、存到我的库 | `src/ui/packs/source-view.ts`、`lib-prefs.ts`（`showAllSources`：“完整界面”开关接这里）、`save-mine.ts`（去向、怎么存，纯函数）、`save-mine-run.ts`（写入、提示、撤销）；旧的“我的资源”在 `src/library.ts` 的 `MY_PACK_KEY` / `shownPack`；挑选时的人话 `pick-help.ts`；样式 `lib-find.css` |
 | 国名、称号跟着资源库变 | 每条命令之后的重算 `core/human/retitle.ts`（`core/commands.ts` 的 `applyCommand` 调）；称号怎么挑 `core/human/government.ts` 的 `govTitles`；称号编辑器旁的示例、“换说法盖过”、“都换掉” `src/ui/packs/title-help.ts`；设计见 `docs/dev/history/第91轮.md` |
 | 世界文件的格式 | `core/world.ts`；改了就把 `core/doc-version.ts` 的 `DOC_VERSION` 加一，同时改 `src/checkpoint-store.ts` 的 `CURRENT_VERSION`、测试夹具里的 `version:`、`core/raster-identity.test.ts` 的四个 `world.json`（先把版本写回旧的，核对别的一项没变） |
 | 自动保存、留着的旧世界 | `src/state/autosave.ts`；这一版打不开的自动保存原样挪进 `backups` 表：规则 `src/backups.ts`、信号 `src/state/backups.ts`、界面 `src/ui/maps/backups.ts`、`BackupsDialog.tsx`、`src/ui/shell/BackupBanner.tsx`；库的表在 `src/idb.ts` |

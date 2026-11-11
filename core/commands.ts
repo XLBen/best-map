@@ -329,7 +329,7 @@ function tidyContent(world: World, items: readonly ContentRef[] | undefined, ctx
     dirty = Math.max(dirty, runOp(world, removeCommand(ref), ctx).dirty) as Dirty;
   }
   const more = names.length > 3 ? ` 等 ${names.length} 项` : '';
-  return { dirty, summary: names.length ? `整理本世界 · 移出${names.slice(0, 3).map((x) => `“${x}”`).join('、')}${more}` : '整理本世界 · 没有要移出的' };
+  return { dirty, summary: names.length ? `整理这张地图 · 移出${names.slice(0, 3).map((x) => `“${x}”`).join('、')}${more}` : '整理这张地图 · 没有要移出的' };
 }
 
 function runOp(world: World, cmd: Command, ctx: ApplyContext): RunResult {

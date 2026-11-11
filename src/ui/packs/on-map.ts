@@ -137,8 +137,16 @@ function mapStyle(w: World, id: string): OnMap {
 
 function provinceRules(w: World): OnMap {
   const n = Object.keys(w.small.provinces ?? {}).length;
-  if (n) return used(`${num(n)} 个省份按它划分`);
+  // 第九十二轮：能定位——划了省份的格
+  if (n) return used(`${num(n)} 个省份按它划分`, provinceCells(w));
   return unused('还没有划分省份', { t: 'command', label: '划分省份', busy: '正在划分…', cmd: { op: 'generate_provinces', seed: provinceSeed(w.small) } });
+}
+
+function provinceCells(w: World): number[] {
+  const arr = w.causes.province;
+  const out: number[] = [];
+  if (arr) for (let i = 0; i < arr.length && out.length < MAX_CELLS; i++) if (arr[i] >= 0) out.push(i);
+  return out;
 }
 
 function era(w: World, id: string): OnMap {
@@ -151,7 +159,8 @@ function era(w: World, id: string): OnMap {
   const countries = Object.keys(w.small.countries ?? {}).length;
   const cities = Object.keys(w.small.cities ?? {}).length;
   const parts = [...(countries ? [`${num(countries)} 个国家`] : []), ...(cities ? [`${num(cities)} 座城市`] : [])];
-  return used(parts.length ? `这张地图的时代：${parts.join('、')}` : '这张地图的时代');
+  // 第九十二轮：能定位——有国家时是全部国家的领土
+  return used(parts.length ? `这张地图的时代：${parts.join('、')}` : '这张地图的时代', countries ? cellsOfCountries(w, new Set(Object.values(w.small.countries ?? {}).map((c) => c.id))) : undefined);
 }
 
 function cultureGroup(w: World, id: string, item: { weight?: number }, ctx: PageCtx, need: RegenNeed | null): OnMap {
@@ -197,9 +206,14 @@ function popValue(w: World, v: PopValue, need: RegenNeed | null): OnMap {
   return unused('这次生成没分到人');
 }
 
+// 第九十二轮：取值组能定位——组里各取值的人所在的格（一格只算一次）
 function valueGroup(w: World, kind: ContentKind, id: string): OnMap {
   const u = usageOf(kind, w, id);
-  return u ? used(u.label) : unused('组里还没有取值');
+  if (!u) return unused('组里还没有取值');
+  const mine = (kindOf('popValue')!.inWorld(w) as readonly PopValue[]).filter((v) => v.group === id);
+  const seen = new Set<number>();
+  for (const v of mine) for (const c of peopleCells(w, 'popValue', v.id)) if (seen.size < MAX_CELLS) seen.add(c);
+  return used(u.label, [...seen]);
 }
 
 function government(w: World, kind: ContentKind, g: Government, ctx: PageCtx, need: RegenNeed | null): OnMap {
@@ -244,11 +258,16 @@ function countryTier(w: World, t: CountryTierDef, ctx: PageCtx, need: RegenNeed 
   return unused('这次生成没有这一级的国家');
 }
 
-function countryPattern(w: World, id: string): OnMap {
+function countryPattern(w: World, id: string, item: { module?: string }): OnMap {
   if (!w.small.human) return noHuman();
   const now = worldEra(w.small) as Era | undefined;
   if (!now) return noHuman();
-  if (now.patterns?.some((p) => p.pattern === id)) return used('这张地图的时代列着它');
+  // 第九十二轮：能定位——按这种格局生成的国家（生成时记在国家上的角色：格局的模块，或“模块:角色”）
+  if (now.patterns?.some((p) => p.pattern === id)) {
+    const mod = item.module ?? id;
+    const ctry = Object.values(w.small.countries ?? {}).filter((c) => c.role === mod || c.role?.startsWith(`${mod}:`));
+    return used(ctry.length ? `这张地图的时代列着它：${num(ctry.length)} 个国家` : '这张地图的时代列着它', cellsOfCountries(w, new Set(ctry.map((c) => c.id))));
+  }
   const next = withPattern(now as unknown as Record<string, unknown>, id);
   const eraKind = kindOf('era')!;
   return unused('时代没列这种格局', next ? { t: 'command', label: '加进时代', busy: '正在计算…', cmd: { op: 'batch', label: `时代加上格局“${id}”`, commands: [enableCommand(eraKind, next, w)] } } : undefined);
@@ -347,7 +366,7 @@ function lineOf(w: World, kind: ContentKind, id: string, item: unknown, ctx: Pag
     case 'countryTier':
       return countryTier(w, item as CountryTierDef, ctx, need);
     case 'countryPattern':
-      return countryPattern(w, id);
+      return countryPattern(w, id, item as { module?: string });
     case 'cityRank':
       return cityRank(w, id, ctx);
     case 'landmarkType':

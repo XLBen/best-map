@@ -55,7 +55,7 @@ describe('资源包的格式', () => {
     const bad = readPack('{oops');
     expect(!bad.ok && bad.errors[0]).toMatch(/^不是 JSON 文件/);
     const v2 = readPack(JSON.stringify({ ...pack(), version: 2 }));
-    expect(!v2.ok && v2.errors[0]).toBe('资源包格式是第 2 版，只支持第 1 版');
+    expect(!v2.ok && v2.errors[0]).toBe('文件格式是第 2 版，只支持第 1 版');
     const color = readPack(JSON.stringify(pack({ biomes: [{ ...biome('a'), name: '红林', color: 'red' }] })));
     expect(!color.ok && color.errors).toEqual(['生态第 1 个“红林”的 color：颜色需为 #rrggbb']);
     // 河流类型按它的格式查（缺 id、缺颜色都说出来）
@@ -69,9 +69,9 @@ describe('资源包的格式', () => {
   it('记事本存的（开头带 BOM）照样能读；长短、多少不对时说人话', () => {
     expect(readPack(`\uFEFF${JSON.stringify(pack())}`).ok).toBe(true);
     const empty = readPack(JSON.stringify(pack({ id: '' })));
-    expect(!empty.ok && empty.errors).toEqual(['资源包的 id：不能是空的']);
+    expect(!empty.ok && empty.errors).toEqual(['库的 id：不能是空的']);
     const long = readPack(JSON.stringify(pack({ name: '名'.repeat(61) })));
-    expect(!long.ok && long.errors).toEqual(['资源包的名字：太长，最多 60 个字']);
+    expect(!long.ok && long.errors).toEqual(['库的名字：太长，最多 60 个字']);
     // 一个文件里的项有上限（几百种生态一下子加进大星球会算不动）
     const many = readPack(JSON.stringify(pack({ biomes: Array.from({ length: PACK_MAX.biomes + 1 }, (_, k) => biome(`s${k}`)) })));
     expect(!many.ok && many.errors).toEqual([`生态：太多，最多 ${PACK_MAX.biomes} 个`]);
@@ -128,9 +128,9 @@ describe('资源包的检查（不运行脚本）', () => {
     });
     expect(packProblems(p)).toEqual([
       '有两个生态的 id 都是 a',
-      '“a”侵占的 ghost 不在资源包里，也不是内置生态：世界里没有它时无效',
-      '“b”用到的自定义场 mana 不在资源包里，用时新建一个空的',
-      '“b”用到的河流类型 lava 不在资源包里：没有这种河时按很远算',
+      '“a”侵占的 ghost 不在这个文件里，也不是内置生态：世界里没有它时无效',
+      '“b”用到的自定义场 mana 不在这个文件里，用时新建一个空的',
+      '“b”用到的河流类型 lava 不在这个文件里：没有这种河时按很远算',
       '“b”的起名模板“{color}{nope}林”用到了不存在的词表 {nope}',
     ]);
     // 岛上特有的默认不勾
@@ -194,7 +194,7 @@ describe('资源包用到世界', () => {
     const w = fakeWorld();
     const cmd = applyPackCommands(w, FANTASY_PACK);
     expect(cmd.op).toBe('batch');
-    expect(cmd.label).toBe('用上资源包“奇幻生态示例”');
+    expect(cmd.label).toBe('用上“奇幻生态示例”');
     // 场、河流类型、湖泊类型、生态（生态的脚本、条件要用到河流、湖泊类型）
     expect(cmd.commands.map((c) => c.op)).toEqual([
       'add_field',
@@ -274,7 +274,7 @@ describe('资源包用到世界', () => {
     });
     const p = pack({ biomes: [user], lakeTypes: [{ id: 'blood_pool', name: '血池', color: '#9b1b1b' }] });
     // river('blood_pool') 是河流类型（包里没有），湖泊类型的引用都在
-    expect(packProblems(p)).toEqual(['“lakeside”用到的河流类型 blood_pool 不在资源包里：没有这种河时按很远算']);
+    expect(packProblems(p)).toEqual(['“lakeside”用到的河流类型 blood_pool 不在这个文件里：没有这种河时按很远算']);
     expect(planPack(fakeWorld(), p, defaultPicks(p)).command.commands.map((c) => c.op)).toEqual(['set_lake_type', 'add_species']);
     const w = fakeWorld();
     (w.small as { lakeTypes?: unknown }).lakeTypes = [{ id: 'blood_pool', name: '别的血池', color: '#000000' }];
@@ -287,7 +287,7 @@ describe('资源包用到世界', () => {
     expect(s!.tolerances.map((t) => t.field)).toContain('lake:blood_pool-2');
     expect(s!.tolerances.map((t) => t.field)).not.toContain('lake:blood_pool');
     // 引用了包里没有的湖泊类型：提醒一句
-    expect(packProblems(pack({ biomes: [user] }))).toContain('“lakeside”用到的湖泊类型 blood_pool 不在资源包里：没有这种湖时按很远算');
+    expect(packProblems(pack({ biomes: [user] }))).toContain('“lakeside”用到的湖泊类型 blood_pool 不在这个文件里：没有这种湖时按很远算');
     // 导出再导入：一模一样
     const back = readPack(JSON.stringify(FANTASY_PACK));
     expect(back.ok && back.pack.lakeTypes).toEqual(FANTASY_PACK.lakeTypes);
@@ -340,7 +340,7 @@ describe('河流类型的资源包', () => {
     // 导出时写明了“自然生成”（世界里没写的是开着的），别的部分一模一样
     expect(out.riverTypes!.map((t) => (t as { natural?: boolean }).natural)).toEqual([true, true]);
     expect(other.world.small.riverTypes).toEqual(eng.world.small.riverTypes!.map((t) => ({ ...t, natural: t.natural ?? true })));
-    expect(other.history.at(-1)!.summary).toBe('用上资源包“我的河”');
+    expect(other.history.at(-1)!.summary).toBe('用上“我的河”');
     expect(applyPackCommands(other.world, out).commands).toEqual([]);
     // 写错的河流类型：读的时候用中文说出在哪里
     const bad = readPack(JSON.stringify(pack({ riverTypes: [{ id: 'x', name: '', color: 'red' }] })));
@@ -386,7 +386,7 @@ describe('内置示例包', () => {
     expect(newBiomeCells(plan, w)).toEqual(predicted);
     expect([...predicted.values()].reduce((a, c) => a + c.length, 0)).toBeGreaterThan(0);
     expect(eng.history.length).toBe(steps + 1);
-    expect(eng.history.at(-1)!.summary).toBe('用上资源包“奇幻生态示例”');
+    expect(eng.history.at(-1)!.summary).toBe('用上“奇幻生态示例”');
     expect(w.derived.scriptIssues).toBeUndefined();
     let land = 0;
     for (let i = 0; i < w.mesh.n; i++) if (w.causes.land[i]) land++;

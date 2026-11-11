@@ -103,7 +103,7 @@ function order(list: Stored[]): LibraryEntry[] {
   for (const s of list) {
     // 存着的数据按现在的格式再查一遍：以前的版本存的、被改坏的不列出来
     const pack = parsedPack(s);
-    if (pack) entries.push({ key: s.key, pack: adopt(s, pack), builtin: false, mine: !!s.mine, installedAt: s.installedAt });
+    if (pack) entries.push({ key: s.key, pack: adopt(s, shownPack(s.key, pack)), builtin: false, mine: !!s.mine, installedAt: s.installedAt });
   }
   entries.sort((a, b) => Number(b.mine) - Number(a.mine) || a.installedAt - b.installedAt);
   return [...BUILTINS, ...entries];
@@ -178,18 +178,32 @@ addTrustedSource(async () => {
 // 形态编辑器、资源库的编辑器的“存进资源库”：存进“我的资源”这个包（没有就新建；包里原来的别的内容都留着），
 // 同一个 id 的换成新的。key 是资源包里的段名（planetForms、nameStyles……）。
 // 里面的脚本由编辑器记为信任（是自己写的、或者打开编辑器时信任过的），这里不管
-export const MY_PACK_NAME = '我的资源';
+// 第九十二轮：界面上不再有“我的资源”这个词。这个包的键没变（以前存的照旧读得到、形态编辑器照旧存进它），
+// 新建它时叫“我的星球形态”；以前存下的、还叫旧名字的那一个读出来时显示成“以前存的内容”（shownPack）。
+// 世界里的内容不再往它里面存（没有时代，新建地图时选不到）：存到我的库见 ui/packs/save-mine.ts
+const LEGACY_PACK_NAME = '我的资源';
+export const MY_PACK_KEY = packIdFor(LEGACY_PACK_NAME);
+export const MY_PACK_NAME = '我的星球形态';
+export const LEGACY_SHOWN_NAME = '以前存的内容';
+const shown = new WeakMap<ResourcePack, ResourcePack>();
+// 以前存下的那个包还叫旧名字时换个名字显示（内容一样；同一个包给同一个对象，按引用记着的不用重算）
+export function shownPack(key: string, pack: ResourcePack): ResourcePack {
+  if (key !== MY_PACK_KEY || pack.name !== LEGACY_PACK_NAME) return pack;
+  let p = shown.get(pack);
+  if (!p) shown.set(pack, (p = { ...pack, name: LEGACY_SHOWN_NAME }));
+  return p;
+}
 export type SaveForm = { ok: true; entry: LibraryEntry; stored: boolean } | { ok: false; error: string };
 export async function saveItem(key: string, item: unknown): Promise<SaveForm> {
   const kind = kindByPackKey(key);
   if (!kind) return { ok: false, error: `不认识的内容：${key}` };
-  const id = packIdFor(MY_PACK_NAME);
+  const id = MY_PACK_KEY;
   const cur = (await refreshLibrary()).find((e) => !e.builtin && e.key === id);
   const pack: ResourcePack = cur ? structuredClone(cur.pack) : { format: PACK_FORMAT, version: PACK_VERSION, id, name: MY_PACK_NAME };
   const own = itemId(kind, item);
   const list = ((pack[kind.pack.key] as unknown[] | undefined) ?? []).filter((x) => itemId(kind, x) !== own);
   // 超过上限的包读不回来（整个“我的资源”就不见了）：先拦下
-  if (list.length >= kind.pack.max) return { ok: false, error: `“${MY_PACK_NAME}”里的${kind.label}已满 ${kind.pack.max} 个，先在资源库里整理` };
+  if (list.length >= kind.pack.max) return { ok: false, error: `“${pack.name}”里的${kind.label}已满 ${kind.pack.max} 个，先在资源库里整理` };
   pack[kind.pack.key] = [...list, structuredClone(item)];
   const r = parsePack(pack);
   if (!r.ok) return { ok: false, error: r.errors[0] };

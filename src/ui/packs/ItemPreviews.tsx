@@ -84,7 +84,7 @@ export function TitleReplace({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
         </button>
       </div>
       {note && <p class="hint">{note}</p>}
-      <p class="hint">{src.t === 'world' ? '改遍本世界的政体；只换整个是这个词的' : '改遍这个库的政体；只换整个是这个词的'}</p>
+      <p class="hint">{src.t === 'world' ? '改遍这张地图的政体；只换整个是这个词的' : '改遍这个库的政体；只换整个是这个词的'}</p>
     </section>
   );
 }

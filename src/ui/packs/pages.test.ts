@@ -80,7 +80,7 @@ describe('来源：本世界、内置的库、我的库', () => {
 
   it('下拉：本世界 / 内置六个 / 我的库 / 导入的', () => {
     const m = sourceMenu(lib('m2'), ctxOf(null, [copy, imported]));
-    expect(m.world).toMatchObject({ name: '本世界', on: false });
+    expect(m.world).toMatchObject({ name: '这张地图', on: false });
     expect(m.builtin.map((x) => x.name).length).toBe(6);
     expect(m.mine).toEqual([{ src: lib('m2'), name: '我的中世纪', on: true }]);
     expect(m.imported.map((x) => x.name)).toEqual(['别人的']);
@@ -89,7 +89,7 @@ describe('来源：本世界、内置的库、我的库', () => {
   it('只读：内置的、导入的只读，我的库和本世界能改；本世界里星球形态不能改', () => {
     const ctx = ctxOf(continents().world, [copy, imported]);
     expect(readonlyWhy(lib('medieval'), ctx)).toBe('内置的库只读');
-    expect(readonlyWhy(lib('x'), ctx)).toBe('导入的库只读');
+    expect(readonlyWhy(lib('x'), ctx)).toBe('加进来的库只读');
     expect(readonlyWhy(lib('m2'), ctx)).toBeNull();
     expect(readonlyWhy(WORLD_SOURCE, ctx)).toBeNull();
     expect(kindReadonly(WORLD_SOURCE, kindOf('planetForm')!, ctx)).toContain('星球形态');
@@ -119,7 +119,10 @@ describe('首页', () => {
     const w = peopled().world;
     const titles = (s: SourceRef, ctx: PageCtx) => homePage(s, ctx).sections.map((x) => [x.title, x.cards.map((c) => c.id)]);
     const ctx = ctxOf(w);
-    expect(titles(WORLD_SOURCE, ctx)).toEqual(titles(lib('medieval'), ctx));
+    // 第九十二轮：这张地图的首页上文化另有自己的卡片，别的和库一模一样
+    const noCulture = (list: ReturnType<typeof titles>) => list.map(([t, ids]) => [t, (ids as string[]).filter((id) => id !== 'culture')]);
+    expect(titles(WORLD_SOURCE, ctx).flatMap(([, ids]) => ids as string[])).toContain('culture');
+    expect(noCulture(titles(WORLD_SOURCE, ctx))).toEqual(titles(lib('medieval'), ctx));
     const n = (s: SourceRef, id: string) => homePage(s, ctx).sections.flatMap((x) => x.cards).find((c) => c.id === id)!.count;
     expect(n(lib('medieval'), 'cultureGroup')).toBe(String(packItems(medieval, 'cultureGroups').length));
     expect(n(WORLD_SOURCE, 'cultureGroup')).toBe(String(itemsOf(WORLD_SOURCE, kindOf('cultureGroup')!, ctx).length));
@@ -317,7 +320,7 @@ describe('列表', () => {
     const ctx = ctxOf(w);
     const list = listPage(lib('medieval'), { p: 'list', kind: 'terrainClass' }, ctx)!;
     expect(list.sections[0].rows.every((r) => r.row.status.on)).toBe(true);
-    expect(listPage(lib('medieval'), { p: 'list', kind: 'terrainClass', hideOn: true }, ctx)).toMatchObject({ total: 0, empty: '都在本世界了' });
+    expect(listPage(lib('medieval'), { p: 'list', kind: 'terrainClass', hideOn: true }, ctx)).toMatchObject({ total: 0, empty: '都在这张地图了' });
     expect(listPage(lib('fantasy'), { p: 'list', kind: 'biome', hideOn: true }, ctx)!.total).toBeGreaterThan(0);
   });
 });
@@ -404,7 +407,7 @@ describe('一项的页面', () => {
     const can = { remove: true, usage: null as string | null, changed: false, setDefault: false, hasCells: false, saveable: false, dedicated: false, newable: true };
     const row = rowsOf(WORLD_SOURCE, kindOf('culture')!, ctx)[0];
     expect(itemActions(WORLD_SOURCE, row, ctx, can).map((a) => a.id)).not.toContain('useSource');
-    expect(itemActions(WORLD_SOURCE, row, ctx, { ...can, changed: true }).map((a) => a.id)).toEqual(expect.arrayContaining(['useSource', 'saveBack']));
+    expect(itemActions(WORLD_SOURCE, row, ctx, { ...can, changed: true }).map((a) => a.id)).toEqual(expect.arrayContaining(['useSource', 'saveToMine']));
   });
 });
 

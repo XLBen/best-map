@@ -293,7 +293,7 @@ describe('一行最多一个标记；页面上不列的字段', () => {
     expect(oneMark({ isDefault: true, changed: true, modified: true })).toEqual({ text: '默认', diff: false });
     expect(oneMark({ isDefault: true, inUse: true })).toEqual({ text: '在用', diff: false });
     expect(oneMark({ changed: true, modified: true })).toEqual({ text: '和库不同', diff: true });
-    expect(oneMark({ modified: true })).toEqual({ text: '本世界改过', diff: false });
+    expect(oneMark({ modified: true })).toEqual({ text: '这张地图改过', diff: false });
     expect(oneMark({})).toBeNull();
   });
 

@@ -7,11 +7,14 @@ import { PLAIN_TYPE, type WaterType, perCellRule } from '../../../core/water-typ
 import { type WaterKind, waterAllowed } from '../../../core/water-table';
 import { arrangeFor, arrangeTitle, linkView, mergedInto } from './page-arrange';
 import { type ChildSection, type InsideRow, childSections, insideRows } from './page-children';
-import { CARD_ICON, type CardDef, ECOLOGY_KINDS, HOME_LAYOUT, type Inside } from './page-layout';
+import { CARD_ICON, type CardDef, ECOLOGY_KINDS, HOME_LAYOUT, type Inside, WORLD_OWN_CARDS } from './page-layout';
 import { type RowMark, type SourceDiff, type WorldMark, rowMarks, worldDiff } from './page-marks';
 import { type Segment, segmentsOf } from './page-segments';
 import { type PageCtx, type SourceRef, WORLD_SOURCE, entryOf, itemOf, itemsOf, kindReadonly, kindTitle, rowsOf, sourceKind, sourceTitle } from './page-source';
 import { type UsedBy, usedByOf } from './page-used-by';
+import { isLibrary } from '../domain/packChoice';
+import { NO_ERA_NOTE, NOT_WHOLE_NOTE } from './copy';
+import { mergeable } from './save-mine';
 import type { ItemRow } from './rows';
 
 export * from './page-source';
@@ -120,8 +123,10 @@ export interface HomePage {
   sections: HomeSection[];
   // 本世界还没有世界时的一句话
   noWorld: boolean;
-  // 这个库新建世界时选不到：缺什么
+  // 这个库新建地图时选不到：缺什么
   note: string | null;
+  // 能并进我的库的（没有时代、里面有东西的库）：这个库的键
+  mergeKey?: string;
 }
 
 // 时代的一句话：年份、人口密度、变量（第八十一轮起“时代规则”都叫“时代”）
@@ -219,6 +224,8 @@ export function homePage(src: SourceRef, ctx: PageCtx, inside: Inside = arrangeF
     } else if (byId.has(child) && byId.has(parent)) {
       addKid(parent, child);
       const rel = relationOf(child, parent);
+      // 这张地图的首页：文化融入了文化组也留着自己的卡片（第九十二轮）
+      if (src.t === 'world' && WORLD_OWN_CARDS.includes(child)) continue;
       if (rel?.looseCard) {
         const view = linkView(src, ctx);
         const n = looseItems(rel, view.items, view.table(rel)).length;
@@ -243,9 +250,11 @@ export function homePage(src: SourceRef, ctx: PageCtx, inside: Inside = arrangeF
         route: (eras.length === 1 ? { p: 'item', kind: 'era', id: eras[0].id } : { p: 'list', kind: 'era' }) as Route,
         ...says('era'),
       };
+  // 第九十二轮：新建地图时选不到的库（没有时代、不够完整）写一句；里面有东西的能并进我的库（mergeKey，save-mine.ts）
   const e = entryOf(src, ctx);
-  const note = e && !eras.length ? '没有时代，新建世界时选不到这个库' : null;
-  return { era, sections: noWorld ? [] : sections, noWorld, note };
+  const whole = !e || e.builtin || isLibrary(e.pack, true);
+  const note = whole ? null : !eras.length ? NO_ERA_NOTE : NOT_WHOLE_NOTE;
+  return { era, sections: noWorld ? [] : sections, noWorld, note, ...(e && mergeable(e) ? { mergeKey: e.key } : {}) };
 }
 
 // 生态与水系这一层：生态、河、湖、总表
@@ -357,7 +366,8 @@ export function listPage(src: SourceRef, r: Extract<Route, { p: 'list' }>, ctx: 
     }
   }
   const q = query.trim().toLowerCase();
-  const matches = (x: ItemRow) => x.name.toLowerCase().includes(q) || x.id.toLowerCase().includes(q);
+  // 第九十二轮：外文名也搜（和首页的搜索一样，page-search.ts）
+  const matches = (x: ItemRow) => x.name.toLowerCase().includes(q) || x.id.toLowerCase().includes(q) || String((x.item as { orig?: unknown }).orig ?? '').toLowerCase().includes(q);
   if (q) rows = rows.filter(matches);
   const hint = hintFor(kind, src, ctx);
   const whole = !r.dim && !r.group && !r.hideOn && !r.loose;
@@ -366,7 +376,7 @@ export function listPage(src: SourceRef, r: Extract<Route, { p: 'list' }>, ctx: 
   const inside = whole ? insideRows(src, kind.id, ctx) : [];
   const marks = rowMarks(src, ctx);
   if (marks) for (const sec of sections) sec.rows = sec.rows.map((x) => ({ ...x, mark: marks(x.kind, x.id, x.item) }));
-  const empty = q ? '没有找到' : r.hideOn ? '都在本世界了' : `没有${kindTitle(kind)}`;
+  const empty = q ? '没有找到' : r.hideOn ? '都在这张地图了' : `没有${kindTitle(kind)}`;
   const defaults: Record<string, unknown> = { ...(r.dim ? { dimension: r.dim } : {}), ...(r.group ? { group: r.group } : {}) };
   return {
     title: routeLabel(r, src, ctx),
@@ -530,7 +540,8 @@ export function eraVariables(src: SourceRef, era: Era, ctx: PageCtx): { id: stri
 
 // 这一项能做什么（组件照这个画按钮，点了走 page-actions.ts）。why：不能做的原因（写在悬停里）。
 // 添加到本世界不在这里：第六十七轮起是页面顶上的勾（PickBox）
-export type ItemActionId = 'copyLibrary' | 'removeFromWorld' | 'deleteItem' | 'useSource' | 'saveBack' | 'setDefault' | 'locate' | 'dedicated' | 'saveToMine' | 'exportItem' | 'copyItem';
+// 第九十二轮：“存回”（saveBack）并进了 saveToMine——一个动作、一个去向（save-mine.ts）
+export type ItemActionId = 'copyLibrary' | 'removeFromWorld' | 'deleteItem' | 'useSource' | 'setDefault' | 'locate' | 'dedicated' | 'saveToMine' | 'exportItem' | 'copyItem';
 export interface ItemAction {
   id: ItemActionId;
   disabled?: string;
@@ -545,10 +556,11 @@ export function itemActions(src: SourceRef, row: ItemRow | undefined, ctx: PageC
   if (can.setDefault) out.push({ id: 'setDefault' });
   if (can.hasCells) out.push({ id: 'locate' });
   if (src.t === 'world') {
-    // 和来源的库不同：换成库里的，或者存回库里（第六十二轮）
-    if (can.changed) out.push({ id: 'useSource' }, { id: 'saveBack' });
+    // 和来源的库不同：换成库里的（第六十二轮）
+    if (can.changed) out.push({ id: 'useSource' });
     if (can.dedicated) out.push({ id: 'dedicated' });
-    if (can.saveable) out.push({ id: 'saveToMine' });
+    // 改过的、自己做的：存到我的库（第九十二轮：以前改过的是“存回”来源的库，自己做的存进另一个包）
+    if (can.changed || can.saveable) out.push({ id: 'saveToMine' });
     if (!row.status.locked) out.push(can.remove ? { id: 'removeFromWorld' } : { id: 'removeFromWorld', disabled: can.usage ?? '不能删除' });
   }
   out.push({ id: 'exportItem' });

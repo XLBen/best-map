@@ -273,7 +273,7 @@ function Editor({ st }: { st: FormEditorState }) {
           <button onClick={closeFormEditor} disabled={busy}>
             取消
           </button>
-          <button onClick={() => void save()} disabled={busy || broken} title="存进“我的资源”，新建和调整时可选">
+          <button onClick={() => void save()} disabled={busy || broken} title="新建和调整时可选">
             存到我的库
           </button>
           <button class="primary" onClick={() => void create()} disabled={busy || broken}>

@@ -66,7 +66,7 @@ export function LibOther({ src, o, ctx, over }: { src: SourceRef; o: OtherOpen; 
   const search = useRef<HTMLInputElement>(null);
   const sections = useMemo(() => (from ? otherSections(from, o, src, ctx, q) : []), [from, o, src.t === 'lib' ? src.key : '', ctx.lib, ctx.world, q, store]);
   const v = from ? pickView({ t: 'lib', key: from }, ctx) : null;
-  const to = src.t === 'world' ? '本世界' : (ctx.lib.find((e) => e.key === src.key)?.pack.name ?? '这个库');
+  const to = src.t === 'world' ? '这张地图' : (ctx.lib.find((e) => e.key === src.key)?.pack.name ?? '这个库');
   const basketFor: BasketFor = useMemo(() => {
     const onto = v ? ontoOf(v, o, src, ctx) : undefined;
     return { to: o.onto ? `${to}的“${o.onto.title}”下面` : to, ...(onto ? { onto } : {}) };

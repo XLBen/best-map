@@ -4,7 +4,7 @@ import { type ResourcePack, findPack, packItems, readPack } from '../core/packs'
 
 import { findScripts } from '../core/script';
 import { openDb } from './idb';
-import { MY_PACK_NAME, inLibrary, installPack, keepSavedForms, library, refreshLibrary, removePack, saveForm, saveItem } from './library';
+import { MY_PACK_KEY, MY_PACK_NAME, inLibrary, installPack, keepSavedForms, library, refreshLibrary, removePack, saveForm, saveItem } from './library';
 import { BUILTIN_STYLES } from '../core/packs/names';
 import { builtinPacks } from '../core/packs/builtin-tree';
 import { PACK_MAX } from '../core/packs';
@@ -172,13 +172,13 @@ describe('资源库', () => {
 describe('自己做的星球形态存进资源库', () => {
   const form = (id: string, name = id): PlanetForm => ({ id, name, api: 1, base: 'archipelago', profile: { landFraction: 0.2 } });
   it('存进“我的资源”：没有就新建；再存一个接在后面；同一个 id 换成新的；包里原来的生态留着', async () => {
-    await installPack(userPack(MY_PACK_NAME, { biomes: withScript('x', 'return 1;').biomes }), { mine: true });
+    await installPack(userPack(MY_PACK_KEY, { biomes: withScript('x', 'return 1;').biomes }), { mine: true });
     const a = await saveForm(form('my_a', '千岛'));
-    expect(a.ok && a.entry.key).toBe(MY_PACK_NAME);
+    expect(a.ok && a.entry.key).toBe(MY_PACK_KEY);
     expect(a.ok && a.stored).toBe(true);
     await saveForm({ ...TWIN_CONTINENTS, id: 'my_b', name: '双子大陆 2' });
     await saveForm(form('my_a', '万岛'));
-    const mine = library.value.find((e) => e.key === MY_PACK_NAME)!;
+    const mine = library.value.find((e) => e.key === MY_PACK_KEY)!;
     expect(mine.mine).toBe(true);
     expect(mine.pack.biomes!.map((b) => b.id)).toEqual(['x_b']);
     expect(mine.pack.planetForms!.map((f) => [f.id, f.name])).toEqual([
@@ -191,21 +191,21 @@ describe('自己做的星球形态存进资源库', () => {
 
   it('没有“我的资源”时新建一个；超过上限时不存（存了整个包会读不回来），说一句', async () => {
     const first = await saveForm(form('my_0'));
-    expect(first.ok && first.entry.pack).toEqual({ format: 'map2-pack', version: 1, id: MY_PACK_NAME, name: MY_PACK_NAME, planetForms: [form('my_0')] });
+    expect(first.ok && first.entry.pack).toEqual({ format: 'map2-pack', version: 1, id: MY_PACK_KEY, name: MY_PACK_NAME, planetForms: [form('my_0')] });
     for (let k = 1; k < PACK_MAX.planetForms; k++) expect((await saveForm(form(`my_${k}`))).ok).toBe(true);
     const over = await saveForm(form('my_over'));
     expect(over.ok).toBe(false);
     expect(!over.ok && over.error).toContain('已满 32 个');
     // 替换已有的照样可以
     expect((await saveForm(form('my_3', '改过的'))).ok).toBe(true);
-    expect(library.value.find((e) => e.key === MY_PACK_NAME)!.pack.planetForms!.length).toBe(PACK_MAX.planetForms);
+    expect(library.value.find((e) => e.key === MY_PACK_KEY)!.pack.planetForms!.length).toBe(PACK_MAX.planetForms);
   });
 
   it('从世界导出存进“我的资源”（替换它）时，形态编辑器存在里面的星球形态留着；同一个 id 用导出的；别人的包、新的名字不管', async () => {
     await saveForm(form('my_a', '千岛'));
     await saveForm(form('my_b', '万岛'));
     // 导出的包：世界里的生态和世界在用的形态（与存着的 my_b 同 id、改过）
-    const exported = userPack(MY_PACK_NAME, { biomes: withScript('y', 'return 1;').biomes, planetForms: [form('my_b', '万岛新') as never] });
+    const exported = userPack(MY_PACK_KEY, { biomes: withScript('y', 'return 1;').biomes, planetForms: [form('my_b', '万岛新') as never] });
     const old = inLibrary(exported);
     expect(old?.mine).toBe(true);
     const stored = keepSavedForms(exported, old);
@@ -215,9 +215,9 @@ describe('自己做的星球形态存进资源库', () => {
     ]);
     expect(stored.biomes).toBe(exported.biomes);
     await installPack(stored, { mine: true });
-    expect(library.value.find((e) => e.key === MY_PACK_NAME)!.pack.planetForms!.map((f) => f.id)).toEqual(['my_b', 'my_a']);
+    expect(library.value.find((e) => e.key === MY_PACK_KEY)!.pack.planetForms!.map((f) => f.id)).toEqual(['my_b', 'my_a']);
     // 没有形态的导出也一样留着
-    const plain = userPack(MY_PACK_NAME, { biomes: withScript('z', 'return 1;').biomes });
+    const plain = userPack(MY_PACK_KEY, { biomes: withScript('z', 'return 1;').biomes });
     expect(keepSavedForms(plain, inLibrary(plain)).planetForms!.map((f) => f.id)).toEqual(['my_b', 'my_a']);
     // 替换的不是自己的包、没有要替换的：原样
     await installPack(userPack('别人的', { planetForms: [form('x_1') as never] }));
@@ -237,9 +237,9 @@ describe('资源库的编辑器存进“我的资源”（第二十轮）', () =
     const a = await saveItem('nameStyles', style);
     expect(a.ok && a.entry.pack.nameStyles!.map((s) => s.name)).toEqual(['我的日耳曼']);
     await saveItem('nameStyles', { ...style, name: '改过的' });
-    const mine = library.value.find((e) => e.key === MY_PACK_NAME)!;
+    const mine = library.value.find((e) => e.key === MY_PACK_KEY)!;
     expect(mine.pack.nameStyles!.map((s) => [s.id, s.name])).toEqual([['my-g', '改过的']]);
-    const exported = userPack(MY_PACK_NAME, { biomes: withScript('y', 'return 1;').biomes });
+    const exported = userPack(MY_PACK_KEY, { biomes: withScript('y', 'return 1;').biomes });
     expect(keepSavedForms(exported, inLibrary(exported)).nameStyles!.map((s) => s.id)).toEqual(['my-g']);
     // 坏的存不进去
     const bad = await saveItem('nameStyles', { ...style, id: 'bad', kind: 'nope' });

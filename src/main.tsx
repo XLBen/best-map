@@ -7,6 +7,7 @@ import './ui/connect';
 import './styles.css';
 import './ui/packs/lib-panel.css';
 import './ui/packs/lib-seen.css';
+import './ui/packs/lib-find.css';
 import './ui/packs/lib-pick.css';
 import './ui/packs/lib-text.css';
 import './ui/archives/lore.css';

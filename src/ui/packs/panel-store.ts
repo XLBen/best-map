@@ -15,6 +15,7 @@ import { canPick, pickCount, pickStore, setPickDest, togglePickIn } from './pick
 import { pickMode } from './pick-view';
 import { defaultFrom } from './pick-other';
 import { regenNow } from './regen-now';
+import { worldItemStack } from './open-item';
 import type { World } from '../../../core/world';
 import { ESC_RANK, pushEscape } from '../shell/escape';
 
@@ -94,6 +95,11 @@ export function openLibraryAt(source: SourceRef, stack: Route[]) {
   const st = libPanel.value;
   if (st && !sameSource(st.source, source)) void libEdits.flushAll();
   set(livePanel({ source, stack }, pageCtx()));
+}
+
+// 第九十二轮：地图上点到的东西（档案、“这里”卡片里的“在资源库里打开”）直达这张地图里的那一项；弹出面板先收起
+export function openWorldItem(kind: string, id: string) {
+  openLibraryAt(WORLD_SOURCE, worldItemStack(kind, id));
 }
 
 // 不带请求打开时从哪里开始（测试直接调）：有世界时总是本世界

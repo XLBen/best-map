@@ -13,6 +13,10 @@ export const HOME_LAYOUT: readonly { id: string; title: string; cards: readonly 
   { id: 'look', title: '外观', cards: ['mapStyle'] },
 ];
 
+// 第九十二轮：这张地图的首页上，融入了上级的这几种也留着自己的卡片（上级照旧写“含……”）：文化是最常找的，
+// 不该先想起它在哪个文化组里。库的首页不变（库的安排是库自己的）；登记表、融入的安排都没动
+export const WORLD_OWN_CARDS: readonly string[] = ['culture'];
+
 // “生态与水系”这一张卡片里面的
 export const ECOLOGY_KINDS: readonly string[] = ['biome', 'riverType', 'lakeType'];
 

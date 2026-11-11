@@ -9,6 +9,8 @@ import { OptionSlider } from '../shell/OptionSlider';
 import { Toggle } from '../components/Toggle';
 import { EraRulesNote } from '../shell/EraRulesNote';
 import { LibraryLink, TypePicker, TypePickerButton } from '../shell/TypePicker';
+import { LibItemLines } from '../shell/LibItemLine';
+import { libTarget } from '../packs/open-item';
 import type { SliderDef } from '../defs/types';
 import {
   type HumanChoice,
@@ -116,6 +118,8 @@ export function PopTupleMenu() {
           </optgroup>
         ))}
       </select>
+      {/* 第九十二轮：正在涂的这种文化在资源库里的那一项 */}
+      <LibItemLines list={libTarget(w, '文化', 'culture', t.culture)} />
       {worldDimensions(w.small).map((dim) => {
         const values = dimensionValues(w.small, dim.id);
         const none = dim.required ? [] : [{ id: '', name: '无', color: 'transparent' }];
@@ -314,7 +318,7 @@ export function HumanChoices({
       <div class="human-groups">{rows.map(groupRow)}</div>
       {own.length > 0 && (
         <>
-          <h6 class="choice-group">本世界加的</h6>
+          <h6 class="choice-group">这张地图加的</h6>
           <div class="human-groups">{own.map(groupRow)}</div>
         </>
       )}

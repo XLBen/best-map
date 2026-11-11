@@ -7,6 +7,8 @@ import type { PageCtx } from './pages';
 import { type BasketFor, addNow, addRegenButton, skippedLine } from './pick-add';
 import { type BasketNode, basketGroups, foldText, hasZeroWeightGroup, soleText, soleValue, whyText } from './pick-look';
 import { regenLine } from './pick-other';
+import { basketLine } from './pick-help';
+import { BASKET_HELP } from './copy';
 import { clearPicks, removePickIn, setPickDest } from './pick-store';
 import type { PickView } from './pick-view';
 
@@ -111,7 +113,7 @@ function DestPick({ v, ctx }: { v: PickView; ctx: PageCtx }) {
           setPickDest(x === 'world' ? 'world' : { lib: x });
         }}
       >
-        {ctx.world && <option value="world">本世界</option>}
+        {ctx.world && <option value="world">这张地图</option>}
         {mine.length > 0 && (
           <optgroup label="我的库">
             {mine.map((e) => (
@@ -157,6 +159,12 @@ export function LibBasket({ v, ctx, other }: { v: PickView; ctx: PageCtx; other?
           清空
         </button>
       </div>
+      {/* 第九十二轮：清单是什么、连带了几项，一句人话（pick-help.ts） */}
+      {p.count > 0 && (
+        <p class="hint lb-help">
+          {basketLine(p)}。{BASKET_HELP}
+        </p>
+      )}
       <div class="lb-list">
         {groups.map((g) => (
           <Group key={g.title} title={g.title} nodes={g.nodes} c={c} />

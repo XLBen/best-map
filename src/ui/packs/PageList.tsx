@@ -20,6 +20,7 @@ import { NEW_IN_WORLD_NOTE, PICK_ENTER, PICK_ENTER_TIP, TIDY, TIDY_TIP } from '.
 import { type NewChoice, newChoiceOf } from './new-in';
 import { otherLibs, pickFrom } from './other-view';
 import { tidyWorld } from './tidy';
+import { unpickableNote } from './pick-help';
 
 // 列表（第五十九轮）：这一种内容的每一项，点进去是这一项的页面。我的库里能拖动换先后（同一个小包里，把手在右边）。
 // 第六十七轮：看库就是添加。有地方加时库的每一行最左边一个勾（PickBox），列表头“全选”；点一行在右栏打开（openRoute）
@@ -34,7 +35,8 @@ export function Row({ r, src, ctx, movable, v }: { r: ListRow; src: SourceRef; c
   const [over, setOver] = useState(false);
   const ref = { kind: r.kind.id, id: r.id };
   const pick = v && kindPickable(v, r.kind.id) ? v : null;
-  const note = pick ? lookOf(pick, ref).note : null;
+  // 第九十二轮：这一种加不了的行也写明为什么（以前只是没有勾）
+  const note = pick ? lookOf(pick, ref).note : v ? unpickableNote(v.look.here) : null;
   const rowRef = useRef<HTMLDivElement>(null);
   useFlashScroll(rowRef, r.kind.id, r.id);
   const mark = oneMark({ isDefault: st.isDefault, inUse: r.kind.id === 'mapStyle', changed: r.mark?.changed, modified: src.t === 'lib' && st.modified });

@@ -8,12 +8,13 @@ import { focusOn } from '../camera';
 import { EditorKind, FieldsBox } from './ContentEditor';
 import { EraPatterns, PatternTip } from './EraPatterns';
 import { type Obj, editorIssues } from './fields';
-import { commitItem, copyItemIn, deleteFromLibrary, saveBackToLibrary, useSourceVersion } from './page-actions';
+import { commitItem, copyItemIn, deleteFromLibrary, useSourceVersion } from './page-actions';
 import { type Segment, initialOpen, segmentBrief } from './page-segments';
 import type { UsedBy } from './page-used-by';
 import { type ItemAction, type ItemPage, type PageCtx, type Route, type SourceRef, itemActions, itemPage, refRoute, rowsOf, sourceKind } from './pages';
 import { closeSide, copyToMine, goBack, goTo, openRoute, openSegments, rememberSegments, replaceTop } from './panel-store';
-import { DELETE, DELETE_WORLD_TIP, EXPORT_FILE, SAVE_BACK_TIP, SAVE_TO_MINE, SAVE_TO_MINE_TIP } from './copy';
+import { DELETE, DELETE_WORLD_TIP, EXPORT_FILE, SAVE_TO_MINE, SAVE_TO_MINE_TIP } from './copy';
+import { saveToMine } from './save-mine-run';
 import { TimingMark } from './TimingMark';
 import { OnMapLine } from './OnMapLine';
 import { FlagSamples, LandmarkNameSamples, TitleReplace } from './ItemPreviews';
@@ -28,7 +29,7 @@ import { WaterBiomesSegment } from './PageEcology';
 import { BiomeEditor } from '../ecology/BiomeEditor';
 import { RefGo } from './RefPicker';
 import { refLabel, refOptionsOf } from './refs';
-import { exportRow, openDedicated, runTrusted, sampleLine, saveRow, swatchOf } from './row-actions';
+import { exportRow, openDedicated, runTrusted, sampleLine, swatchOf } from './row-actions';
 import { DEDICATED, type ItemRow, defaultStyleCommand, removeCommand, rowUsage, saveableItem } from './rows';
 
 // 一项的页面（第五十九轮）：几段可折叠的卡片，收起时标题旁写一句当前内容；表单是 ContentEditor 的 FieldsBox。
@@ -81,12 +82,6 @@ function Actions({ p, row, src, ctx, embedded, side, onMap }: { p: ItemPage; row
             <RotateCcw /> 用库里的版本
           </button>
         );
-      case 'saveBack':
-        return (
-          <button class="small" title={SAVE_BACK_TIP(p.diffLib ?? '')} onClick={() => void saveBackToLibrary(p.kind, p.id, ctx)}>
-            <Save /> {SAVE_TO_MINE}
-          </button>
-        );
       case 'dedicated':
         return (
           <button class="small" title="图表、滑块和脚本检查" onClick={() => row && openDedicated(row)}>
@@ -95,7 +90,7 @@ function Actions({ p, row, src, ctx, embedded, side, onMap }: { p: ItemPage; row
         );
       case 'saveToMine':
         return (
-          <button class="small" title={SAVE_TO_MINE_TIP} onClick={() => row && void saveRow(row)}>
+          <button class="small" title={SAVE_TO_MINE_TIP} onClick={() => void saveToMine([{ kind: p.kind.id, id: p.id }], ctx)}>
             <Save /> {SAVE_TO_MINE}
           </button>
         );

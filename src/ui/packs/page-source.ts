@@ -1,6 +1,7 @@
 import { type ContentKind, itemId } from '../../../core/content/registry';
 import { type PackWorld, canApply, packItems } from '../../../core/packs';
 import type { LibraryEntry } from '../../library';
+import { WORLD_NAME } from './copy';
 import { type ItemRow, libraryRows, worldRows } from './rows';
 
 // 看的是哪一份、这一份里有什么（第五十九轮写在 pages.ts，第六十轮搬到这里：融入的逻辑也要用，又不能和 pages.ts 绕圈）
@@ -29,17 +30,17 @@ export function sourceKind(src: SourceRef, ctx: PageCtx): SourceKind | null {
 }
 
 export function sourceTitle(src: SourceRef, ctx: PageCtx): string {
-  return src.t === 'world' ? '本世界' : (entryOf(src, ctx)?.pack.name ?? src.key);
+  return src.t === 'world' ? WORLD_NAME : (entryOf(src, ctx)?.pack.name ?? src.key);
 }
 
-// 标题下拉里读进来的文件写成“文件：xxx（没存到我的库）”
-export const fileTitle = (e: Pick<LibraryEntry, 'file' | 'pack'>): string => `文件：${e.pack.name || e.file}（没存到我的库）`;
+// 标题下拉里读进来的文件写成“文件：xxx（没加进资源库）”
+export const fileTitle = (e: Pick<LibraryEntry, 'file' | 'pack'>): string => `文件：${e.pack.name || e.file}（没加进资源库）`;
 
 // 来源不在了（库删掉了、世界关了）：回到本世界
 export const liveSource = (src: SourceRef, ctx: PageCtx): SourceRef => (src.t === 'lib' && !entryOf(src, ctx) ? WORLD_SOURCE : src);
 
 // 只读的原因（能改时 null）
-const READONLY_WHY: Record<SourceKind, string | null> = { world: null, mine: null, builtin: '内置的库只读', imported: '导入的库只读', file: '读进来的文件只读' };
+const READONLY_WHY: Record<SourceKind, string | null> = { world: null, mine: null, builtin: '内置的库只读', imported: '加进来的库只读', file: '读进来的文件只读' };
 export function readonlyWhy(src: SourceRef, ctx: PageCtx): string | null {
   const k = sourceKind(src, ctx);
   return k ? READONLY_WHY[k] : '这个库不在了';
@@ -73,7 +74,7 @@ export function sourceMenu(cur: SourceRef, ctx: PageCtx): SourceMenu {
     return { src, name: e.pack.name, on: sameSource(src, cur) };
   };
   return {
-    world: { src: WORLD_SOURCE, name: '本世界', on: cur.t === 'world' },
+    world: { src: WORLD_SOURCE, name: WORLD_NAME, on: cur.t === 'world' },
     builtin: ctx.lib.filter((e) => e.builtin).map(item),
     mine: ctx.lib.filter((e) => !e.builtin && e.mine).map(item),
     imported: ctx.lib.filter((e) => !e.builtin && !e.mine && !e.file).map(item),

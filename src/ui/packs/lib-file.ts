@@ -11,7 +11,7 @@ const reads = new Map<string, { read: PackRead; file: string }>();
 
 // 太大的文件不读进内存（readPack 按字数再查一遍；一个字可能占三个字节）
 export async function readFileAsPack(file: Pick<File, 'name' | 'size' | 'text'>): Promise<PackRead> {
-  if (file.size > 3 * PACK_MAX_CHARS) return { ok: false, errors: [`文件太大（${Math.round(file.size / 1e6)} MB），不是资源包`] };
+  if (file.size > 3 * PACK_MAX_CHARS) return { ok: false, errors: [`文件太大（${Math.round(file.size / 1e6)} MB），不是库的文件`] };
   return readPack(await file.text());
 }
 

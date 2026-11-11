@@ -199,7 +199,9 @@ describe('在地图上：人文', () => {
     const id = e.world.small.human!.era;
     const n = Object.keys(e.world.small.countries!).length;
     const c = Object.keys(e.world.small.cities!).length;
-    expect(at(e, 'era', id)).toEqual({ used: true, text: `这张地图的时代：${n} 个国家、${c} 座城市` });
+    // 第九十二轮：能定位（全部国家的领土）
+    expect(at(e, 'era', id)).toMatchObject({ used: true, text: `这张地图的时代：${n} 个国家、${c} 座城市` });
+    expect(at(e, 'era', id).cells!.length).toBeGreaterThan(0);
     const other = add(e, 'era');
     expect(at(e, 'era', String(other.id)).text).toBe(`这张地图用的是“${item(e, 'era', id).name}”`);
   });
@@ -319,7 +321,8 @@ describe('在地图上：人文', () => {
     // 国家格局
     const eraId = e.world.small.human!.era;
     const listed = (item(e, 'era', eraId).patterns as { pattern: string }[] | undefined) ?? [];
-    if (listed.length) expect(at(e, 'countryPattern', listed[0].pattern)).toEqual({ used: true, text: '这张地图的时代列着它' });
+    // 第九十二轮：按这种格局生成了国家时写几个、能定位
+    if (listed.length) expect(at(e, 'countryPattern', listed[0].pattern)).toMatchObject({ used: true, text: expect.stringMatching(/^这张地图的时代列着它(：\d+ 个国家)?$/) });
     const p = add(e, 'countryPattern');
     const off = at(e, 'countryPattern', String(p.id));
     expect(off).toMatchObject({ used: false, text: '时代没列这种格局', fix: { t: 'command', label: '加进时代' } });

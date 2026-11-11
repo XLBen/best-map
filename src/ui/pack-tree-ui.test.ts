@@ -282,7 +282,7 @@ describe('拿掉的不丢', () => {
     expect(await openFile({ name: '旧生态.json', size: text.length, text: async () => text })).toBeNull();
     const v = packDialog.value;
     expect(v?.view).toBe('import');
-    expect(v?.view === 'import' && !v.read.ok && v.read.errors).toEqual(['旧版的生态文件不再能读：请用新版导出的资源包']);
+    expect(v?.view === 'import' && !v.read.ok && v.read.errors).toEqual(['旧版的生态文件不再能读：请用新版导出的文件']);
     expect(eng.world.small.species.map((s) => s.id)).toEqual(before);
     packDialog.value = null;
   });

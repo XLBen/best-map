@@ -15,7 +15,7 @@ import {
 import { type ContentKind, itemId } from '../../../core/content/registry';
 import { PATTERN_LABEL } from '../../../core/species';
 import type { FoundScript } from '../../../core/script';
-import { type LibraryEntry, inLibrary, installPack, keepSavedForms, library, removePack } from '../../library';
+import { type LibraryEntry, inLibrary, installPack, library, removePack } from '../../library';
 import { trustScripts, untrustedScripts } from '../../trust';
 import { ScriptList, TrustBlock } from './Scripts';
 import { ModalHead } from '../common';
@@ -169,13 +169,13 @@ function PacksView() {
   const list = library.value;
   const groups: [string, LibraryEntry[]][] = [
     ['内置', list.filter((e) => e.builtin)],
-    ['我的资源', list.filter((e) => e.mine)],
-    ['导入的', list.filter((e) => !e.builtin && !e.mine)],
+    ['我的库', list.filter((e) => e.mine)],
+    ['加进来的', list.filter((e) => !e.builtin && !e.mine)],
   ];
   return (
     <>
-      <ModalHead title="资源包" onClose={close} />
-      <p class="hint">资源库里的内容按包存着。删除包不影响用过它的世界。</p>
+      <ModalHead title="管理库" onClose={close} />
+      <p class="hint">删除一个库不影响用过它的世界。</p>
       {groups.map(([title, entries]) =>
         entries.length ? (
           <>
@@ -207,7 +207,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
   if (!read.ok) {
     return (
       <>
-        <ModalHead title="导入资源包" onClose={close} />
+        <ModalHead title="读文件" onClose={close} />
         <p class="warn">读不了“{file}”：</p>
         <ul class="small">
           {read.errors.slice(0, 8).map((e) => (
@@ -244,7 +244,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
       // 信任：包里全部脚本记进信任列表（trust.ts，按源码的 SHA-256；之后打开用了它的世界不再问）
       await trustScripts(scripts);
       const r = await installPack(p);
-      if (!r.ok) showToast('存不进浏览器：资源包只在这次打开的页面里');
+      if (!r.ok) showToast('存不进浏览器：只在这次打开的页面里');
       packDialog.value = { view: 'import', read, file, installed: r.entry.key };
     } finally {
       setWorking(false);
@@ -282,6 +282,9 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
 
 // ---------- 导出 ----------
 
+// 第九十二轮：这个弹窗只导出文件。存到我的库是另一个动作、只有一个去向（save-mine.ts），不再在这里另做一个包
+const EXPORT_NAME = '我的内容';
+
 // 本世界里能导出的（每一种按登记表的 fromWorld：不是内置原样的；人文的几种也在），按资源库的分类先后
 export function exportSections(w: PackWorldLike): { kind: ContentKind; items: PackItem[] }[] {
   return dialogKinds()
@@ -304,7 +307,7 @@ export const packEmpty = (pack: ResourcePack): boolean => dialogKinds().every((k
 
 function ExportView() {
   const w = world.value;
-  const [name, setName] = useState('我的资源');
+  const [name, setName] = useState(EXPORT_NAME);
   const [author, setAuthor] = useState('');
   const [desc, setDesc] = useState('');
   const sections = useMemo(() => (w ? exportSections(w) : []), [w]);
@@ -316,7 +319,7 @@ function ExportView() {
     else next.add(key);
     setOff(next);
   };
-  const make = () => packFromWorld(w, exportPicks(sections, off, false), { name: name.trim() || '我的资源', author: author.trim() || undefined, description: desc.trim() || undefined });
+  const make = () => packFromWorld(w, exportPicks(sections, off, false), { name: name.trim() || EXPORT_NAME, author: author.trim() || undefined, description: desc.trim() || undefined });
   const preview = make();
   const empty = packEmpty(preview);
   const endemic = endemicCount(w);
@@ -329,22 +332,9 @@ function ExportView() {
       </span>
     </label>
   );
-  // 资源库里已经有同名（同一个 id）的：存进去会替换它
-  const replaces = inLibrary(preview);
-  // 替换的是自己的包时，形态编辑器存在里面的星球形态留着（见 keepSavedForms）
-  const stored = keepSavedForms(preview, replaces);
-  const countItems = (p: ResourcePack) => dialogKinds().reduce((n, k) => n + packItems(p, k.pack.key).length, 0);
-  const keptForms = countItems(stored) - countItems(preview);
-  const save = async () => {
-    // 不在这里把脚本记为信任：世界里的脚本可能来自别人的世界文件（没运行脚本打开的），
-    // 自己写的、信任过的包里的本来就信任了；没信任过的，以后用到世界时照样先问
-    const r = await installPack(stored, { mine: true });
-    showToast(r.ok ? `“${preview.name}”已存到我的库` : '存不进浏览器：只在这次打开的页面里');
-    close();
-  };
   return (
     <>
-      <ModalHead title="存到我的库" onClose={close} closeTitle="取消" />
+      <ModalHead title="导出文件" onClose={close} closeTitle="取消" />
       <div class="grid2">
         <label>
           <span class="hint">名字</span>
@@ -365,16 +355,8 @@ function ExportView() {
       )}
       {!sections.length && <p class="hint">没有自己做的、改过的内容</p>}
       {endemic > 0 && <p class="hint">只长在某处的生态不带</p>}
-      {replaces && (
-        <p class="hint">
-          会替换资源库里的“{replaces.pack.name}”，换个名字则另存。{keptForms > 0 && `编辑器存的 ${keptForms} 项保留。`}
-        </p>
-      )}
       <div class="modal-foot">
         <button onClick={close}>取消</button>
-        <button disabled={empty} onClick={() => void save()} title="存进“我的资源”，可用到别的世界">
-          存到我的库
-        </button>
         <button class="primary" disabled={empty} onClick={() => exportFile(preview)} title="存成文件，可以发给别人">
           导出文件
         </button>

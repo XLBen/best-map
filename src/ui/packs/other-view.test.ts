@@ -54,7 +54,7 @@ describe('来自哪个库', () => {
     }
     // 中世纪的宗教都抄进来了：都是 ✓，写“这个库已有”
     const med = rows(otherSections('medieval', RELIGION, lib(copy.key), ctx));
-    expect(med.every((r) => r.look!.mark === 'have' && r.look!.note === '这个库已有')).toBe(true);
+    expect(med.every((r) => r.look!.mark === 'have' && r.look!.note === '这个库已经有了')).toBe(true);
     expect(libs.find((l) => l.key === 'medieval')!.can).toBe(0);
     // 勾了：已勾 1
     const other = libs.find((l) => l.can > 0)!;
@@ -89,7 +89,7 @@ describe('列表', () => {
     const STYLE: OtherOpen = { kind: 'nameStyle', label: '地名风格' };
     const have = LIB.flatMap((e) => rows(otherSections(e.key, STYLE, { t: 'world' }, ctx))).filter((r) => r.look!.mark === 'have');
     expect(have.length).toBeGreaterThan(0);
-    for (const r of have) expect(r.look!.note).toBe('本世界已有');
+    for (const r of have) expect(r.look!.note).toBe('这张地图已经有了');
   });
 
   it('上级页面打开的：放不到这个上级下面的灰着写原因，勾着的照样能取消；添加时只放放得下的', () => {

@@ -15,6 +15,9 @@ import { CitySection, StatsSection } from './archives/country-people';
 import { DiplomacySection } from './archives/country-relations';
 import { HistorySection } from './archives/country-history';
 import { registerArchive } from './defs/archive-registry';
+import { IN_LIBRARY_TITLE } from './copy';
+import { countryTargets } from './packs/open-item';
+import { LibItemLines } from './shell/LibItemLine';
 
 // 国家的档案（第二十三轮）：右边的抽屉，选中的国家。名字、旗帜、颜色、首都、政体、主流文化与兼容的文化组、统计、派系、外交、统治者、
 // 建国年份、历史。改的都是 set_country 的 patch；字在离开框（或回车）时提交，历史停下一会儿也提交。
@@ -79,6 +82,8 @@ export function CountryArchive() {
       )}
       {tab === 'politics' && (
         <>
+          {/* 第九十二轮：这一国的政体、等级、主流文化在资源库里的那一项（名字、颜色在这里直接改） */}
+          <LibItemLines title={IN_LIBRARY_TITLE} list={countryTargets(w, m)} edit />
           <GovernmentSection w={w} m={m} />
           <CultureSection w={w} m={m} />
           <FactionSection w={w} m={m} />

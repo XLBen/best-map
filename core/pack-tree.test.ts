@@ -178,12 +178,12 @@ describe('嵌套的资源包', () => {
     const deep = structuredClone(nested);
     deep.packs![1].packs![0].packs = [{ id: 'd', name: '丁' }];
     const bad = parsePack(deep);
-    expect(!bad.ok && bad.errors.join()).toMatch(/小包“乙”里的小包“丙”：不认识的部分：packs/);
+    expect(!bad.ok && bad.errors.join()).toMatch(/分组“乙”里的分组“丙”：不认识的部分：packs/);
     // 小包里的项按格式查
     const broken = structuredClone(nested);
     (broken.packs![0].nameStyles as { kind: string }[])[0].kind = 'nope';
     const b2 = parsePack(broken);
-    expect(!b2.ok && b2.errors[0]).toMatch(/^小包“甲”里的地名风格第 1 个“风格s1”的 kind：/);
+    expect(!b2.ok && b2.errors[0]).toMatch(/^分组“甲”里的地名风格第 1 个“风格s1”的 kind：/);
     // 旧的没有 packs 的文件
     expect(readPack(JSON.stringify(FANTASY_PACK)).ok).toBe(true);
   });

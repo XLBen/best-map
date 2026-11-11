@@ -22,7 +22,7 @@ export function ScriptList({ scripts }: { scripts: FoundScript[] }) {
 }
 
 // 信任的问话（资源包导入、用到世界前）：有几段脚本、会在哪里运行，可以展开看源码
-export function TrustBlock({ scripts, what = '资源包' }: { scripts: FoundScript[]; what?: string }) {
+export function TrustBlock({ scripts, what = '这个文件' }: { scripts: FoundScript[]; what?: string }) {
   return (
     <div class="box trust">
       <b>{what}里的脚本</b>
