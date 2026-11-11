@@ -24,6 +24,8 @@ export const ESC_RANK = {
   scriptHelp: 310,
   // ---- 冒泡阶段（以前 keys.ts 里的 if/else 链，从上到下） ----
   packDialog: 160,
+  // 留着的旧世界（第九十一轮，maps/backups.ts）
+  backupsDialog: 155,
   mapsDialog: 150,
   help: 140,
   // 星球形态编辑器：正在框里写时先离开框，再按一次关上

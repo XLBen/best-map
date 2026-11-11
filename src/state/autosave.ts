@@ -2,7 +2,9 @@ import { signal } from '@preact/signals';
 import type { Command } from '../../core/commands';
 import { isCurrentDoc } from '../../core/doc-version';
 import type { WorldDoc } from '../../core/engine';
+import { AUTOSAVE_KEY, staleLocalAutosave } from '../backups';
 import { idbTx, kvRequest, openDb } from '../idb';
+import { keepStaleOnce } from './backups';
 import { THUMB_EVERY_MS, activeLink, idbMapStore, isQuotaError, mapLink, mapSavedState, overwriteMap, thumbHook } from '../maps';
 import { showToast } from './notes';
 import { call, getDoc, hostHooks, safeMode } from './worker-host';
@@ -14,7 +16,6 @@ import { worldEpoch, worldState } from './world';
 // 存在 IndexedDB：结构化克隆，不必转成 JSON，也没有 localStorage 约 5 MB 的上限（以前画多了会存不下、
 // 之后悄悄不再保存）。每次只写变了的那些命令（撤销、换一个只改动最后几步）。IndexedDB 用不了时退回 localStorage
 
-const AUTOSAVE_KEY = 'map2.autosave';
 interface AutosaveMeta extends Omit<WorldDoc, 'commands'> {
   savedAt: number;
   count: number;
@@ -86,6 +87,8 @@ async function syncLinked(link: { id: string; name: string; epoch: number }, sta
 }
 
 async function autosave() {
+  // 第九十一轮：写之前先确认这一版打不开的旧自动保存已经挪走（启动时读自动保存那一下就挪了；这里是万一还没读过）
+  await keepStaleOnce();
   if (savedEpoch !== worldEpoch.value) {
     savedIds = [];
     savedEpoch = worldEpoch.value;
@@ -115,14 +118,20 @@ async function autosave() {
     if (epoch === worldEpoch.value && gen === savedGen) savedIds = ids;
     savedCount = meta.count;
     autosaved.value = meta.savedAt;
-    // IndexedDB 用不了时存在 localStorage 里的：已经有更新的了
-    localStorage.removeItem(AUTOSAVE_KEY);
+    // IndexedDB 用不了时存在 localStorage 里的：已经有更新的了（没能挪走的旧世界不删，见 backups.ts）
+    if (!staleLocalAutosave(localStorage)) localStorage.removeItem(AUTOSAVE_KEY);
     if (link) await syncLinked(link, state);
   } catch {
     // IndexedDB 用不了（比如隐私模式）：整份存进 localStorage
     const doc = await getDoc();
     if (!doc) return;
     try {
+      // 位置上还压着一份没能挪走的旧世界（存储满了，见 backups.ts）：不盖它
+      if (staleLocalAutosave(localStorage)) {
+        if (!autosaveWarned) showToast('存储已满，没能自动保存；请导出世界文件', true);
+        autosaveWarned = true;
+        return;
+      }
       localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ savedAt: Date.now(), doc, ...(safeMode.value ? { safe: safeMode.value.reason } : {}) }));
       autosaved.value = Date.now();
     } catch {
@@ -133,7 +142,8 @@ async function autosave() {
 }
 
 // 读上次的自动保存：IndexedDB 与 localStorage（IndexedDB 用不了时的后备）里较新的那一份。safe：上次是安全模式（原因）。
-// 旧版本的世界（第九轮起不再兼容）当作没有：启动时弹出向导新建，不报错；新世界的自动保存会盖掉它
+// 这一版打不开的世界（旧版本的、更新的版本做的）不在这里读：读之前先原样挪进“留着的旧世界”（第九十一轮，backups.ts），
+// 位置空出来，新世界的自动保存碰不到它；这里照旧返回 null（启动时弹出向导），界面另有一条一直在的提示
 export interface Autosaved {
   savedAt: number;
   doc: WorldDoc;
@@ -142,6 +152,7 @@ export interface Autosaved {
   mapSynced?: boolean;
 }
 export async function readAutosave(): Promise<Autosaved | null> {
+  await keepStaleOnce();
   let best: Autosaved | null = null;
   try {
     const db = await openDb();

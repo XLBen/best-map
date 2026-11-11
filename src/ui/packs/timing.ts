@@ -16,7 +16,8 @@ import type { SourceKind } from './page-source';
 //                         即时。它们的命令执行完引擎自己从该重算的那一层重算（种类的 dirty：生态到植被，地形类别、资源到人文的几层，
 //                         地名风格重新起名），或者只在画、用的时候现读（画风、派系的影响力）
 //     生成时才读的种类（REGEN_KINDS：人文、国家、城市、省份划分）
-//                         要重新生成；其中画、用的时候现读的字段（INSTANT_KEYS，每一个都读过代码、有测试“改了以后重新生成，结果一样”）是即时
+//                         要重新生成；其中画、用的时候现读的字段（INSTANT_KEYS，每一个都读过代码、有测试“改了以后重新生成，结果一样”）是即时；
+//                         第九十一轮：改了引擎马上重算的（政体的称号、时代的集团的称号：国名跟着变）、名字外文名简称也是即时
 //
 // 一段里几个字段不一样时按最慢的标（要重新生成），另写一句哪几个马上变。
 // 不碰界面，测试直接调
@@ -34,8 +35,10 @@ export const REGEN_KINDS: readonly string[] = [...HUMAN_KINDS, ...COUNTRY_KINDS,
 // 省份划分里重新划分才用上的几项（“湖”改了马上整理；名字、说明不上地图）
 export const PROVINCE_KEYS: readonly (keyof ProvinceRules)[] = ['size', 'varied', 'wasteland', 'seaByDistance', 'riverCost', 'ridgeCost'];
 
-// 每一种都不用重新生成的两项：地图按现在的颜色画，说明只在面板、档案里写
-const COSMETIC: readonly string[] = ['description', 'color'];
+// 每一种都不用重新生成的几项：地图按现在的颜色画，说明只在面板、档案里写；
+// 第九十一轮：名字、外文名、简称也是——图例、档案、列表都是现读的，生成时不读（测试查着：改了以后重新生成，结果一样；
+// 只有文化的名字写进了国家档案“历史”那一段，那是写下的字，改名不跟着改）
+const COSMETIC: readonly string[] = ['description', 'color', 'name', 'orig', 'short'];
 
 // 生成时才读的种类里，画、用的时候现读的字段（改了马上变，不算“改了 N 项”）。读过的代码：
 //   国家等级的首都四项    core/human/tiers.ts 的 capitalLook，只有画城市（ui/domain/settlements.ts）、排国名（ui/map/political.ts）时调
@@ -46,12 +49,19 @@ const COSMETIC: readonly string[] = ['description', 'color'];
 //   地标的名字、图标、名字的写法
 //                         地标只记类型的 id 和格，名字每次按写法现起（core/human/landmarks.ts 的 landmarkName、landmarkList）
 //   点的名字、图标、图片  点是自己放的，列表现读类型（core/human/points.ts 的 pointList）；“当作城市”留在“要重新生成”（进城市的表，道路、地标按表放）
+//   政体的称号、统治者称号、换说法（第九十一轮）
+//                         国名、统治者的称号跟着资源库变：改这三项的命令执行完，引擎把没手改过的国名、称号按新的重算
+//                         （core/human/retitle.ts；测试查着：改完和“改完再重新生成国家”起出来的一样）
+//   时代的“集团的称号”（第九十一轮）
+//                         帝国、联邦、同盟的名字和联邦成员邦的名字同样跟着变（retitle.ts 的 retitleBlocs）
+// 国家等级的“高低”、文化的文化组与倾向也会让国名马上跟着变，但它们生成时也要读，仍标要重新生成
 const INSTANT_KEYS: Readonly<Record<string, readonly string[]>> = {
   countryTier: ['capitalIcon', 'capitalAlpha', 'capitalLabel', 'capitalBold'],
-  government: ['factions'],
-  cityRank: ['name', 'icon', 'label', 'alpha', 'iconScale', 'labelAlpha'],
-  landmarkType: ['name', 'icon', 'label'],
-  pointType: ['name', 'icon', 'image'],
+  government: ['factions', 'titles', 'rulers', 'names'],
+  era: ['relations'],
+  cityRank: ['icon', 'label', 'alpha', 'iconScale', 'labelAlpha'],
+  landmarkType: ['icon', 'label'],
+  pointType: ['icon', 'image'],
 };
 
 const instantSets = new Map<string, ReadonlySet<string>>();
@@ -80,6 +90,9 @@ export interface SegmentTiming {
 // 即时的种类里只管以后的几项：另写一句
 const SEGMENT_NOTES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   islandType: { basic: '形状、高低、岩石只影响以后放的岛' },
+  // 第九十一轮：国名、称号跟着变，自己改过的不动
+  government: { titles: '自己改过的国名、称号不动' },
+  era: { relations: '自己改过名字的集团不动' },
 };
 
 export const TIMING_LABEL: Record<Timing, string> = { instant: '即时', regen: '要重新生成', new: '只影响新地图' };

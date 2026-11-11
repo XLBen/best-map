@@ -98,7 +98,8 @@ describe('底下的“改了 N 项 · 重新生成”', () => {
     const gov = Object.values(e.world.small.countries!)[0].government;
     const k = kindOf('government')!;
     const g = k.inWorld(e.world).find((x) => itemId(k, x) === gov) as Record<string, unknown>;
-    e.exec(enableCommand(k, { ...g, name: '改过' }, e.world));
+    // 第九十一轮：改名字不算（现读的），改“国土”才算
+    e.exec(enableCommand(k, { ...g, size: 3 }, e.world));
     e.update();
     t.pending = { op: 'set_content', kind: 'government', id: gov, item: null } as Command;
     t.step(4, e.world.small.content);
@@ -143,7 +144,7 @@ describe('底下的“改了 N 项 · 重新生成”', () => {
     const gov = Object.values(e.world.small.countries!)[0].government;
     const k = kindOf('government')!;
     const g = k.inWorld(e.world).find((x) => itemId(k, x) === gov) as Record<string, unknown>;
-    e.exec(enableCommand(k, { ...g, name: '改过' }, e.world));
+    e.exec(enableCommand(k, { ...g, size: 3 }, e.world));
     e.update();
     t.step(1, e.world.small.content);
     expect(regenNeed(e.world.small, t.base(), BUILTIN)).toMatchObject({ scopes: ['countries'], warn: null, label: '重新生成国家' });

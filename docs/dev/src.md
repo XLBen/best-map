@@ -7,7 +7,7 @@
 - `state/`（第七十轮从 `state.ts` 分出来，原样搬，彼此不绕成圈）：`world.ts` 世界与选中的东西（快照换上时一起改的信号）；`notes.ts` 提示、跳过的步骤、“改了什么”与高亮（`describeChange`）；`options.ts` 工具的选项；`prefs.ts` 偏好（localStorage）与参考图（IndexedDB）
 - `state/worker-host.ts` 开计算 Worker、请求排队（`call`、`editsIdle`）、换上快照（`applySnapshot`）、缩略图、页面隐藏时写检查点；上层的预览作废、自动保存经 `hostHooks` 接回来；`snapshot-merge.ts` 把只带变了的快照拼到手上的世界上（`mergeSnapshot`、轻快照 `lightWorld`，第八十轮搬出来）；`mesh.ts` 网格的缓存与建网格的 Worker；`cost-gate.ts` 成本闸门
 - `state/edits.ts` 执行、换掉最后一步、撤销、重做；`exact-preview.ts` 地形预览、命令预览、省份的轻预览、确切预览与调整面板的预览；`open.ts` 新建、打开、继续上次的世界、“再试一次”；`script-trust.ts` 问要不要信任脚本；`ask.ts` 问一句的对话框
-- `state/autosave.ts` 自动保存（IndexedDB，退回 localStorage）与连着的“我的地图”；`export-host.ts` 导出 Worker、下载；`tidy.ts` 移出的存进资源库、整理的计划、压缩世界文件
+- `state/autosave.ts` 自动保存（IndexedDB，退回 localStorage）与连着的“我的地图”（第九十一轮：读、写之前先等 `keepStaleOnce`；后备的位置上压着没能挪走的旧世界时不盖它）；`state/backups.ts`（第九十一轮）留着的旧世界的信号 `backups`、这一次打开页面只挪一次的 `keepStaleOnce`、`deleteBackup`、`dismissBackups`、测试换存取的 `useBackupIo`；`export-host.ts` 导出 Worker、下载；`tidy.ts` 移出的存进资源库、整理的计划、压缩世界文件
 - `notice-timer.ts` 提示条多久消失；`biome-range.ts` 生态范围外怎么说（第六十九轮从 `ui/` 搬来）
 - `protocol.ts` 主线程与计算 Worker 之间的消息（第九十轮：新建、打开、撤销、重做的回复带 `regen`——上一次生成时的内容里和现在不一样的项；执行的回复不带）；`transfer.ts` 搬数据不复制
 - `worker.ts` 计算 Worker（持有引擎；快照、描好的河、空闲预热）；`worker-snapshot.ts` 快照（`SnapshotSender`，第八十轮搬出来）：推导数组、原因数组（第八十轮）、地物、河都只发与上一次发的不同的，主线程沿用手上的同一个对象
@@ -19,8 +19,9 @@
 - `mesh-worker.ts` 建网格；`export-worker.ts` 导出（游戏文件包、整张地图的栅格化）；`compact-job.ts` 压缩世界文件（在导出 Worker 里）
 
 ## 存储
-- `idb.ts` IndexedDB（自动保存、检查点、网格、参考图、资源库、我的地图；`kvRequest` kv 表上的一个请求）
-- `maps.ts` 我的地图（存、盖掉、改名、删掉，连着哪一张）
+- `backups.ts`（第九十一轮，见 [第91轮](history/第91轮.md)）留着的旧世界：这一版打不开的自动保存（旧版本的、更新的版本做的）启动时原样挪进 `backups` 表（`keepStaleAutosaves`：IndexedDB 的一个事务里挪，localStorage 后备的放进表或换一个键），`listBackups`、`removeBackup`、`markSeen`、导出的字 `backupFileText`、文件名 `backupFileName`；存取经 `BackupIo`（浏览器的 `browserBackupIo`、测试的 `memoryBackupIo`）
+- `idb.ts` IndexedDB（第九十一轮是第 7 版，多一张 `backups` 表；自动保存、检查点、网格、参考图、资源库、我的地图；`kvRequest` kv 表上的一个请求）
+- `maps.ts` 我的地图（存、盖掉、改名、删掉，连着哪一张）；`library-edit.ts` 第九十一轮加 `setItems`（一次改几项，一步撤销：把各政体里的一个称号都换掉）
 - `library.ts` 资源库（内置的树、我的资源、“来自《世界名》”、导入的；`saveItem`、`keepInLibrary`；第五十九轮：包带版本 `rev`，同一版不再 `parsePack`）
 - `library-edit.ts` 改我的库（第五十九轮；第六十轮加 `setArrange` 换融入的安排、`applyItems` 几项一步；第六十一轮加 `setPack` 导入时整个换掉，一步撤销，先 `parsePack`）：`setItem` 只查这一项、只换到树根的路、写日志（localStorage），整个库晚一点才写（`FLUSH_MS`、关面板、切换库）；自己的撤销（第八十一轮 `undoLabel`、`redoLabel`：顶栏悬停写哪一步）；`adopt` 读存储时补上日志；`copyLibrary`、`createLibrary`、`deleteLibrary`
 - `trust.ts` 信任过的脚本（按源码的 SHA-256；问话的一句 `scriptTrustText`）

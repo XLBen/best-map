@@ -200,7 +200,7 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
       <div class={`ed-group ${bad ? 'bad' : ''}`}>
         <div class="ed-label">{f.label}</div>
         <Hint f={f} />
-        <TitleEditor value={value} onChange={onChange} orig={f.key !== 'rulers'} keyRef={f.keyRef} />
+        <TitleEditor value={value} onChange={onChange} orig={f.key !== 'rulers'} keyRef={f.keyRef} field={f.key} top={path.length === 1} />
         <Errors issues={issues} path={path} />
       </div>
     );

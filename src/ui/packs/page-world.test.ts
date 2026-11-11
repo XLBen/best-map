@@ -262,9 +262,14 @@ describe('重新生成的按钮', () => {
     const t = trackOf(e);
     expect(need(e, t)).toBeNull();
     const id = itemId(kindOf('culture')!, kindOf('culture')!.inWorld(e.world).find((c) => e.world.small.human!.groups.includes((c as { group: string }).group))!);
+    // 第九十一轮：名字是现读的，不算；改生成要读的“多少”才算
     edit(e, 'culture', id, { name: '改过' });
     t.step(1, e.world.small.content);
+    expect(need(e, t)).toBeNull();
+    edit(e, 'culture', id, { weight: 3 });
+    t.step(2, e.world.small.content);
     expect(need(e, t)).toMatchObject({ label: '重新生成人文', count: 1 });
+    e.undo();
     e.undo();
     t.pending = 'history';
     t.step(0, e.world.small.content);
@@ -275,7 +280,8 @@ describe('重新生成的按钮', () => {
     const e = worldOf();
     const t = trackOf(e);
     const gov = Object.values(e.world.small.countries!)[0].government;
-    edit(e, 'government', gov, { name: '改过' });
+    // 第九十一轮：改名字不算（现读的），改“国土”才算
+    edit(e, 'government', gov, { size: 3 });
     t.step(1, e.world.small.content);
     const n = need(e, t)!;
     expect(n.label).toBe('重新生成国家');
@@ -292,7 +298,7 @@ describe('重新生成的按钮', () => {
     expect(need(e, t)!.label).toBe('重新生成国家');
     // 再改一个文化：两样都要
     const cid = e.world.small.human!.groups[0];
-    edit(e, 'cultureGroup', cid, { name: '改组' });
+    edit(e, 'cultureGroup', cid, { weight: 2 });
     t.pending = { op: 'set_content', kind: 'cultureGroup', id: cid, item: null };
     t.step(2, e.world.small.content);
     const both = need(e, t)!;
@@ -329,7 +335,7 @@ describe('重新生成的按钮', () => {
     const e = worldOf('medieval', 3, {});
     const t = trackOf(e);
     const k = kindOf('government')!;
-    edit(e, 'government', itemId(k, k.inWorld(e.world)[0]), { name: '改过' });
+    edit(e, 'government', itemId(k, k.inWorld(e.world)[0]), { size: 3 });
     t.step(1, e.world.small.content);
     expect(need(e, t)).toBeNull();
     const n = bare.clone();
@@ -425,7 +431,7 @@ describe('重新生成的按钮', () => {
     const group = e.world.small.human!.groups[0];
     const page = itemPage(WORLD_SOURCE, { p: 'item', kind: 'cultureGroup', id: group }, ctxOf(e.world))!;
     const child = page.children.find((s) => s.key === 'culture')!.rows[0];
-    edit(e, 'culture', child.id, { name: '展开里改的' });
+    edit(e, 'culture', child.id, { weight: 3 });
     t.step(1, e.world.small.content);
     expect(need(e, t)!.label).toBe('重新生成人文');
   });

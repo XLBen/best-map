@@ -38,7 +38,8 @@
 
 ## 国家的档案：统治者、家族、备注、大事（第八十五轮）
 - `archive-types.ts` 类型（`RulerMeta`、`DynastyMeta`、`CountryLore`、`HistoryEvent`、`ArchiveState`，`world.ts` 照旧导出）；`archive-store.ts` `small.archive` 的读、换（不可变：`putLore`、`putEvent` 换成新对象）、每次改国家后的整理 `tidyArchive`（合并时大事归并进去的那一国）
-- `rulers.ts` 每国生成的统治者与家族（`generateLore`：3–8 位、1–3 个家族，最后一位是以前的 ruler 的名字）、名单与家族的编辑、按家族列 `rulersByDynasty`；`events.ts` 生成的结盟、开战、从属（`generateEvents`），大事的编辑，年表 `countryTimeline`（建国、即位按年份、名单现列）
+- `retitle.ts`（第九十一轮，见 [第91轮](history/第91轮.md)）国名、统治者的称号跟着资源库变：`TITLE_FIELDS` 称号会读的内容（政体的称号与换说法、等级的高低、文化的文化组与倾向、取值的组、时代的变量与集团的称号）、`titleInputsChanged`（绝大多数命令只比几个引用）、`retitle`（每条命令之后 `commands.ts` 调：改之前的内容给这个国家的称号和现在的不一样、没手改过、名字正是按改之前的称号起的才换；统治者同理；集团和联邦成员邦的名字 `retitleBlocs`）、`followRuler`（`set_country` 换政体、主流文化后在位的统治者换称号）、`derivedCountryName`
+- `rulers.ts`（第九十一轮：`RulerMeta.titleLocked` 自己改过称号，`setRuler` 把称号改成空的是恢复自动，`addRuler` 写的称号和政体给的不一样才算手改）每国生成的统治者与家族（`generateLore`：3–8 位、1–3 个家族，最后一位是以前的 ruler 的名字）、名单与家族的编辑、按家族列 `rulersByDynasty`；`events.ts` 生成的结盟、开战、从属（`generateEvents`），大事的编辑，年表 `countryTimeline`（建国、即位按年份、名单现列）
 - `archive-keep.ts` 重新长国家时留什么（`archiveBefore`、`writeArchive`，generate.ts 的最后一步）；`wiki.ts` 导出维基的每一页（`wikiFiles`、`safeFileName`）；`roads-image.ts` 道路图（从 `export.ts` 搬来）
 
 ## 城市、道路、地标、点（第二十四轮）

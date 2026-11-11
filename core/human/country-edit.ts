@@ -3,7 +3,7 @@ import { hashString } from '../names';
 import { mixSeed, mulberry32 } from '../rng';
 import type { CountryMeta, World } from '../world';
 import { joinBlocsOf, mergeBlocMembers, tidyBlocs } from './blocs';
-import { countryColor, countryName, cultureContext, ensureCountryArray, foundedYear, nameCountry, titleContext, yearText } from './countries';
+import { countryColor, countryName, cultureContext, ensureCountryArray, foundedYear, nameCountry, rulerTitleOf, titleContext, yearText } from './countries';
 import { type Culture, type SubjectKind, cultureById, worldCultures, worldEra } from './era';
 import { type FlagSpec, makeFlag } from './flags';
 import { type Government, eraGovernments, govAllowed, govRestricted, governmentById } from './government';
@@ -11,6 +11,7 @@ import { SLOTS } from './groups';
 import { bestCapital } from './countries/capitals';
 import { COAST, LAKE, RIVER } from './rules';
 import { putLore, tidyArchive } from './archive-store';
+import { followRuler } from './retitle';
 import { generateLore } from './rulers';
 
 // 改国家（第二十三轮，命令见 commands.ts）：画领土、新建、合并、拆分、改档案、删除、挪首都；改地形之后的修补；
@@ -346,6 +347,9 @@ export function setCountry(world: World, id: number, p: CountryPatch): string[] 
   const metas = small.countries!;
   const what: string[] = [];
   const seed = seedOf(world);
+  // 第九十一轮：换政体、主流文化之前政体给的统治者称号（换完以后在位的那一位跟着换，见 retitle.ts 的 followRuler）
+  const retitled = p.government !== undefined || p.primaryCulture !== undefined;
+  const rulerWas = retitled ? rulerTitleOf(world, m) : undefined;
   if (p.government !== undefined) {
     // 第三十轮：世界里没有的政体由界面先从资源库加进来（set_content，带 from），引擎不再从内置的复制
     if (!governmentById(small, p.government)) throw new CommandError(`世界里没有政体 "${p.government}"：先从资源库添加它`);
@@ -373,6 +377,7 @@ export function setCountry(world: World, id: number, p: CountryPatch): string[] 
     if (n.orig) m.orig = n.orig;
     else delete m.orig;
   }
+  if (retitled) followRuler(world, m, rulerWas);
   if (p.name !== undefined) {
     if (p.name.trim()) {
       m.name = p.name.trim();

@@ -152,12 +152,12 @@ const WORLD_TIMING: Record<string, Record<string, Timing>> = {
   resource: { basic: 'instant', rules: 'instant', spread: 'instant' },
   mapStyle: { basic: 'instant', land: 'instant', sea: 'instant', lines: 'instant', water: 'instant', text: 'instant' },
   provinceRules: { basic: 'instant', size: 'regen', water: 'instant', borders: 'regen' },
-  era: { basic: 'regen', dims: 'instant', people: 'regen', state: 'regen', relations: 'regen' },
+  era: { basic: 'regen', dims: 'instant', people: 'regen', state: 'regen', relations: 'instant' },
   valueGroup: { basic: 'regen' },
   popValue: { basic: 'regen', prefs: 'regen' },
   cultureGroup: { basic: 'regen', names: 'regen', tend: 'regen', prefs: 'regen' },
   culture: { basic: 'regen', names: 'regen', tend: 'regen', prefs: 'regen' },
-  government: { basic: 'regen', titles: 'regen', only: 'regen', shape: 'regen', flag: 'regen' },
+  government: { basic: 'regen', titles: 'instant', only: 'regen', shape: 'regen', flag: 'regen' },
   faction: { basic: 'instant', drivers: 'instant' },
   countryTier: { basic: 'regen', join: 'regen', capital: 'instant' },
   countryPattern: { basic: 'regen', params: 'regen' },
@@ -214,9 +214,15 @@ describe('改了什么时候用上', () => {
 
   it('一段里有马上变的字段时写出来；岛的形状只影响以后放的', () => {
     const seg = (kind: string, id: string) => segmentTiming('world', kindOf(kind)!, segmentsOf(kindOf(kind)!).find((s) => s.id === id)!)!;
-    expect(seg('culture', 'basic').also).toEqual(['颜色', '说明']);
-    expect(timingLine(seg('culture', 'basic'))).toBe('改完点底下的“重新生成”；颜色、说明马上变');
-    expect(timingLine(seg('government', 'basic'))).toBe('改完点底下的“重新生成”；有哪些派系、颜色、说明马上变');
+    // 第九十一轮：名字、外文名也马上变（现读的）
+    expect(seg('culture', 'basic').also).toEqual(['名字', '外文名', '颜色', '说明']);
+    expect(timingLine(seg('culture', 'basic'))).toBe('改完点底下的“重新生成”；名字、外文名、颜色、说明马上变');
+    expect(timingLine(seg('government', 'basic'))).toBe('改完点底下的“重新生成”；名字、有哪些派系、颜色、说明马上变');
+    expect(timingLine(seg('countryTier', 'basic'))).toBe('改完点底下的“重新生成”；名字、简称、说明马上变');
+    // 第九十一轮：政体的称号、时代的集团的称号即时，写一句自己改过的不动
+    expect(seg('government', 'titles')).toEqual({ timing: 'instant', also: [], note: '自己改过的国名、称号不动' });
+    expect(timingLine(seg('government', 'titles'))).toBe('自己改过的国名、称号不动');
+    expect(timingLine(seg('era', 'relations'))).toBe('自己改过名字的集团不动');
     expect(timingLine(seg('countryTier', 'capital'))).toBeNull();
     expect(timingLine(seg('islandType', 'basic'))).toBe('形状、高低、岩石只影响以后放的岛');
     expect(timingLine(seg('provinceRules', 'water'))).toBeNull();
@@ -275,6 +281,80 @@ describe('标“即时”的字段和“改了 N 项”是同一张表', () => {
       expect(regenNeed(e2.world.small, t2.base(), BUILTIN)?.count).toBe(1);
     });
   }
+
+  // 第九十一轮：名字、外文名、简称是现读的。每一种里有这几项的都改一遍：不算“改了 N 项”，改了以后重新生成结果一样
+  // （只有文化的名字写进了国家档案“历史”那一段：那是写下的字，不跟着改，重新生成才换）
+  it('名字、外文名、简称：每一种都不算；改了以后重新生成，结果一样（文化的名字只差“历史”那一段文字）', () => {
+    for (const kindId of REGEN_KINDS) {
+      if (kindId === 'provinceRules') continue;
+      const kind = kindOf(kindId)!;
+      const keys = ['name', 'orig', 'short'].filter((k) => kind.fields.some((f) => f.key === k));
+      expect(keys.length, kindId).toBeGreaterThan(0);
+      for (const k of keys) expect(fieldTiming(kindId, k), `${kindId}.${k}`).toBe('instant');
+      const e = full.clone();
+      const t = track(e);
+      for (const x of items(e, kindId)) put(e, kindId, { ...x, ...Object.fromEntries(keys.map((k) => [k, `改${String(itemId(kind, x)).slice(0, 5)}`])) });
+      t.step(1, e.world.small.content);
+      expect(regenNeed(e.world.small, t.base(), BUILTIN), kindId).toBeNull();
+      const regen: Command = REGEN_KINDS.indexOf(kindId) >= 0 && ['cityRank', 'landmarkType', 'pointType'].includes(kindId) ? { op: 'regenerate_settlements' } : { op: 'regenerate_countries' };
+      const plain = full.clone();
+      plain.exec(regen);
+      plain.update();
+      e.exec(regen);
+      e.update();
+      const a = humanDigest(e.world);
+      const b = humanDigest(plain.world);
+      if (kindId !== 'culture') expect(a, kindId).toEqual(b);
+      else {
+        expect({ ...a, countries: '' }).toEqual({ ...b, countries: '' });
+        const bare = (w: World) => Object.values(w.small.countries!).map((m) => ({ ...m, history: '' }));
+        expect(bare(e.world as World)).toEqual(bare(plain.world as World));
+      }
+    }
+  });
+
+  // 第九十一轮：政体的称号、统治者称号、换说法——国名、称号跟着资源库变（core/human/retitle.ts）
+  it('政体的称号、统治者称号、换说法：不算“改了 N 项”，国名和称号马上变；和“改完再重新生成国家”起出来的一样', () => {
+    const e = full.clone();
+    const w = () => e.world as World;
+    const govId = Object.values(w().small.countries!).find((m) => !m.nameLocked)!.government;
+    const g = item(e, 'government', govId);
+    for (const k of ['titles', 'rulers', 'names']) expect(fieldTiming('government', k)).toBe('instant');
+    const names0 = Object.fromEntries(Object.values(w().small.countries!).map((m) => [m.id, m.name]));
+    const t = track(e);
+    const re = (v: unknown): unknown => (typeof v === 'string' ? `${v}改` : Array.isArray(v) ? v : v && typeof v === 'object' ? ('zh' in v ? { ...v, zh: `${(v as { zh: string }).zh}改` } : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, re(x)]))) : v);
+    const names = ((g.names as Record<string, unknown>[] | undefined) ?? []).map((r) => ({ ...r, ...(r.titles !== undefined ? { titles: re(r.titles) } : {}), ...(r.rulers !== undefined ? { rulers: re(r.rulers) } : {}) }));
+    put(e, 'government', { ...g, titles: re(g.titles), ...(g.rulers !== undefined ? { rulers: re(g.rulers) } : {}), ...(g.names ? { names: [...names, { cultureGroups: ['no-such-group'], titles: '某某国' }] } : {}) });
+    t.step(1, e.world.small.content);
+    expect(regenNeed(e.world.small, t.base(), BUILTIN)).toBeNull();
+    // 真的马上变了
+    const hit = Object.values(w().small.countries!).filter((m) => m.government === govId && !m.nameLocked);
+    expect(hit.length).toBeGreaterThan(0);
+    for (const m of hit) expect(m.name).toBe(`${names0[m.id]}改`);
+    for (const m of Object.values(w().small.countries!)) if (m.government !== govId) expect(m.name).toBe(names0[m.id]);
+    // 和重新生成起出来的一样
+    const list = (x: World) =>
+      Object.values(x.small.countries!)
+        .map((m) => `${m.name}|${m.orig ?? ''}|${(x.small.archive?.countries[m.id]?.rulers ?? []).map((r) => r.title ?? '').join(',')}`)
+        .sort();
+    const now = list(w());
+    e.exec({ op: 'regenerate_countries' });
+    e.update();
+    expect(list(w())).toEqual(now);
+  });
+
+  it('时代的“集团的称号”：不算“改了 N 项”；同一种里生成要读的一项（国家大小）改了就算', () => {
+    expect(fieldTiming('era', 'relations')).toBe('instant');
+    const e = full.clone();
+    const era = item(e, 'era', e.world.small.human!.era);
+    const t = track(e);
+    put(e, 'era', { ...era, relations: { titles: { empire: ['天朝'], alliance: ['盟约'], federation: ['合众国'], member: ['州'] } } });
+    t.step(1, e.world.small.content);
+    expect(regenNeed(e.world.small, t.base(), BUILTIN)).toBeNull();
+    put(e, 'era', { ...item(e, 'era', e.world.small.human!.era), countryKm2: 123456 });
+    t.step(2, e.world.small.content);
+    expect(regenNeed(e.world.small, t.base(), BUILTIN)).toMatchObject({ count: 1, scopes: ['human', 'countries'] });
+  });
 
   it('派系：改“多少”、来自人口都不算；改了以后重新生成国家结果一样', () => {
     const e = full.clone();

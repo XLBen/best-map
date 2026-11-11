@@ -1937,6 +1937,11 @@ textarea.arch-note-input {
   align-items: center;
   justify-content: space-between;
 }
+/* 向导上面“上次的世界这一版打不开”的一块（第九十一轮） */
+.backup-note .row {
+  flex: none;
+  gap: var(--sp-1);
+}
 
 /* 新建向导：卡片 */
 .cards {

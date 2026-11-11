@@ -243,3 +243,5 @@ export {
 export { cancelExport, download, exportPartFiles, exportProgress, exportZip, imageExportCancel } from './state/export-host';
 export { compactForSave, keepRemoved, planTidy, worldName } from './state/tidy';
 export { type Autosaved, autosaveNow, autosaved, noteThumb } from './state/autosave';
+export { backupOf, backups, deleteBackup, dismissBackups, refreshBackups } from './state/backups';
+export type { BackupInfo, WorldBackup } from './backups';

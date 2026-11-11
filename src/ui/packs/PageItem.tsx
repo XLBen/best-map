@@ -16,7 +16,9 @@ import { closeSide, copyToMine, goBack, goTo, openRoute, openSegments, rememberS
 import { DELETE, DELETE_WORLD_TIP, EXPORT_FILE, SAVE_BACK_TIP, SAVE_TO_MINE, SAVE_TO_MINE_TIP } from './copy';
 import { TimingMark } from './TimingMark';
 import { OnMapLine } from './OnMapLine';
-import { FlagSamples, LandmarkNameSamples } from './ItemPreviews';
+import { FlagSamples, LandmarkNameSamples, TitleReplace } from './ItemPreviews';
+import { TitleHelpCtx } from './editors';
+import { titleHelpOf } from './title-help';
 import { type SegmentTiming, segmentTiming, timingLine } from './timing';
 import { oneMark } from './page-marks';
 import { PickBox } from './PickBox';
@@ -198,6 +200,8 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
   const item = (draft ?? live) as Obj | undefined;
   const issues = useMemo(() => (item && p ? editorIssues(p.kind, item, ctx.world) : { errors: [], notes: [] }), [p?.kind, item, ctx.world]);
   const row = useMemo(() => (p ? rowsOf(src, p.kind, ctx).find((r) => r.id === p.id) : undefined), [p?.kind, p?.id, live, ctx.world, ctx.lib, src.t]);
+  // 第九十一轮：政体的称号旁的示例、“谁盖过它”
+  const titleHelp = useMemo(() => (p?.kind.id === 'government' && item ? titleHelpOf(item, src, ctx) : null), [p?.kind.id, item, src.t, ctx.world, ctx.lib]);
   if (!p || !item) return null;
   const toggle = (id: string) => {
     const next = new Set(open);
@@ -267,9 +271,15 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
             <WaterBiomesSegment src={src} ctx={ctx} kindId={p.kind.id} type={item as never} />
             <FieldsBox fields={s.fields.filter((f) => f.key === 'when')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
           </>
+        ) : p.kind.id === 'government' && s.id === 'titles' ? (
+          // 第九十一轮：每行称号下面的示例、哪几条换说法盖过它（title-help.ts）
+          <TitleHelpCtx.Provider value={titleHelp}>
+            <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+          </TitleHelpCtx.Provider>
         ) : (
           s.fields.length > 0 && <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
         )}
+        {p.kind.id === 'government' && s.id === 'titles' && !p.readonly && <TitleReplace src={src} ctx={ctx} />}
         {/* 第九十轮：表单旁的小预览（previews.ts） */}
         {p.kind.id === 'landmarkType' && s.id === 'label' && <LandmarkNameSamples item={item} src={src} ctx={ctx} />}
         {p.kind.id === 'government' && s.id === 'flag' && <FlagSamples item={item} />}

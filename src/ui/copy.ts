@@ -55,7 +55,8 @@ export const ARCHIVE_TEXT = {
   newDynasty: '新家族',
   noDynasty: '不属于家族',
   dynasty: '家族',
-  titlePlaceholder: '国王、可汗……',
+  // 第九十一轮：没改过的称号跟着政体变；改成空的恢复自动
+  titlePlaceholder: '空着跟着政体',
   parent: '父母',
   noParent: '没写',
   title: '称号',
@@ -77,4 +78,21 @@ export const ARCHIVE_TEXT = {
   fromRuler: '跟着统治者的名单改',
   fromFounded: '跟着建国的年份改',
   current: '现在的统治者',
+} as const;
+
+// 留着的旧世界（第九十一轮）：上次的世界这一版打不开时，一直在的那一条、向导上面的一块、“世界”菜单里的一行、列表
+export const BACKUP_TEXT = {
+  older: '上次的世界是旧版本做的，这一版打不开。它还留着',
+  newer: '上次的世界是更新的版本做的，这一版打不开。它还留着',
+  export: '导出文件',
+  exportTip: '原样存成世界文件',
+  open: '打开',
+  menu: '留着的旧世界…',
+  menuHint: (n: number) => `${n} 个这一版打不开的世界：能导出、删除`,
+  title: '留着的旧世界',
+  hint: '这一版打不开的世界原样留在这里，能导出成世界文件',
+  empty: '没有留着的旧世界',
+  deleteTitle: '删除留着的旧世界',
+  deleteText: '删除后找不回来。想留一份就先导出文件。',
+  where: '以后在“世界 → 留着的旧世界”里找',
 } as const;

@@ -19,6 +19,8 @@ import { COUNTRY_KINDS, PROVINCE_KEYS, REGEN_KINDS, SETTLE_KINDS, instantKeys } 
 //   （测试查着：改了之后重新生成，只差国家的颜色、旗子）。
 //   第九十轮：画、用的时候现读的字段也不算（国家等级的首都四项、城市等级的图标字号浓淡、地标名字的写法……，timing.ts 的 instantKeys：
 //   页面上标“即时”的和这里不算的是同一张表）；派系整个不算（生成国家不读它，影响力现算）。
+//   第九十一轮：政体的称号、统治者称号、换说法，时代的集团的称号不算（国名、称号马上跟着变，core/human/retitle.ts）；
+//   每一种的名字、外文名、简称不算（现读的）。
 //   文化组的比重只看是不是 0（别的数和没写一样）；比重 0、没选的组和它的文化不算（生成不用它们）。
 //   别的时代不算；世界后加的变量和它的取值不算（只算新变量，文化、国家都不变，第五十四轮）。
 //   生成了才算：没有人文时不算，没有国家时政体不算，没有城市时城市等级不算。
@@ -107,9 +109,10 @@ function humanChanges(small: Small, base: Content, lib: readonly LibraryEntry[])
   return out;
 }
 
-// 时代里管国家的几项（国家大小、领海、等级比例、格局、按文化分国、集团的称号、国境外划进国家）：改了要连国家一起重新生成，
-// 只重新生成人文时国家的领土不动，这几项就白改了（第八十一轮合并时查出来的）
-const ERA_COUNTRY_KEYS = ['countryKm2', 'seaClaimKm', 'tiers', 'patterns', 'nationalism', 'relations', 'unclaimed'] as const;
+// 时代里管国家的几项（国家大小、领海、等级比例、格局、按文化分国、国境外划进国家）：改了要连国家一起重新生成，
+// 只重新生成人文时国家的领土不动，这几项就白改了（第八十一轮合并时查出来的）。
+// 第九十一轮：集团的称号不在里面了（改了集团、成员邦的名字马上跟着变，timing.ts 标即时，不算“改了 N 项”）
+const ERA_COUNTRY_KEYS = ['countryKm2', 'seaClaimKm', 'tiers', 'patterns', 'nationalism', 'unclaimed'] as const;
 function eraCountryChange(small: Small, base: Content): boolean {
   const id = small.human?.era;
   if (!id) return false;

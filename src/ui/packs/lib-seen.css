@@ -41,3 +41,23 @@
   gap: var(--sp-2);
   margin: var(--sp-1) 0;
 }
+/* 称号旁的示例、“换说法盖过”（第九十一轮）：每一行称号下面一行，和输入框对齐 */
+.ed-title-under {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: -2px 0 var(--sp-1) 20px;
+  font-size: var(--fs-sm);
+}
+.ed-title-sample {
+  color: var(--text);
+}
+/* 把一个称号都换掉（第九十一轮） */
+.lp-title-replace .row {
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0;
+}
+.lp-title-replace input[type='text'] {
+  flex: 1;
+  min-width: 0;
+}

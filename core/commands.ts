@@ -13,6 +13,7 @@ import { type ContentRef, refName, removeCommand, unusedContent } from './conten
 import { CommandError } from './errors';
 import { applyNameCarry } from './features';
 import { applyPopFix, moveCells } from './human/population';
+import { retitle, titleBefore } from './human/retitle';
 import { tidyCities } from './human/settlements';
 import { applyProvinceFix } from './provinces';
 import { copySmall, restoreSmall, sameAsCopy } from './small-copy';
@@ -200,9 +201,13 @@ export function applyCommand(
   const idsBefore = new Set(Object.keys(world.small.provinces));
   const contentBefore = contentSnapshot(world);
   const originBefore = world.small.origin;
+  // 第九十一轮：称号会读的内容（政体的称号、等级的高低、文化的倾向……）这一步换了时，没手改过的国名、统治者的称号跟着换（human/retitle.ts）
+  const titlesBefore = world.small.countries ? titleBefore(world.small) : null;
   let result: RunResult;
   try {
     result = run(world, cmd, ctx);
+    // 国名变了：和手改国名一样重算人文的几层与名字
+    if (titlesBefore && retitle(world, titlesBefore) && result.dirty < Dirty.Human) result = { ...result, dirty: Dirty.Human };
     // 第二十四轮：有城市时每步之后整理（首都格上有城市、挂着连着的城市还在）
     if (world.small.cities) tidyCities(world);
     if (stored) {

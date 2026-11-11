@@ -1,4 +1,4 @@
-import { Boxes, CircleHelp, CopyPlus, FileDown, FilePlus, FolderOpen, ImageDown, Library, PackageOpen, Save } from 'lucide-preact';
+import { Archive, Boxes, CircleHelp, CopyPlus, FileDown, FilePlus, FolderOpen, ImageDown, Library, PackageOpen, Save } from 'lucide-preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { type WheelPref, download, exportPartFiles, exportProgress, exportZip, helpOpen, openPanel, prefs, setPrefs, wizardOpen, world } from '../../state';
 import { Seg } from '../common';
@@ -8,10 +8,11 @@ import { EE_HALF_W } from '../../render/projection';
 import type { World } from '../../../core/world';
 import { exportFullMap, snapshotCanvas } from '../map/export';
 import { HistoryPanel } from '../panels';
-import { LIBRARY_NOTE } from '../copy';
+import { BACKUP_TEXT, LIBRARY_NOTE } from '../copy';
 import { openLibrary } from '../packs/panel-store';
 import { fileNameOf } from '../../maps';
 import { beforeLeave, currentMap, exportCurrent, mapStatus, openFile, openMaps, saveMap, saveMapAs } from '../maps/store';
+import { backups, openBackups } from '../maps/backups';
 import { exportPartRows, hasAnySettle } from '../domain/settlements';
 import { Toggle } from '../components/Toggle';
 import { worldMapStyle } from '../../../core/map-style';
@@ -95,6 +96,22 @@ export function WorldMenu() {
           }}
         />
       </label>
+      {/* 第九十一轮：这一版打不开的自动保存留着时才有这一行 */}
+      {(backups.value?.length ?? 0) > 0 && (
+        <button
+          class="item"
+          onClick={() => {
+            close();
+            openBackups();
+          }}
+        >
+          <Archive />
+          <span class="grow item-text">
+            <b>{BACKUP_TEXT.menu}</b>
+            <span class="hint">{BACKUP_TEXT.menuHint(backups.value!.length)}</span>
+          </span>
+        </button>
+      )}
       <button
         class="item"
         onClick={() => {

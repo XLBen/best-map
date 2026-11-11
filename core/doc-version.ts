@@ -17,23 +17,38 @@ import { CommandError } from './errors';
 // 资源多了两项（habitability、cityBonus），人口的修补多了 moves。
 // 第八十五轮是 20：国家的统治者从一项（ruler）换成一份名单，有了家族、备注、大事（small.archive），set_country 不再有 ruler，多了档案的命令。
 // 第八十六轮是 21：生成的地形变了（降水代理、山带集中、倾斜更长、冰川按现在的冷暖），新世界多了红树林，旧文件里新建的命令重放出来地形不一样。
+// 第九十一轮是 22：国名、统治者的称号跟着资源库变（改政体的称号、等级的高低、文化的倾向这些命令之后引擎把没手改过的国名、称号重算，
+// 旧文件里改内容的命令重放出来国名不一样），统治者多了“自己改过称号”（titleLocked），set_ruler 把称号改成空的是恢复自动。
 // 单独放一个小文件：主线程打开文件、读自动保存时也要查，不必引进整个引擎
-export const DOC_VERSION = 21;
+export const DOC_VERSION = 22;
 export const OLD_DOC_ERROR = '旧版本的世界文件打不开';
+// 第九十一轮：比这一版新的文件另说一句（以前也说成“旧版本”）
+export const NEWER_DOC_ERROR = '这个世界是更新的版本做的，请先更新程序';
+export const NOT_DOC_ERROR = '不是 map2 世界文件';
 
-// 打开前先查：不是世界文件、是旧版本的世界时报错（不去重放）
-export function checkDoc(doc: unknown) {
+// 一份文件和这一版的关系：current 这一版能打开；older 旧版本；newer 比这一版新；other 不是世界文件
+export type DocAge = 'current' | 'older' | 'newer' | 'other';
+export function docAge(doc: unknown): DocAge {
   const d = doc !== null && typeof doc === 'object' ? (doc as { format?: unknown; version?: unknown }) : {};
-  if (d.format !== 'map2-world') throw new CommandError('不是 map2 世界文件');
-  if (d.version !== DOC_VERSION) throw new CommandError(OLD_DOC_ERROR);
+  if (d.format !== 'map2-world') return 'other';
+  if (d.version === DOC_VERSION) return 'current';
+  return typeof d.version === 'number' && d.version > DOC_VERSION ? 'newer' : 'older';
+}
+// 文件里写着的版本号（不是世界文件、没写数时 null）
+export function docVersionOf(doc: unknown): number | null {
+  const v = doc !== null && typeof doc === 'object' && (doc as { format?: unknown }).format === 'map2-world' ? (doc as { version?: unknown }).version : null;
+  return typeof v === 'number' ? v : null;
+}
+
+// 打开前先查：不是世界文件、是旧版本的世界、是更新的版本做的世界时报错（不去重放）
+export function checkDoc(doc: unknown) {
+  const age = docAge(doc);
+  if (age === 'other') throw new CommandError(NOT_DOC_ERROR);
+  if (age === 'newer') throw new CommandError(NEWER_DOC_ERROR);
+  if (age === 'older') throw new CommandError(OLD_DOC_ERROR);
 }
 
 // 同上，不抛错：是当前版本的世界文件时为 true
 export function isCurrentDoc(doc: unknown): boolean {
-  try {
-    checkDoc(doc);
-    return true;
-  } catch {
-    return false;
-  }
+  return docAge(doc) === 'current';
 }

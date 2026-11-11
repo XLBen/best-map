@@ -21,6 +21,7 @@ import {
 import { CATEGORY_DEFS } from './defs/tools';
 import { Help } from './Help';
 import { MapView } from './MapView';
+import { BackupsDialog } from './maps/BackupsDialog';
 import { MapsDialog } from './maps/MapsDialog';
 import { PackDialog } from './packs/PackDialog';
 import { LibPanel } from './packs/LibPanel';
@@ -49,6 +50,7 @@ import { onEscapeCapture } from './shell/escape';
 import { Notice } from './shell/Notice';
 import { Popover } from './shell/Popover';
 import { RulerButton } from './shell/Ruler';
+import { BackupBanner } from './shell/BackupBanner';
 import { ScriptBanner } from './shell/ScriptBanner';
 import { SkippedBanner } from './shell/SkippedBanner';
 import { Sheet } from './shell/Sheet';
@@ -223,6 +225,8 @@ export function App() {
         )}
         {hidden && <div class="hidden-hint">按 Tab 显示界面</div>}
         <div class="notices">
+          {/* 向导开着时这一条在向导上面那一块里 */}
+          {!wizardOpen.value && <BackupBanner />}
           <ScriptBanner />
           <SkippedBanner />
           <Notice />
@@ -231,6 +235,7 @@ export function App() {
         <Wizard />
         <PackDialog />
         <MapsDialog />
+        <BackupsDialog />
         <Help />
         <AskDialog />
       </div>

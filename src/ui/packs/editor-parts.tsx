@@ -13,10 +13,12 @@ export function Errors({ issues, path }: { issues: readonly EditorIssue[]; path:
 }
 
 // 框里写完、离开框（或回车）才换上
-export function Draft({ text, onCommit, multi, mono, placeholder }: { text: string; onCommit: (t: string) => void; multi?: boolean; mono?: boolean; placeholder?: string }) {
+// onDraft（第九十一轮）：每打一个字告诉外面（称号旁边的示例跟着正在写的字变）；离开框时给 null
+export function Draft({ text, onCommit, multi, mono, placeholder, onDraft }: { text: string; onCommit: (t: string) => void; multi?: boolean; mono?: boolean; placeholder?: string; onDraft?: (t: string | null) => void }) {
   const [draft, setDraft] = useState(text);
   useEffect(() => setDraft(text), [text]);
   const commit = () => {
+    onDraft?.(null);
     if (draft !== text) onCommit(draft);
   };
   if (multi) {
@@ -27,7 +29,11 @@ export function Draft({ text, onCommit, multi, mono, placeholder }: { text: stri
       type="text"
       value={draft}
       placeholder={placeholder}
-      onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
+      onInput={(e) => {
+        const t = (e.target as HTMLInputElement).value;
+        setDraft(t);
+        onDraft?.(t);
+      }}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();

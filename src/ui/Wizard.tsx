@@ -24,6 +24,7 @@ import {
 } from '../../core/presets';
 import { library, refreshLibrary } from '../library';
 import { autosaved, newWorld, resumeLast, safeMode, thumbnail, trustFormScripts, wizardOpen, world } from '../state';
+import { BackupBanner } from './shell/BackupBanner';
 import { resetTools } from './defs/tools';
 import { FormEditor } from './FormEditor';
 import { closeFormEditor, openFormEditor } from './form-store';
@@ -367,6 +368,8 @@ export function Wizard() {
     <div class="modal-backdrop">
       <div class="modal wizard">
         <ModalHead title="新建世界" onClose={world.value ? () => (wizardOpen.value = false) : undefined} closeTitle="取消" disabled={creating} />
+        {/* 第九十一轮：上次的世界这一版打不开时，说清楚它还留着 */}
+        <BackupBanner box />
         {savedAt !== null && (
           <div class="box resume">
             <span>上次的世界已自动保存（{new Date(savedAt).toLocaleString()}）</span>

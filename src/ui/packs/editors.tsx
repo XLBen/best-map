@@ -1,10 +1,12 @@
 import { ChevronRight, GripVertical, Plus, X } from 'lucide-preact';
+import { createContext } from 'preact';
 import { useContext, useEffect, useState } from 'preact/hooks';
 import type { FieldDesc } from '../../../core/content/registry';
 import { Draft } from './editor-parts';
 import { type Obj, type TitleRow, defaultValue, isObj, moveItem, titleRows, titleValue, weightedRows, weightedValue } from './fields';
 import { RefGo, RefPicker, useRefOptions } from './RefPicker';
 import { DEFAULT_KEY, type RefOption, refItem, refLabel } from './refs';
+import type { TitleField, TitleHelp } from './title-help';
 import { ShareBar } from '../components/ShareBar';
 import { library } from '../../library';
 import { world } from '../../state';
@@ -60,9 +62,18 @@ export function Grip(props: { draggable: boolean; onDragStart: (e: DragEvent) =>
 
 const TIER_EXTRA: readonly RefOption[] = [{ id: DEFAULT_KEY, label: '其余', hint: '没写到的' }];
 
+// 称号编辑器旁的示例、“谁盖过它”（第九十一轮，逻辑在 title-help.ts）：PageItem 在政体的“称号”一段外面给；没给时不画
+export const TitleHelpCtx = createContext<TitleHelp | null>(null);
+
 // 称号：一行一种（键从 keyRef 里选：国家等级、文化、文化组，或“其余”；中文；原文的写法，{name} 换成国名）。
-// 只有“其余”一行时存回最简单的写法。空着中文的行先留在框里，不存
-export function TitleEditor({ value, onChange, orig, keyRef }: { value: unknown; onChange: (v: unknown) => void; orig: boolean; keyRef?: string | readonly string[] }) {
+// 只有“其余”一行时存回最简单的写法。空着中文的行先留在框里，不存。
+// field、top（第九十一轮）：这是政体的哪一张表（国家称号 / 统治者称号）、是不是政体默认的那一张（不是换说法里的）：
+// 每一行下面写示例（跟着正在写的字变），默认的那一张另写哪几条换说法会盖过它
+export function TitleEditor({ value, onChange, orig, keyRef, field, top }: { value: unknown; onChange: (v: unknown) => void; orig: boolean; keyRef?: string | readonly string[]; field?: string; top?: boolean }) {
+  const help = useContext(TitleHelpCtx);
+  const aid = help && (field === 'titles' || field === 'rulers') ? { help, field: field as TitleField } : null;
+  // 正在写、还没存的字（第几行的哪一栏）
+  const [typing, setTyping] = useState<{ k: number; key: 'zh' | 'orig'; text: string } | null>(null);
   const [rows, setRows] = useState<TitleRow[]>(() => titleRows(value));
   const key = JSON.stringify(value ?? null);
   useEffect(() => {
@@ -80,22 +91,34 @@ export function TitleEditor({ value, onChange, orig, keyRef }: { value: unknown;
     <div class="ed-rows">
       {rows.map((r, k) => {
         const it = drag.item(k);
+        const draft = (key: 'zh' | 'orig') => (t: string | null) => setTyping(t === null ? null : { k, key, text: t });
+        const shown = typing && typing.k === k ? { ...r, [typing.key]: typing.text } : r;
+        const sample = aid ? aid.help.sample(aid.field, shown) : '';
+        const over = aid && top ? aid.help.overrides(aid.field, r.key) : '';
         return (
-          <div class={`ed-row ${it.dropClass}`} onDragOver={it.onDragOver} onDrop={it.onDrop}>
-            <Grip {...drag.handle(k)} />
-            {keyRef ? (
-              <span class="ed-title-key">
-                <RefPicker options={keys} value={r.key} exclude={used} onPick={(id) => edit(k, { key: id })} placeholder="等级" />
-              </span>
-            ) : (
-              <Draft text={r.key} placeholder={DEFAULT_KEY} onCommit={(t) => edit(k, { key: t.trim() })} />
+          <>
+            <div class={`ed-row ${it.dropClass}`} onDragOver={it.onDragOver} onDrop={it.onDrop}>
+              <Grip {...drag.handle(k)} />
+              {keyRef ? (
+                <span class="ed-title-key">
+                  <RefPicker options={keys} value={r.key} exclude={used} onPick={(id) => edit(k, { key: id })} placeholder="等级" />
+                </span>
+              ) : (
+                <Draft text={r.key} placeholder={DEFAULT_KEY} onCommit={(t) => edit(k, { key: t.trim() })} />
+              )}
+              <Draft text={r.zh} placeholder="王国" onCommit={(t) => edit(k, { zh: t })} onDraft={aid ? draft('zh') : undefined} />
+              {orig && <Draft text={r.orig} placeholder="Kingdom of {name}" onCommit={(t) => edit(k, { orig: t })} onDraft={aid ? draft('orig') : undefined} />}
+              <button class="small icon ghost" title="删除" aria-label="删除" onClick={() => put(rows.filter((_, j) => j !== k))}>
+                <X />
+              </button>
+            </div>
+            {(sample || over) && (
+              <div class="ed-title-under">
+                {sample && <span class="ed-title-sample">{sample}</span>}
+                {over && <span class="hint">换说法盖过：{over}</span>}
+              </div>
             )}
-            <Draft text={r.zh} placeholder="王国" onCommit={(t) => edit(k, { zh: t })} />
-            {orig && <Draft text={r.orig} placeholder="Kingdom of {name}" onCommit={(t) => edit(k, { orig: t })} />}
-            <button class="small icon ghost" title="删除" aria-label="删除" onClick={() => put(rows.filter((_, j) => j !== k))}>
-              <X />
-            </button>
-          </div>
+          </>
         );
       })}
       <button class="small" onClick={() => setRows([...rows, { key: rows.some((r) => r.key === DEFAULT_KEY) ? '' : DEFAULT_KEY, zh: '', orig: '' }])}>

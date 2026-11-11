@@ -273,6 +273,25 @@ export function createLibEditor(backend: LibBackend = localBackend(), opts: LibE
       return { ok: true };
     },
 
+    // 一次改几项（第九十一轮：把各政体里的一个称号换成另一个）：一步，撤销一次全回去；有一项不合格就都不改
+    setItems(key: string, kindId: string, items: readonly { id: string; next: unknown }[], label?: string): EditResult {
+      const kind = kindOf(kindId);
+      const h = headOf(key);
+      if (!kind || !h) return { ok: false, error: '这个库不能改' };
+      let pack = h.pack;
+      for (const { id, next } of items) {
+        const errs = itemErrors(kind, next);
+        if (errs.length) return { ok: false, error: errs[0].message };
+        const cur = packItems(pack, kind.pack.key).find((x) => itemId(kind, x) === id);
+        if (cur === undefined) return { ok: false, error: '这个库里没有这一项' };
+        const parsed = kind.schema.parse(next);
+        if (!sameItem(cur, parsed)) pack = replaceItem(pack, kind, id, parsed);
+      }
+      if (pack === h.pack) return { ok: true, noop: true };
+      commit(key, h, pack, { label: label ?? '改几项', before: h.pack, after: pack }, null);
+      return { ok: true };
+    },
+
     // 加一项（id 不能重复）。文化组放进“文化”下面自己的小包：新世界才带得上
     addItem(key: string, kindId: string, item: Record<string, unknown>, label?: string): EditResult {
       const kind = kindOf(kindId);

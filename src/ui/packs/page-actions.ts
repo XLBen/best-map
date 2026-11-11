@@ -15,6 +15,7 @@ import { canArrange } from './page-arrange';
 import { newChoiceOf } from './new-in';
 import { type PageCtx, type Route, type SourceRef, kindReadonly, takenIn, waterLists } from './pages';
 import { runTrusted } from './row-actions';
+import { governmentsIn, replaceCommand, replaceLabel, replacePlan } from './title-help';
 
 // 面板里改东西（第五十九轮）：改一项就存。本世界走命令和世界的撤销栈，我的库走 library-edit.ts（自己的撤销），只读的不动。
 // 生态、河湖的一格走 core/water-table.ts 同一个函数，所以总表、生态页、河湖页改的是同一份
@@ -79,6 +80,33 @@ export function commitItem(src: SourceRef, kind: ContentKind, id: string, next: 
     return r.noop ? 'same' : 'saved';
   }
   return queueWorld((w) => worldItemCommand(kind, id, next, w)).then((ok) => (ok ? 'saved' : 'failed'));
+}
+
+// ---------- 把一个称号都换掉（第九十一轮，逻辑在 title-help.ts）----------
+
+// 这一份（本世界或我的库）各政体里整个写着 from 的称号换成 to：一步，能撤销。本世界里按执行那一刻的世界再算一遍（前面排着的改动算完以后）。
+// 返回改了几处（没有可改的、只读的、失败时 0）
+export async function replaceTitles(src: SourceRef, from: string, to: string, ctx: PageCtx): Promise<number> {
+  const gov = kindOf('government')!;
+  if (kindReadonly(src, gov, ctx)) return 0;
+  if (src.t === 'lib') {
+    const plan = replacePlan(governmentsIn(src, ctx), from, to);
+    if (!plan) return 0;
+    const r = libEdits.setItems(src.key, gov.id, plan.items, replaceLabel(plan));
+    if (!r.ok) {
+      showToast(r.error, true);
+      return 0;
+    }
+    noteAction(`已换 ${plan.hits} 处`, { label: '撤销', run: () => void libEdits.undo(src.key) });
+    return plan.hits;
+  }
+  let hits = 0;
+  const ok = await queueWorld((w) => {
+    const plan = replacePlan(governmentsIn(src, { ...ctx, world: w }), from, to);
+    hits = plan?.hits ?? 0;
+    return plan && replaceCommand(plan, w);
+  });
+  return ok ? hits : 0;
 }
 
 // ---------- 和来源的库（第六十二轮）----------

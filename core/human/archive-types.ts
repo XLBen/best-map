@@ -7,8 +7,10 @@ export interface RulerMeta {
   id: number;
   name: string;
   orig?: string;
-  // 称号（国王、可汗……）
+  // 称号（国王、可汗……）。生成的、没手改过的跟着资源库里政体的统治者称号变（第九十一轮，见 human/retitle.ts）
   title?: string;
+  // 自己改过称号（set_ruler 写了称号、add_ruler 写的称号和政体给的不一样）：资源库、政体变了也不动；把称号改成空的就恢复自动
+  titleLocked?: true;
   // 在位的年份；to 省略是还在位
   from: number;
   to?: number;

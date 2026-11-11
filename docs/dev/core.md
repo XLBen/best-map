@@ -68,7 +68,7 @@
 - `engine.ts` 历史、撤销缓存、预览、检查点、空闲预热（`warmSteps`）、`fixLakeProvinces`；第八十三轮拆出：`engine-recompute.ts` 按标记重算的流水线（`recomputeDerived`、`passStats`；第八十六轮：气候这一层更新冰盖 `derived.ice`，推导的高程 = 地形挖冰川（`elevation.ts` 的 `glacialTerrain`）再挖河床），`engine-types.ts` 世界文件、检查点、预览结果的类型，`engine-helpers.ts` 预览的差异、复制世界
 - `small-copy.ts` 小数据的副本（第四十七轮）：内容（`small.content`，不可变）按引用共用，别的是一段 JSON；撤销记录、比较、预览的克隆都用它第五十四轮：人口群体（`small.popGroups`）也按引用共用。第八十五轮：国家的档案（`small.archive`）也是，`postedSmall` 占位内容和档案，`withoutContent` 只占位内容（预览、快照里内容没换时）。
 - `regen-base.ts`（第九十轮）每一样（人文、国家、城市、省份）上一次生成时的内容，从历史里读（`regenBaseOf`：生成那一步之后的内容就是它后面一步的撤销记录里的那一份；`Engine.regenBase()`）；哪条命令重新生成哪一样 `scopesOf`、哪条是手改 `handOf`、每一样生成时读哪几种内容 `SCOPE_KINDS`（引擎和界面共用）；发给主线程的只带换过的项（`postRegenBase` / `unpostRegenBase`）。资源库面板的“改了 N 项 · 重新生成”刷新、重新打开以后还在，世界文件的格式不变
-- `preview-world.ts` 预览世界（只带变了的数组；`postedPatch`：内容没换时不发）；`doc-version.ts` 世界文件的版本（`DOC_VERSION`）与打开前的检查
+- `preview-world.ts` 预览世界（只带变了的数组；`postedPatch`：内容没换时不发）；`doc-version.ts` 世界文件的版本（`DOC_VERSION`，第九十一轮是 22）与打开前的检查（第九十一轮：`docAge` 分这一版、旧版本、比这一版新、不是世界文件，比这一版新的另报一句 `NEWER_DOC_ERROR`；`docVersionOf`）
 - `rng.ts` 随机数与噪声（按位置取，与格数无关）；`digest.ts` 64 位哈希；`errors.ts`、`type-id.ts`、`world-types.ts` 为避免循环引用拆出来的小文件
 
 ## 内容与资源包

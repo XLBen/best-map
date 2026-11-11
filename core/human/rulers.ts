@@ -196,11 +196,13 @@ const edited = (lore: CountryLore, rulers: RulerMeta[], dynasties = lore.dynasti
 
 // 加一位（at 省略时加在最后，是新的现在的统治者）。返回编号
 export function addRuler(world: World, id: number, input: RulerInput, at?: number): { ruler: RulerMeta; summary: string } {
-  countryOf(world, id);
+  const m = countryOf(world, id);
   const lore = loreOf(world.small, id);
   if (lore.rulers.length >= MAX_RULERS) throw new CommandError(`一国最多 ${MAX_RULERS} 位统治者`);
   const rid = Math.max(0, ...lore.rulers.map((r) => r.id)) + 1;
   const r = apply(lore, { id: rid, name: '', from: input.from }, { ...input, orig: input.orig ?? null, title: input.title ?? null, note: input.note ?? null, to: input.to ?? null, dynasty: input.dynasty ?? null, parent: input.parent ?? null });
+  // 第九十一轮：写的称号和政体给的不一样才算手改（界面的“加统治者”照抄上一位的称号：上一位是自动的，新的一位也跟着资源库变）
+  if (r.title && r.title !== rulerTitleOf(world, m)) r.titleLocked = true;
   const list = [...lore.rulers];
   list.splice(at === undefined ? list.length : Math.max(0, Math.min(list.length, at)), 0, r);
   putLore(world, id, edited(lore, list));
@@ -208,15 +210,24 @@ export function addRuler(world: World, id: number, input: RulerInput, at?: numbe
 }
 
 export function setRuler(world: World, id: number, rid: number, p: RulerPatch): string {
-  countryOf(world, id);
+  const m = countryOf(world, id);
   const lore = loreOf(world.small, id);
   const k = lore.rulers.findIndex((r) => r.id === rid);
   if (k < 0) throw new CommandError(`这一国没有统治者 ${rid}`);
   const r = apply(lore, lore.rulers[k], p);
+  // 第九十一轮：写了称号就是手改的（不再跟着资源库变）；改成空的恢复自动（政体现在给的称号）
+  if (p.title !== undefined) {
+    if (r.title) r.titleLocked = true;
+    else {
+      delete r.titleLocked;
+      const auto = rulerTitleOf(world, m);
+      if (auto) r.title = auto;
+    }
+  }
   const list = [...lore.rulers];
   list[k] = r;
   putLore(world, id, edited(lore, list));
-  const what = p.name !== undefined ? `改名为“${r.name}”` : p.from !== undefined || p.to !== undefined ? '在位年份' : p.dynasty !== undefined ? '家族' : p.parent !== undefined ? '父母' : p.note !== undefined ? '备注' : '修改';
+  const what = p.name !== undefined ? `改名为“${r.name}”` : p.from !== undefined || p.to !== undefined ? '在位年份' : p.dynasty !== undefined ? '家族' : p.parent !== undefined ? '父母' : p.note !== undefined ? '备注' : p.title !== undefined ? (r.titleLocked ? `称号改为“${r.title}”` : '称号恢复自动') : '修改';
   return `统治者“${rulerName(lore.rulers[k])}” · ${what}`;
 }
 
