@@ -159,6 +159,8 @@ function digests(): Record<string, string> {
 // 第八十六轮：生成的地形有意变了（降水代理、山带集中、倾斜更长、冰川挪出求解；新世界多了红树林、推导多了冰盖 derived.ice），RECORD_RASTER=1 重录（84 项里变了 80 项；world.json 是第 21 版）
 // 第八十九轮：红树林收紧到有遮蔽的海岸（海湾、河口）、35 m 以下，有意改变生态：只有跟着主导生态变的几项重录（地形、气候、水一项没变，见 docs/dev/history/第89轮.md）
 // 第九十一轮：世界文件的版本 22，只改 world.json 四个（8bfd2d77… → c1001f00…，4e77b3b1… → 0ef6aeae…）：文件里写着版本号；核对过把 DOC_VERSION 写回 21 时 84 项都与原来的值相同；图片、高度、表格一个没变
+// 第一百零一轮之后的修补：只改星球的 world.json 两个（0ef6aeae… → e30d0d6a…）：新建时整个落在湖面上、被湖省整理删掉的三个省（256、265、1351）的名字不再记在命令里
+//（第一次记的和重放记的一字不差，见 engine-fixes.ts 的 withoutDropped）；核对过修补前后两份世界文件只差这三个名字，地区的那一份逐字相同；别的 82 项一个没变
 const RECORDED: Record<string, string> = {
   'region 256x128 land': '65af917e39e0c6be',
   'region 256x128 elevation': 'a08ca80f6a6c87d3',
@@ -220,7 +222,7 @@ const RECORDED: Record<string, string> = {
   'planet 256x128 resources.bmp': 'a3f8b6c32f1d5093',
   'planet 256x128 terrain_classes.csv': '1530b69e8374836a',
   'planet 256x128 resources.csv': '85a84bb9b4ff4db3',
-  'planet 256x128 world.json': '0ef6aeae19b6c6f2',
+  'planet 256x128 world.json': 'e30d0d6aa543fdf2',
   'planet 256x128 README.txt': '3bb1c0c460888124',
   'planet 300x150 land': '19ad36fee0a3231e',
   'planet 300x150 elevation': '7c49606146a60749',
@@ -240,7 +242,7 @@ const RECORDED: Record<string, string> = {
   'planet 300x150 resources.bmp': '251f4584fa869000',
   'planet 300x150 terrain_classes.csv': '1530b69e8374836a',
   'planet 300x150 resources.csv': '85a84bb9b4ff4db3',
-  'planet 300x150 world.json': '0ef6aeae19b6c6f2',
+  'planet 300x150 world.json': 'e30d0d6aa543fdf2',
   'planet 300x150 README.txt': '82ce9781342de6a1',
   'planet thumbnail': 'ae079380cbd28c6e',
   'planet functions': 'b5daa7e81809427e',

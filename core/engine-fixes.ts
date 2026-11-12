@@ -1,7 +1,7 @@
 // 一步做完之后引擎接着做的三样整理（第九十七轮从 core/engine.ts 的 Engine 原样搬出，this 换成 e；Engine 里同名的几个方法只转到这里）：
 //   名字跟着地方走、湖与陆地省份的整理、人口的修补。结果都记进这一步的命令与撤销记录（重放、重做时照用）
 import { type GeoFeature, applyNameCarry, carryNames, mergeNameCarry } from './features';
-import { Dirty, addArrayUndo } from './commands';
+import { type Command, Dirty, addArrayUndo } from './commands';
 import { type SmallCopy, restoreSmall } from './small-copy';
 import { lakeProvinceFix } from './provinces';
 import { SLOTS } from './human/groups';
@@ -57,7 +57,25 @@ export function fixLakeProvinces(e: FixState) {
   const fix = lakeProvinceFix(w, w.derived);
   if (!fix) return;
   addArrayUndo(step.undo, 'province', fix.cells, before);
-  step.cmd = { ...step.cmd, provinceFix: fix };
+  step.cmd = { ...withoutDropped(step.cmd, fix.drop), provinceFix: fix };
+}
+
+// 这一步新起了名字、整理又删掉的省（新建时整个落在湖面上的陆地省：格都进了湖省）：名字不留在命令里。
+// 重放、重做时整理在收尾之前就做了（commands.ts 的 settleApply），收尾记省名时这些省已经不在，记下的本来就没有它们——
+// 第一次执行记的要和重放记的一字不差（存了再开，文件不变）。一个都不剩时原样留着：重放时这一步没有新起的省名，命令照原样记
+function withoutDropped(cmd: Command, drop: readonly number[]): Command {
+  const names = cmd.provinceNames;
+  if (!names || !drop.some((id) => id in names)) return cmd;
+  const gone = new Set(drop.map(String));
+  const left = Object.fromEntries(Object.entries(names).filter(([id]) => !gone.has(id)));
+  if (!Object.keys(left).length) return cmd;
+  const out: Command = { ...cmd, provinceNames: left };
+  if (cmd.provinceOrig) {
+    const orig = Object.fromEntries(Object.entries(cmd.provinceOrig).filter(([id]) => !gone.has(id)));
+    if (Object.keys(orig).length) out.provinceOrig = orig;
+    else delete out.provinceOrig;
+  }
+  return out;
 }
 
 // 有人文时这一步之前的水面（海、湖）与宜居度（第八十四轮）：改了陆海、宜居度之后修补人口用（见 fixPopulation）

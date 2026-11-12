@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { coastalStroke, digestWorld } from '../tools/hash';
 import { Engine } from './engine';
+import { newWorldContentCommands } from './packs/import';
 import { encodePath } from './rivers';
 import { isRiverCell, planCourse, riverStem, stemPath } from './select';
 import { continents, seededEngine } from './testing/fixtures';
@@ -64,5 +65,31 @@ describe('重放后画的河的名字不变', () => {
     const replay = Engine.fromDoc(eng.toDoc(), mesh);
     expect(names(replay.world)).toEqual(names(w));
     expect(digestWorld(replay.world)).toEqual(digestWorld(w));
+  });
+});
+
+// 第一百零一轮之后的修补：新建时划出来、整个落在湖面上的陆地省，推导算好以后被湖省整理并进湖省、删掉。
+// 第一次执行时“记省名”在整理之前，重放时在整理之后——以前第一次记的比重放记的多这几个名字（世界一样，文件第一次存了再开会变）。
+// 现在第一次记的就不带它们：存了再开，文件一字不差
+describe('存了再开，世界文件一字不差', () => {
+  it('新建时整个落在湖面上的省：名字不留在命令里', () => {
+    const settings = { cells: 2000, seed: 4 };
+    const eng = new Engine(settings);
+    eng.exec({ op: 'batch', commands: [...newWorldContentCommands().flatMap((c) => (c.op === 'batch' ? c.commands : [c])), { op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true }] });
+    const doc = eng.toDoc();
+    const first = doc.commands[0];
+    // 这个世界里确实有被整理删掉的省（没有的话这个测试什么都没查）
+    const drop = first.provinceFix?.drop ?? [];
+    expect(drop.length).toBeGreaterThan(0);
+    for (const id of drop) expect(first.provinceNames?.[id], String(id)).toBeUndefined();
+    // 留着的省个个有名字记着
+    for (const id of Object.keys(first.provinceNames ?? {})) expect(eng.world.small.provinces[Number(id)], id).toBeDefined();
+    const replay = Engine.fromDoc(JSON.parse(JSON.stringify(doc)), eng.world.mesh);
+    expect(JSON.stringify(replay.toDoc())).toBe(JSON.stringify(doc));
+    expect(digestWorld(replay.world)).toEqual(digestWorld(eng.world));
+    // 撤销再重做也是同样的字
+    eng.undo();
+    eng.redo();
+    expect(JSON.stringify(eng.toDoc())).toBe(JSON.stringify(doc));
   });
 });
