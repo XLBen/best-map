@@ -13,6 +13,7 @@ export const WATER_TOOLS = {
     name: '画河',
     short: '画河',
     how: '从河上起笔改河，别处起笔画新河',
+    mods: { alt: { label: '汇入', title: '开着时画的河穿过别的河是汇入它，不截走它' } },
     // 选中一条河时，底部条换成那条河的设置（新河的大小先收起来）
     size: { ...RIVER, enabled: () => !selectedRiver.value },
     bar: () =>

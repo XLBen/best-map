@@ -12,7 +12,7 @@ npm run test:fast                # 跳过最慢的几个文件
 npx vitest run core/foo.test.ts  # 单个文件；机器忙时 core/sizing 的“滑块最小值命令都接受”会超时，单独重跑；整套里 `tools/realism.test.ts` 的“类地星球”、`src/ui/speed-r80.test.ts` 的“一串编辑”也常超时，这两个文件单独重跑
 npm run golden                   # 只跑金标准
 npm run build                    # 查类型后打包
-npm run smoke                    # 打包后在无头 Chrome 里走一遍：新建、画一笔、刷新后还在、两个页面、打不开先问、计算卡住能取消、画面丢了能恢复、页面出错有自救页、进度与取消、第一次打开一键开始、重新生成前的确认、简单界面与帮助的搜索（约 10 分钟；--shots <目录> 截图；只跑一段 node tools/smoke.mjs --only 12、13 或 14；第十二段“平常画一笔不闪进度条”在机器忙时偶尔不过，重跑）
+npm run smoke                    # 打包后在无头 Chrome 里走一遍：新建、画一笔、刷新后还在、两个页面、打不开先问、计算卡住能取消、画面丢了能恢复、页面出错有自救页、进度与取消、第一次打开一键开始、重新生成前的确认、简单界面与帮助的搜索、触摸与平板（约 13 分钟；--shots <目录> 截图；只跑一段 node tools/smoke.mjs --only 12、13、14 或 15；第十二段“平常画一笔不闪进度条”在机器忙时偶尔不过，重跑）
 node tools/bench-median.mjs 5 --against <提交> --           # 一块地区的加工各步与旧提交对照，五次中位数（结尾的 -- 不能省：省了只测星球）
 node tools/bench-median.mjs 5 --against <提交> -- --globe   # 整个星球
 node tools/bench-median.mjs 5 --against <提交> -- --library # 带着一整个时代库的世界（small.content 约 300 KB）：同样的加工，另计不重算的几步（libEdit、libUndo……）
@@ -69,6 +69,7 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 | 重新生成之前问不问、删除之前写什么 | 数 `core/regen-loss.ts`（`regenLoss`、`isRegen`、`removalCounts`；每种手改怎么认、留不留的表在第98轮）；问 `src/ui/domain/regen-ask.ts`（`execRegen`、`execRemoval`，各处的重新生成都走它，资源库里经 `packs/row-actions.ts` 的 `runTrusted`）；按钮下面“留着什么” `copy.ts` 的 `REGEN_KEEPS`；命令记录 `state.ts` 的 `commandsNow`；问话框 `choices` 里主要的按钮写第一个（`shell/Ask.tsx` 倒着画，它在最右）；改完跑 `npm run smoke` |
 | 简单界面 / 完整界面：哪些算常用、藏了东西的地方怎么露、数字键 | 偏好 `src/ui/ui-prefs.ts`（`fullUi`、`restOpen`；键 `map2.lib.allSources`，`packs/lib-prefs.ts` 的两问就是它）；规则 `src/ui/defs/simple-ui.ts`（`WORLD_SIGNS`、`splitSimple`、`shownTools`）；声明里的 `more` / `when`（`defs/tools/<类>.ts`、`defs/layers.ts`、`defs/adjustments.ts`、`packs/page-layout.ts` 的 `HOME_MORE_CARDS`）；`defs/tools/index.ts` 的 `barTools` / `keyTools`（`toolsOf` 还是全部）；部件 `shell/RestLine.tsx`、`ContextBar.tsx` 的 `.bb-rest`，字 `copy.ts` 的 `SIMPLE_TEXT`；整张表钉在 `src/ui/simple-ui.test.ts`；冒烟 `tools/smoke-simple.mjs`；设计见 `docs/dev/history/第99轮.md` |
 | 帮助、`?` 键 | 字 `src/ui/help-data.ts`（新加工具要给它一条 `on('…', '工具 id')`，`help.test.ts` 查着）；搜索、“现在这个工具” `help-search.ts`；组件 `Help.tsx`（搜索框不抢焦点：一打开按 `?` 要能关上）；`src/ui/shell/keys.ts` 的 `isHelpKey`；向导上的入口是 `common.tsx` 的 `ModalHead` 的 `extra` |
+| 触摸、平板、笔；没有键盘做不了的事的按钮 | 手势怎么判定 `src/ui/map/touch.ts`（纯的状态机，阈值是那里有名字的常量），接到工具和镜头上 `map/touch-wire.ts`，`map/input.ts` 只分事件（鼠标那条路不变：`input-mouse.test.ts` 的快照录在第 99 轮上，不重录）；是不是触摸设备、笔的两个偏好、屏幕上的 Shift / Alt `src/ui/touch-ui.ts`（`touchUi()`、`held`，localStorage 的 `map2.touch`）；工具表的 `mods`；粗指针的样式只写在 `src/ui/shell/touch.css`；字 `TOUCH_TEXT`、`HELP_TOUCH`；测试用的假画布 `map/input-rig.ts`；冒烟 `tools/smoke-touch.mjs`；设计见 `docs/dev/history/第100轮.md` |
 | 以前的版本（留哪些、记在哪一串上、回到这一份、盖掉地图之前留一份） | 规则 `src/versions.ts`（`thin`、`planDrop`、`addVersion`、`overwriteKeeping`；表 `versions` / `versionDocs`）；接线 `src/state/versions.ts`（`worldId`、`keepVersion`、`versionAfterSave`、`overwriteLinked`）；界面 `src/ui/maps/versions.ts`、`VersionsDialog.tsx`，文字 `VERSION_TEXT`；世界文件的字 `src/doc-text.ts`；设计见 `docs/dev/history/第95轮.md` |
 | 存到电脑上的文件 | 规则 `src/file-save.ts`（`FileSaver`、`FileIo`、`FILE_SAVE_MS`）；接线 `src/state/file-save.ts`；界面 `src/ui/shell/save-note.ts`（`fileLine`、`pickFile`）、`SaveBanner.tsx` 的 `FileBanner`、`ActionsPanel.tsx` 的 `FileStatusLine`，文字 `FILE_TEXT`；真的选择框没法自动点，冒烟里换成浏览器自己管的文件 |
 | 撤销的内存上限 | `core/undo-budget.ts`、`core/engine.ts` 的 `settleUndo` / `trimUndo`（`core/engine.ts` 约 760 行，再加要拆；一步之后的整理已在 `core/engine-fixes.ts`）；界面 `UNDO_LIMIT_TEXT`；量：`node --expose-gc --import tsx tools/undo-bytes.ts [--globe] [--human]` |
@@ -87,6 +88,7 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 - **计算程序主动发的消息不带 `id`**：带 `id` 的只有回复（`src/sandbox.ts` 的 `readWorkerMessage` 按它认）；进度的那一条用 `req`。
 - **界面只经 `src/state.ts` 引用状态**：`src/ui/` 里不直接引用 `src/state/*.ts`（`src/ui/layering.test.ts` 查着）。
 - **新加的东西先想算不算常用**：新加工具、底图、“调整”的项、资源库的卡片时在声明里写不写 `more`（每一类常用的工具不超过三个）；藏了东西的地方只用“还有 N 个”在原地展开这一种做法。
+- **鼠标下的样子不变**：粗指针的规则只写在 `shell/touch.css` 的 `@media (pointer: coarse)` 里；给触摸补的按钮只在 `touchUi()` 为真时画。新工具的 `cancel()` 之后不能发命令、预览要去掉（第二根手指落下、`pointercancel`、Esc 都调它）。
 - 用户是新手：结果要可以预料，界面像 Procreate，控件是连续的（滑块），文字的规矩见 `docs/dev/ui-design.md`。
 
 ## 文档

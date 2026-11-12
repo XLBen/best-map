@@ -1,7 +1,7 @@
 import type { World } from '../../core/world';
 import type { Category, ToolId } from '../state';
 import { CATEGORY_DEFS, TOOL_DEFS, toolKey } from './defs/tools';
-import { HELP_KEYS, HELP_START, HELP_STEPS, type HelpItem } from './help-data';
+import { HELP_KEYS, HELP_START, HELP_STEPS, HELP_TOUCH, type HelpItem } from './help-data';
 
 // 帮助的两件事（第九十九轮，不碰界面的部件）：
 //   - searchHelp：按字过滤步骤、工具、按键。几个词用空格隔开，都出现才算；不分大小写；
@@ -48,6 +48,8 @@ export interface HelpHits {
   tools: HelpTool[];
   steps: { title: string; items: string[] }[];
   keys: (readonly [string, string])[];
+  // 第一百轮：“触摸”一段里的
+  touch: (readonly [string, string])[];
   total: number;
 }
 
@@ -58,13 +60,14 @@ export function searchHelp(query: string, tools: readonly HelpTool[]): HelpHits 
     const hay = norm(texts.join(' '));
     return words.every((w) => hay.includes(w));
   };
-  if (!words.length) return { q, start: [], tools: [], steps: [], keys: [], total: 0 };
+  if (!words.length) return { q, start: [], tools: [], steps: [], keys: [], touch: [], total: 0 };
   const start = HELP_START.filter((t) => hit(t));
   const foundTools = tools.filter((t) => hit(t.group, t.name, t.short, t.how));
   // 步骤：标题对上的整步都算；不然看每一条
   const steps = HELP_STEPS.map((s) => ({ title: s.title, items: s.items.map(itemText).filter((t) => hit(t) || hit(s.title, t)) })).filter((s) => s.items.length > 0);
   const keys = HELP_KEYS.filter(([what, k]) => hit(what, k));
-  return { q, start, tools: foundTools, steps, keys, total: start.length + foundTools.length + steps.reduce((n, s) => n + s.items.length, 0) + keys.length };
+  const touch = HELP_TOUCH.filter(([what, how]) => hit('触摸 手指', what, how));
+  return { q, start, tools: foundTools, steps, keys, touch, total: start.length + foundTools.length + steps.reduce((n, s) => n + s.items.length, 0) + keys.length + touch.length };
 }
 
 // 没搜到时说什么

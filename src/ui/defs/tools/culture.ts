@@ -77,5 +77,6 @@ export const CULTURE_TOOLS = {
     how: '拖动发源地，人文重新生成',
     bar: () => [{ kind: 'custom', panel: 'NoHumanChip' }, { kind: 'custom', panel: 'HearthBar' }],
     view: 'cultureGroup',
+    mods: { shift: { label: '逐个恢复', title: '开着时点一个锁定的发源地，它恢复自动' } },
   },
 } satisfies Record<string, ToolSpec>;

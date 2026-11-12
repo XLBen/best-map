@@ -1,4 +1,4 @@
-import { Archive, Boxes, CircleHelp, CopyPlus, FileDown, FilePlus, FolderOpen, HardDriveDownload, History, ImageDown, Library, PackageOpen, Save } from 'lucide-preact';
+import { Archive, Boxes, CircleHelp, CopyPlus, EyeOff, FileDown, FilePlus, FolderOpen, HardDriveDownload, History, ImageDown, Library, PackageOpen, Save } from 'lucide-preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import {
   type WheelPref,
@@ -15,6 +15,7 @@ import {
   refreshVersions,
   saveProblem,
   setPrefs,
+  uiHidden,
   wizardOpen,
   world,
 } from '../../state';
@@ -25,8 +26,9 @@ import { EE_HALF_W } from '../../render/projection';
 import type { World } from '../../../core/world';
 import { exportFullMap, snapshotCanvas } from '../map/export';
 import { HistoryPanel } from '../panels';
-import { BACKUP_TEXT, FILE_TEXT, HELP_KEY_TIP, LIBRARY_NOTE, SAVE_TEXT, SIMPLE_TEXT, VERSION_TEXT } from '../copy';
+import { BACKUP_TEXT, FILE_TEXT, HELP_KEY_TIP, LIBRARY_NOTE, SAVE_TEXT, SIMPLE_TEXT, TOUCH_TEXT, VERSION_TEXT } from '../copy';
 import { fullUi, setFullUi } from '../ui-prefs';
+import { fingerPans, penPressure, penSeen, setFingerPans, setPenPressure, touchUi } from '../touch-ui';
 import { fileLine, pickFile, reloadSaved, resumeFileHere, saveNote, stopFileHere, takeOverHere } from '../shell/save-note';
 import { openLibrary } from '../packs/panel-store';
 import { fileNameOf } from '../../maps';
@@ -551,7 +553,36 @@ export function MorePanel() {
           </Toggle>
           <p class="hint">{fullUi() ? SIMPLE_TEXT.toggleOn : SIMPLE_TEXT.toggleOff}</p>
         </div>
+        {/* 第一百轮：用过笔以后才露的两个开关（touch-ui.ts，记在这个浏览器里） */}
+        {penSeen() && (
+          <>
+            <div class="full-ui">
+              <Toggle on={fingerPans()} onChange={setFingerPans}>
+                {TOUCH_TEXT.fingerPans}
+              </Toggle>
+              <p class="hint">{fingerPans() ? TOUCH_TEXT.fingerPansOn : TOUCH_TEXT.fingerPansOff}</p>
+            </div>
+            <div class="full-ui">
+              <Toggle on={penPressure()} onChange={setPenPressure}>
+                {TOUCH_TEXT.penPressure}
+              </Toggle>
+              <p class="hint">{TOUCH_TEXT.penPressureNote}</p>
+            </div>
+          </>
+        )}
       </section>
+      {/* 第一百轮：Tab 键的那一下，触摸设备上有按钮 */}
+      {touchUi() && (
+        <button
+          title={TOUCH_TEXT.hideUiNote}
+          onClick={() => {
+            uiHidden.value = true;
+            openPanel.value = null;
+          }}
+        >
+          <EyeOff /> {TOUCH_TEXT.hideUi}
+        </button>
+      )}
       <button
         title={HELP_KEY_TIP}
         onClick={() => {

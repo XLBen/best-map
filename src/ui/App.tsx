@@ -60,7 +60,10 @@ import { Guard } from './shell/Guard';
 import { MishapBanner } from './shell/MishapBanner';
 import { Notice } from './shell/Notice';
 import { Popover } from './shell/Popover';
-import { RulerButton } from './shell/Ruler';
+import { FitButton, RulerButton } from './shell/Ruler';
+import { NarrowNote } from './shell/NarrowNote';
+import { fingerOnMap, touchUi } from './touch-ui';
+import { TOUCH_TEXT } from './copy';
 import { BackupBanner } from './shell/BackupBanner';
 import { FileBanner, SaveBanner } from './shell/SaveBanner';
 import { ScriptBanner } from './shell/ScriptBanner';
@@ -164,8 +167,10 @@ function CursorHint() {
   // 鼠标在右半边时，说明放在鼠标左边，免得被挤窄
   const cw = window.innerWidth;
   const pos = h.x > cw * 0.55 ? { right: `${Math.max(4, cw - h.x + 12)}px` } : { left: `${h.x + 16}px` };
+  // 第一百轮：手指按着时写在手指上面（下面的会被手指挡住）
+  const top = fingerOnMap.value ? Math.max(4, h.y - 72) : h.y + 20;
   return (
-    <div class={`cursor-hint ${h.warn ? 'warn' : h.caution ? 'caution' : ''}`} style={{ ...pos, top: `${h.y + 20}px` }}>
+    <div class={`cursor-hint ${h.warn ? 'warn' : h.caution ? 'caution' : ''}`} style={{ ...pos, top: `${top}px` }}>
       {h.text}
     </div>
   );
@@ -221,7 +226,7 @@ export function App() {
   // 图标一种大小、一种粗细（顶栏的大一号，在 TopBar 里写）
   return (
     <LucideProvider size={16} strokeWidth={1.8}>
-      <div class={`app ${sheet.value ? 'with-sheet' : ''} ${libWide.value ? 'lib-wide' : libPanel.value ? 'lib-open' : ''}`}>
+      <div class={`app ${sheet.value ? 'with-sheet' : ''} ${libWide.value ? 'lib-wide' : libPanel.value ? 'lib-open' : ''}${touchUi() ? ' touch-ui' : ''}`}>
         <MapView />
         {/* 第九十六轮：地图的画面暂时不可用、恢复不了时盖在地图中间的一块 */}
         <GlNote />
@@ -236,6 +241,7 @@ export function App() {
             <TopBar />
             {w && <ContextBar />}
             {w && <RulerButton />}
+            {w && <FitButton />}
             {/* 第九十六轮：一块画不出来（Guard）只关上这一块、顶上说一句，别的照常用；包不住的（顶栏、底部条、地图）交给根上的那一个 */}
             <Guard name="图例" watch={w}>
               <MapLegend />
@@ -257,7 +263,15 @@ export function App() {
             )}
           </>
         )}
-        {hidden && <div class="hidden-hint">按 Tab 显示界面</div>}
+        {/* 第一百轮：触摸设备上是一个能点的按钮（没有 Tab 键） */}
+        {hidden &&
+          (touchUi() ? (
+            <button class="hidden-show" onClick={() => (uiHidden.value = false)}>
+              {TOUCH_TEXT.showUi}
+            </button>
+          ) : (
+            <div class="hidden-hint">按 Tab 显示界面</div>
+          ))}
         <div class="notices">
           {/* 向导开着时这一条在向导上面那一块里 */}
           {!wizardOpen.value && <BackupBanner />}
@@ -290,6 +304,8 @@ export function App() {
           <Help />
         </Guard>
         <AskDialog />
+        {/* 第一百轮：屏幕太窄（手机）时说一句 */}
+        <NarrowNote />
       </div>
     </LucideProvider>
   );

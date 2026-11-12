@@ -26,27 +26,28 @@ export function climateTool(group: 'temp' | 'moist'): ToolHandler {
     const k = climateKind(group, options.value);
     return shift ? CLIMATE_INFO[k].flip : k;
   };
-  const amountNow = () => climateAmount(group, options.value);
+  // 第一百轮：笔的压力乘在力度上（鼠标、手指时是 1）
+  const amountNow = (s: Stroke) => climateAmount(group, options.value) * s.pressure;
   // 松手时执行的命令（确切预览算的也是它）
   const cmdOf = (s: Stroke, shift: boolean): Command => {
-    const e = climateEffect(kindOf(shift), amountNow());
+    const e = climateEffect(kindOf(shift), amountNow(s));
     return { op: 'paint', field: e.field, cells: s.cells, values: s.weights().map((wt) => wt * e.value), mode: 'add' };
   };
-  const head = (shift: boolean) => {
+  const head = (shift: boolean, s: Stroke) => {
     const c = kindOf(shift);
-    return `${CLIMATE_INFO[c].name} ${climateEffect(c, amountNow()).short}`;
+    return `${CLIMATE_INFO[c].name} ${climateEffect(c, amountNow(s)).short}`;
   };
   return brushTool({
     hint: () => ({ text: null }),
     layers(_w, s, shift) {
       const c = kindOf(shift);
-      const amount = amountNow();
+      const amount = amountNow(s);
       // 深浅跟着力度：拖“力度”滑块时预览跟着变
       const values = strengthValues(s.weights().map((wt) => wt * amount), CLIMATE_MAX);
-      return { layers: [{ cells: s.cells, values, color: CLIMATE_INFO[c].color, alpha: 0.65 }], hint: head(shift) };
+      return { layers: [{ cells: s.cells, values, color: CLIMATE_INFO[c].color, alpha: 0.65 }], hint: head(shift, s) };
     },
     exact: (_w, s, shift) => (s.t.size ? cmdOf(s, shift) : null),
-    exactHint: (_w, _s, shift, r) => `${head(shift)} · ${biomeChange(r)}`,
+    exactHint: (_w, s, shift, r) => `${head(shift, s)} · ${biomeChange(r)}`,
     commit: (_w, s, shift) => exec(cmdOf(s, shift), '正在计算…'),
   });
 }

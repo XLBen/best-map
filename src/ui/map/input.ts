@@ -4,13 +4,18 @@ import { findCell } from '../../../core/mesh';
 import { nearestCell } from '../../../core/sphere';
 import { EE_HALF_W, GLOBE_G, type Proj, rotateToAnchor, screenToPlane } from '../../render/projection';
 import type { Renderer } from '../../render/renderer';
+import type { World } from '../../../core/world';
 import { cursorHint, erasing, hoverCell, hoverProvinceCell, measure, openPanel, picking, pinCell, prefs, showToast, sliderActive, tool, world } from '../../state';
 import { clampPlanetCamera, maxZoom, minZoom, shapeFitsWidth } from '../camera';
 import { CATEGORY_DEFS, TOOL_DEFS, category } from '../defs/tools';
 import { type Pointer, type ToolHandler, pinTarget, provinceCellAt } from '../tools';
+import { held } from '../touch-ui';
+import { touchWire } from './touch-wire';
 
 // 地图上的指针：拖着平移、滚轮与触控板缩放平移、Safari 的捏合、空格键拖地图；其余的按下、移动、松手、单击交给当前工具。
-// 鼠标在哪里（pointer、lastPointer）、按没按着（pressed）与地图视图共用（view）
+// 鼠标在哪里（pointer、lastPointer）、按没按着（pressed）与地图视图共用（view）。
+// 第一百轮：手指和笔（pointerType 是 touch / pen）不走鼠标这一条路——怎么判定在 touch.ts，接到工具和镜头上在 touch-wire.ts，
+// 这里只把事件分过去、把平移缩放的做法递给它。鼠标的行为一项没变（input-mouse.test.ts 录着）
 
 // 地图视图与指针共用的状态
 export interface PointerState {
@@ -32,7 +37,7 @@ export interface MapInput {
   // 镜头动了而鼠标没动：按鼠标在屏幕上的位置重新算它指着地图的哪里
   refreshPointer(): void;
   zoomAt(sx: number, sy: number, f: number): void;
-  // Esc：取消正在画的一笔、正在拖的平移（没有时 false）
+  // Esc：取消正在画的一笔、正在拖的平移（没有时 false）。手指 / 笔正做着的也算：到全部抬起为止不再算
   cancel(): boolean;
   dispose(): void;
 }
@@ -100,10 +105,15 @@ export function mapInput(
       hoverCell.value = here;
     });
   }
+  // 屏幕上的 Shift / Alt（第一百轮，底部条上的“多选”“汇入”这样的开关）：开着时每一下都当作按着那个键。
+  // held 只在开关变的时候换对象，这里每个事件多读一次
   const pointerOf = (e: PointerEvent | MouseEvent): Pointer => {
     const r = ovCanvas.getBoundingClientRect();
-    return pointerAt(e.clientX - r.left, e.clientY - r.top, e.shiftKey, e.altKey);
+    const h = held.peek();
+    return pointerAt(e.clientX - r.left, e.clientY - r.top, e.shiftKey || h.shift, e.altKey || h.alt);
   };
+  // 手指、笔：不是鼠标的指针（没有 pointerType 的当鼠标）
+  const notMouse = (e: PointerEvent) => !!e.pointerType && e.pointerType !== 'mouse';
 
   // 镜头动了而鼠标没动（触控板平移、+ / − 缩放、捏合、看全图、换了世界、窗口变了大小）：按鼠标在屏幕上的位置
   // 重新算它指着地图的哪里，画笔圈、悬停的格跟着手。拖着平移时鼠标下始终是同一点，不必算
@@ -149,6 +159,39 @@ export function mapInput(
     }
   };
 
+  // 拖着平移到这里：按下的那一点跟着 (sx, sy)
+  const panTo = (w: World, sx: number, sy: number) => {
+    const renderer = o.renderer();
+    if (!panning) return;
+    if (w.mesh.kind === 'sphere' && panning.proj && renderer.camera.proj) panProjected({ ...panning, proj: panning.proj }, sx - panning.x, sy - panning.y, sx, sy);
+    else {
+      renderer.camera.x = panning.cx - (sx - panning.x) / renderer.camera.zoom;
+      renderer.camera.y = panning.cy - (sy - panning.y) / renderer.camera.zoom;
+    }
+    clampPlanetCamera(w.mesh, renderer.camera, glCanvas.clientHeight, false, glCanvas.clientWidth);
+    requestDraw();
+  };
+  // 平移结束：整个星球的镜头绕回第一份（画面不变，但鼠标下的经度差了一整圈，画笔圈要跟着换到这一份上）
+  const endPan = (w: World) => {
+    clampPlanetCamera(w.mesh, o.renderer().camera, glCanvas.clientHeight, true, glCanvas.clientWidth);
+    refreshPointer();
+    requestDraw();
+  };
+
+  // Alt+点、底部条上的吸管（第二十七轮：点一下吸管，下一次点击是吸取）：吸取（取这里的生态、这里的省份）。
+  // 吸到了就回到画笔（橡皮擦关上），用吸到的接着画
+  const wantsPick = (alt: boolean) => (alt || picking.value) && !!TOOL_DEFS[tool.value].pick && !measure.value;
+  const pickAt = (w: World, p: Pointer) => {
+    const def = TOOL_DEFS[tool.value];
+    // 吸取的是屏幕上这一点画的：省份按画出来的省（扭曲后的格、切线两边），生态按画成的陆地
+    const cell = CATEGORY_DEFS[def.category].map?.provinces ? provinceCellAt(w, p) : hereOf(p);
+    const got = cell >= 0 ? def.pick!(w, cell) : null;
+    showToast(got ? `已吸取“${got}”` : '这里没有可吸取的', !got);
+    picking.value = false;
+    if (got) erasing.value = null;
+    requestDraw();
+  };
+
   const zoomAt = (sx: number, sy: number, f: number) => {
     const renderer = o.renderer();
     const c = renderer.camera;
@@ -178,6 +221,17 @@ export function mapInput(
   };
 
   const onDown = (e: PointerEvent) => {
+    if (notMouse(e)) {
+      // 手指本来就一直交给按下的那个元素；笔不一定：明说（移到画布外面、面板上面时这一笔不断）
+      try {
+        ovCanvas.setPointerCapture(e.pointerId);
+      } catch {
+        // 这个指针已经没了
+      }
+      return touch.down(e, ovCanvas.getBoundingClientRect());
+    }
+    // 手指的手势没完时鼠标先不算
+    if (touch.busy) return;
     const w = world.value;
     if (!w) return;
     // 有弹出面板时，点地图只把面板关上，不在地图上动手
@@ -196,17 +250,9 @@ export function mapInput(
       return;
     }
     if (e.button !== 0) return;
-    // Alt+点、底部条上的吸管（第二十七轮：点一下吸管，下一次点击是吸取）：吸取（取这里的生态、这里的省份）。
-    // 吸到了就回到画笔（橡皮擦关上），用吸到的接着画
-    const def = TOOL_DEFS[tool.value];
-    if ((e.altKey || picking.value) && def.pick && !measure.value) {
-      // 吸取的是屏幕上这一点画的：省份按画出来的省（扭曲后的格、切线两边），生态按画成的陆地
-      const cell = CATEGORY_DEFS[def.category].map?.provinces ? provinceCellAt(w, p) : hereOf(p);
-      const got = cell >= 0 ? def.pick(w, cell) : null;
-      showToast(got ? `已吸取“${got}”` : '这里没有可吸取的', !got);
-      picking.value = false;
-      if (got) erasing.value = null;
-      requestDraw();
+    // Alt+点、底部条上的吸管：吸取
+    if (wantsPick(e.altKey)) {
+      pickAt(w, p);
       return;
     }
     const h = active();
@@ -218,20 +264,18 @@ export function mapInput(
   };
 
   const onMove = (e: PointerEvent) => {
+    // 手指、落着的笔交给手势；没落着的笔是悬停，和鼠标的移动一样（手势进行中不算）
+    if (touch.busy || notMouse(e)) {
+      if (touch.tracks(e.pointerId)) return touch.move(e, ovCanvas.getBoundingClientRect());
+      if (touch.busy || e.pointerType !== 'pen') return;
+    }
     const w = world.value;
     if (!w) return;
-    const renderer = o.renderer();
     const p = pointerOf(e);
     view.pointer = p;
     view.lastPointer = p;
     if (panning) {
-      if (w.mesh.kind === 'sphere' && panning.proj && renderer.camera.proj) panProjected({ ...panning, proj: panning.proj }, p.sx - panning.x, p.sy - panning.y, p.sx, p.sy);
-      else {
-        renderer.camera.x = panning.cx - (p.sx - panning.x) / renderer.camera.zoom;
-        renderer.camera.y = panning.cy - (p.sy - panning.y) / renderer.camera.zoom;
-      }
-      clampPlanetCamera(w.mesh, renderer.camera, glCanvas.clientHeight, false, glCanvas.clientWidth);
-      requestDraw();
+      panTo(w, p.sx, p.sy);
       return;
     }
     // 单击类工具：按住拖动就是平移地图
@@ -240,8 +284,7 @@ export function mapInput(
       clickStart = null;
       return;
     }
-    setHover(p);
-    if (CATEGORY_DEFS[category.value].map?.labels) view.hoverLabel = o.hitLabel(p.sx, p.sy);
+    hover(p);
     const h = active();
     h.move?.(p, view.pressed);
     // 预览只随工具给的键变（第四十轮）：同一格里移动、键与鼠标下的地名都没变时不重画，只挪鼠标旁的那句话。
@@ -256,6 +299,7 @@ export function mapInput(
   };
 
   const onUp = async (e: PointerEvent) => {
+    if (touch.busy || notMouse(e)) return touch.up(e, ovCanvas.getBoundingClientRect());
     if (!world.value) return;
     const p = pointerOf(e);
     if (panning) {
@@ -267,10 +311,7 @@ export function mapInput(
         requestDraw();
         return;
       }
-      // 平移结束：整个星球的镜头绕回第一份（画面不变，但鼠标下的经度差了一整圈，画笔圈要跟着换到这一份上）
-      clampPlanetCamera(world.value.mesh, o.renderer().camera, glCanvas.clientHeight, true, glCanvas.clientWidth);
-      refreshPointer();
-      requestDraw();
+      endPan(world.value);
       return;
     }
     if (view.pressed) {
@@ -329,6 +370,8 @@ export function mapInput(
   type GestureEvent = UIEvent & { scale: number; clientX: number; clientY: number };
   const onGestureStart = (e: Event) => {
     e.preventDefault();
+    // iPad 的 Safari 两根手指落在屏幕上时也发这一串事件：那是手指的捏合，已经由 touch.ts 管了，这里不再缩放一遍
+    if (touch.busy) return;
     const g = e as GestureEvent;
     const r = ovCanvas.getBoundingClientRect();
     gesture = { zoom: o.renderer().camera.zoom, sx: g.clientX - r.left, sy: g.clientY - r.top };
@@ -352,18 +395,75 @@ export function mapInput(
       if (e.type === 'keydown') e.preventDefault();
     }
   };
-  const onLeave = () => {
+  const leave = () => {
     view.pointer = null;
     active().leave?.();
     view.hoverLabel = null;
     cursorHint.value = null;
     requestDraw();
   };
+  // 手指抬起后浏览器也会发一次“离开”：手势自己收尾（touch-wire.ts），这里只管鼠标和悬停着的笔
+  const onLeave = (e: PointerEvent) => {
+    if (e && notMouse(e) && (e.pointerType !== 'pen' || touch.busy || touch.tracks(e.pointerId))) return;
+    leave();
+  };
+  // 系统把指针拿走了（系统手势、来电、切应用）：当作取消，不留半笔、不卡在“按着”
+  const onCancel = (e: PointerEvent) => {
+    if (touch.tracks(e.pointerId)) return touch.cancel(e, ovCanvas.getBoundingClientRect());
+    if (notMouse(e)) return;
+    cancelMouse();
+    clickStart = null;
+    rightStart = null;
+  };
+  // 取消鼠标正在画的一笔、正在拖的平移（Esc）；没有时 false
+  const cancelMouse = () => {
+    if (!view.pressed && !panning) return false;
+    active().cancel?.();
+    view.pressed = false;
+    panning = null;
+    requestDraw();
+    return true;
+  };
   const noMenu = (e: Event) => e.preventDefault();
+
+  // 鼠标下的格、鼠标下的地名（悬停的那一套；手指按下时也用）
+  function hover(p: Pointer) {
+    setHover(p);
+    if (CATEGORY_DEFS[category.value].map?.labels) view.hoverLabel = o.hitLabel(p.sx, p.sy);
+  }
+
+  // 手指与笔（第一百轮）：手势怎么判定在 touch.ts，这里把鼠标这一条路已有的做法递给它
+  const touch = touchWire({
+    view,
+    active,
+    pointerAt: (sx, sy, shift, alt) => {
+      const h = held.peek();
+      return pointerAt(sx, sy, shift || h.shift, alt || h.alt);
+    },
+    hover,
+    leave,
+    requestDraw,
+    startPan,
+    panTo: (sx, sy) => {
+      if (world.value) panTo(world.value, sx, sy);
+    },
+    endPan: () => {
+      panning = null;
+      if (world.value) endPan(world.value);
+    },
+    zoomAt,
+    wantsPick,
+    pick: pickAt,
+    mouseHeld: () => view.pressed || !!panning || !!clickStart,
+    now: () => performance.now(),
+    setTimer: (f, ms) => setTimeout(f, ms),
+    clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+  });
 
   ovCanvas.addEventListener('pointerdown', onDown);
   ovCanvas.addEventListener('pointermove', onMove);
   ovCanvas.addEventListener('pointerup', onUp);
+  ovCanvas.addEventListener('pointercancel', onCancel);
   ovCanvas.addEventListener('wheel', onWheel, { passive: false });
   ovCanvas.addEventListener('gesturestart', onGestureStart);
   ovCanvas.addEventListener('gesturechange', onGestureChange);
@@ -379,14 +479,11 @@ export function mapInput(
     refreshPointer,
     zoomAt,
     cancel() {
-      if (!view.pressed && !panning) return false;
-      active().cancel?.();
-      view.pressed = false;
-      panning = null;
-      requestDraw();
-      return true;
+      if (touch.busy) return touch.abort();
+      return cancelMouse();
     },
     dispose() {
+      touch.dispose();
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKey);
     },

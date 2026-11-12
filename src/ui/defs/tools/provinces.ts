@@ -12,6 +12,7 @@ export const PROVINCE_TOOLS = {
     how: '点击选中省份；Shift+点击多选，合并或划给某国',
     bar: () => [{ kind: 'custom', panel: 'ProvinceColorToggle' }, { kind: 'custom', panel: 'ProvinceBar' }],
     cursor: 'pointer',
+    mods: { shift: { label: '多选', title: '开着时点省份是加进多选，再点一下去掉' } },
   },
   pbrush: {
     category: 'provinces',

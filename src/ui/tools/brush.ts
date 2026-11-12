@@ -18,12 +18,28 @@ export const brushR = (w: World, km: number) => km / w.kmPerUnit;
 let strokeIds = 0;
 // 一格的画笔拖线时，格心离笔画不到这么多格的邻格也涂上（见 Stroke.add）
 export const LINE_CELL = 0.5;
+// 笔按得再轻，力度也不低于这个比例（不然一笔下去什么都没变，像是没画上）
+export const PRESSURE_MIN = 0.1;
 export class Stroke {
   t = new Map<number, number>();
   id = ++strokeIds;
   // 改过几次（涂到新的格、离中心线更近）：确切预览、幽灵海岸按它判断还是不是同一笔（笔没变就沿用同一个结果）
   rev = 0;
+  // 笔的压力（第一百轮）：这一笔里按得最重的那一下，PRESSURE_MIN–1，有力度的画笔（堆山、冷暖干湿）把它乘到力度上。
+  // 鼠标、手指、没开“笔的压力影响力度”时指针上没有压力（Pointer.pressure），这里一直是 1：乘上去逐位不变
+  pressure = 1;
+  private pressed = false;
   private last: [number, number] | null = null;
+
+  press(v: number | undefined) {
+    if (v === undefined) return;
+    const p = Math.max(PRESSURE_MIN, Math.min(1, v));
+    const next = this.pressed ? Math.max(this.pressure, p) : p;
+    this.pressed = true;
+    if (next === this.pressure) return;
+    this.pressure = next;
+    this.rev++;
+  }
 
   // km：画笔半径（km）
   add(w: World, x: number, y: number, km: number, filter?: (i: number) => boolean) {
@@ -263,13 +279,17 @@ export function brushTool(cfg: BrushConfig): ToolHandler {
       covered.keep(new Set(queued.flatMap((q) => [q.key, q.view?.key])));
       stroke = new Stroke();
       stroke.add(w, p.x, p.y, options.value.brushKm, filterOf(w));
+      stroke.press(p.pressure);
       pointer = p;
     },
     move(p, pressed) {
       pointer = p;
       inside = true;
       const w = world.value;
-      if (pressed && stroke && w) stroke.add(w, p.x, p.y, options.value.brushKm, filterOf(w));
+      if (pressed && stroke && w) {
+        stroke.add(w, p.x, p.y, options.value.brushKm, filterOf(w));
+        stroke.press(p.pressure);
+      }
     },
     async up(p) {
       const w = world.value;

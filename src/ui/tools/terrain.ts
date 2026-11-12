@@ -289,7 +289,8 @@ export function reliefTool(): ToolHandler {
     hint: () => ({ text: null }),
     filter: (w, i) => w.causes.land[i] === 1,
     layers(w, s, shift) {
-      const strength = sign(shift) * options.value.reliefAmount;
+      // 第一百轮：笔的压力乘在力度上（鼠标、手指时是 1）
+      const strength = sign(shift) * options.value.reliefAmount * s.pressure;
       const r = reliefStroke(s.cells, s.ts, strength);
       const name = strength > 0 ? '堆山' : '压低';
       return {
@@ -298,7 +299,7 @@ export function reliefTool(): ToolHandler {
         hint: s.t.size ? `${name} ${fmtMeters(reliefEstimateM(w, r.cells, r.delta, strength))}` : name,
       };
     },
-    commit: (_w, s, shift) => exec({ op: 'paint_relief', cells: s.cells, t: s.ts, strength: sign(shift) * options.value.reliefAmount }, '正在计算…'),
+    commit: (_w, s, shift) => exec({ op: 'paint_relief', cells: s.cells, t: s.ts, strength: sign(shift) * options.value.reliefAmount * s.pressure }, '正在计算…'),
   });
 }
 

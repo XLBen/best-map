@@ -109,6 +109,28 @@ export const SIMPLE_TEXT = {
   always: '想一直露着：更多 → 偏好 → 完整界面',
 } as const;
 
+// 第一百轮：触摸与平板。给没有键盘的人补的按钮、用笔的人的两个偏好、屏幕太窄时的一句
+export const TOUCH_TEXT = {
+  // 左下角：F 键的那一下
+  fit: '看全图',
+  fitTip: '看全图：整张地图放进窗口',
+  // 量距离：Backspace 的那一下
+  measureBack: '回退',
+  measureBackTip: '删除最后一点',
+  // 只看地图（Tab 键的那一下）和回来
+  hideUi: '只看地图',
+  hideUiNote: '界面都收起来；点右下角的“显示界面”回来',
+  showUi: '显示界面',
+  // 偏好：用过笔以后才露
+  fingerPans: '手指只移动地图',
+  fingerPansOn: '手指不画：一指拖是移动，两指缩放；画用笔。点选的工具手指照常点',
+  fingerPansOff: '手指和笔都能画；两指移动、缩放',
+  penPressure: '笔的压力影响力度',
+  penPressureNote: '堆山、冷暖、干湿：轻按淡、重按重，按一笔里最重处算。鼠标、手指不变',
+  // 屏幕太窄（手机）
+  narrow: '屏幕太窄，有些地方会挤在一起。建议用平板或电脑',
+} as const;
+
 // 各处“重新生成”留着什么（第九十八轮：写在按钮下面，同一件事只写一处）。会换掉手改的东西时另问一次（domain/regen-ask.ts）
 export const REGEN_KEEPS = {
   human: '手改过的格、拖过的发源地、国家的领土不动',

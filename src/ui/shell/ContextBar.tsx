@@ -8,10 +8,13 @@ import { BRUSH } from '../defs/tool-sliders';
 import type { BarItem, SliderDef } from '../defs/types';
 import { pathKm } from '../tools';
 import { Seg } from '../common';
-import { SIMPLE_TEXT } from '../copy';
+import { Toggle } from '../components/Toggle';
+import { SIMPLE_TEXT, TOUCH_TEXT } from '../copy';
+import { held, howForTouch, setHeld, touchUi } from '../touch-ui';
 import { setRestOpen } from '../ui-prefs';
 import { OptionSlider } from './OptionSlider';
-import { bottomBarRef } from './bottom-bar';
+import { useLayoutEffect } from 'preact/hooks';
+import { bottomBarRef, dropBarClear, trackBarClear } from './bottom-bar';
 
 // 底部条：上一行是这一类的工具（点一下就换，末尾“⋯”是这一类的设置；工具做什么写在工具按钮的悬停里；
 // 第九十九轮：简单界面里只露常用的，末尾“还有 N 个”，见 defs/simple-ui.ts），
@@ -93,6 +96,26 @@ function PickEraseRow() {
   );
 }
 
+// 第一百轮：没有键盘的人按不了 Shift、Alt。这个工具用得上它们时（工具表的 mods：多选、汇入……），触摸设备上这里各一个开关，
+// 开着时地图上的每一下都当作按着那个键；换工具就关上。鼠标下不露（那里有键盘）
+function HeldToggles() {
+  const mods = TOOL_DEFS[tool.value].mods;
+  if (!mods || !touchUi()) return null;
+  const h = held.value;
+  return (
+    <>
+      {(['shift', 'alt'] as const).map((k) => {
+        const m = mods[k];
+        return m ? (
+          <Toggle on={h[k]} onChange={(on) => setHeld(k, on)} title={m.title}>
+            {m.label}
+          </Toggle>
+        ) : null;
+      })}
+    </>
+  );
+}
+
 // 步行：每天约 30 km
 const WALK_KM_PER_DAY = 30;
 
@@ -114,6 +137,12 @@ function MeasureRow({ w, pts }: { w: World; pts: [number, number][] }) {
           共 {roundKm(total).toLocaleString()} km{straight ? ` · 直线 ${roundKm(straight).toLocaleString()} km` : ''} · <span title={`每天 ${WALK_KM_PER_DAY} km`}>步行{walk}</span>
         </span>
       )}
+      {/* 第一百轮：Backspace 的那一下（删除最后一点）触摸设备上有按钮 */}
+      {touchUi() && (
+        <button class="bar-btn" disabled={!pts.length} onClick={() => (measure.value = pts.slice(0, -1))} title={TOUCH_TEXT.measureBackTip}>
+          {TOUCH_TEXT.measureBack}
+        </button>
+      )}
       <button class="bar-btn" disabled={!pts.length} onClick={() => (measure.value = [])} title="Backspace 删除最后一点">
         清空
       </button>
@@ -126,6 +155,9 @@ function MeasureRow({ w, pts }: { w: World; pts: [number, number][] }) {
 
 export function ContextBar() {
   const w = world.value;
+  // 第一百轮：底部条有多高记在 .app 上（--bar-clear），触摸设备上别的东西据此让出它
+  useLayoutEffect(trackBarClear);
+  useLayoutEffect(() => dropBarClear, []);
   if (!w) return null;
   const c = category.value;
   const cat = CATEGORY_DEFS[c];
@@ -187,9 +219,12 @@ export function ContextBar() {
           {items.map((it) => (
             <Item item={it} />
           ))}
+          {!erase && <HeldToggles />}
           <PickEraseRow />
         </div>
       )}
+      {/* 第一百轮：工具做什么平时在按钮的悬停里；手指没有悬停，触摸设备上写在这里 */}
+      {touchUi() && !measure.value && <p class="hint bb-how">{howForTouch(def.how)}</p>}
     </div>
   );
 }

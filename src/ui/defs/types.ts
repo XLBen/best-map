@@ -73,6 +73,9 @@ export interface ToolSpec {
   when?: WorldSign;
   // 地图上的光标：点选类的工具是手指，指针是箭头；省略时是十字（styles.css 的 .map-overlay）
   cursor?: 'pointer' | 'default';
+  // 第一百轮：这个工具里按着 Shift / Alt 做的事，而且屏幕上没有别的按钮做得到（画笔的“Shift 反过来”有模式选择，不算）。
+  // 没有键盘的人按不了：触摸设备上底部条第二行各多一个开关（label），开着时地图上的每一下都当作按着那个键（touch-ui.ts 的 held）
+  mods?: { shift?: ModSpec; alt?: ModSpec };
   // 开着时底图换成这一层（地形类别、资源），换到别的工具时换回原来的（这期间在图层里换过就不动）。
   // 写成函数时跟着选项变（人口笔刷按模式）
   view?: ViewMode | (() => ViewMode);
@@ -82,6 +85,12 @@ export interface ToolSpec {
   watch?(): unknown;
   // 选中的东西在地图上的样子（画河时选中的河）：沿着它的光，它自己的地名先不标
   focus?: { glow(w: World): Shape[]; hideLabel(w: World): string };
+}
+
+// 屏幕上代替 Shift / Alt 的开关：开关上的字、悬停里的一句
+export interface ModSpec {
+  label: string;
+  title: string;
 }
 
 // 工具做什么（第六十九轮：tools/bind.ts 登记进工具表，工具表不引用 tools/）。

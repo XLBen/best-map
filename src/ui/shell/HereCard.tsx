@@ -2,6 +2,7 @@ import { ChevronDown, ChevronUp, Info, PinOff } from 'lucide-preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { hereOpen, hoverCell, openPanel, pinCell, pinnedCell, sheet, world } from '../../state';
 import { Inspector, hereLine, lastHoverCell } from '../Inspector';
+import { touchUi } from '../touch-ui';
 
 // 右下角“这里”：鼠标下的一行简介，点开是完整的“这里是什么、为什么”
 
@@ -47,7 +48,8 @@ export function HereCard() {
   if (!w || sheet.value) return null;
   const style = right !== null ? { right: `${right}px` } : undefined;
   const cell = lastHoverCell();
-  const line = cell >= 0 && cell < w.mesh.n ? hereLine(w, cell) : '鼠标移到地图上';
+  // 第一百轮：触摸设备上没有鼠标
+  const line = cell >= 0 && cell < w.mesh.n ? hereLine(w, cell) : touchUi() ? '点地图上的一处' : '鼠标移到地图上';
   if (!open) {
     return (
       <button class="here" ref={ref as never} style={style} onClick={() => setOpen(true)} title="为什么是这种生态">

@@ -38,6 +38,7 @@ import { CULTURE_TOOLS } from './culture';
 import { COUNTRY_TOOLS } from './countries';
 import { SETTLEMENT_TOOLS } from './settlements';
 import { INSPECT_TOOLS } from './inspect';
+import { releaseHeld } from '../../touch-ui';
 
 // ---------- 工具 ----------
 // 这里只写工具是什么（图标、名字、滑块、底部条、底图……）；做什么（create、吸管、橡皮擦、Delete）在 tools/bind.ts 接上。
@@ -198,6 +199,8 @@ export function setTool(id: ToolId) {
   clearBarPreview();
   // 换工具就不再量距离
   measure.value = null;
+  // 第一百轮：屏幕上代替 Shift / Alt 的开关（多选、汇入）换工具就关上
+  if (fromTool !== id) releaseHeld();
 }
 registerToolSwitch(setTool);
 

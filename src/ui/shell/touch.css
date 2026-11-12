@@ -1,0 +1,286 @@
+/* 第一百轮：触摸与平板。颜色、字号都取 styles.css 的 token。
+   三部分：
+   1. 浏览器自己的手势不打扰（只对手指起作用的几样；有触摸屏才生效的另放在媒体查询里）；
+   2. 给触摸补的几样东西的样子（只在用过手指 / 笔、或主要的指针是粗的时才画出来：.app.touch-ui）；
+   3. @media (pointer: coarse)：可点的东西至少 44×44，平板上的排法。
+   鼠标（细指针）下的样子不变：第 2、3 部分都不对它生效 */
+
+/* ---------- 1. 浏览器自己的手势 ---------- */
+
+/* 双击放大整页：不要（捏合放大整页还留着——看不清小字的人用得上；地图上的捏合是缩放地图，.map-overlay 是 touch-action: none）。
+   点一下时浏览器盖上去的灰块：不要。这两样只对手指起作用，鼠标下没有区别 */
+.app {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+/* 有触摸屏的设备：下拉刷新、滑到头的回弹带着整页走——不要。页面本身不滚（地图铺满），能滚的只有面板、弹窗，滚到头不带着后面的东西滚 */
+@media (any-pointer: coarse) {
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+  .popover-body,
+  .sheet-body,
+  .here-body,
+  .legend-list,
+  .list,
+  .modal-backdrop,
+  .lib-panel {
+    overscroll-behavior: contain;
+  }
+}
+/* 主要的指针是手指：长按弹出系统菜单、选中界面上的字——不要（输入框、出错的原话照常能选） */
+@media (pointer: coarse) {
+  .app {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .app input,
+  .app textarea,
+  .app [contenteditable='true'],
+  .app .mishap-reason,
+  .app .ask-note {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
+/* ---------- 2. 给触摸补的 ---------- */
+
+/* 看全图：左下角量距离按钮的上面 */
+button.ruler-btn.fit-btn {
+  margin-bottom: calc(var(--h-md) + 6px);
+}
+/* 图例让出那个按钮 */
+.app.touch-ui .legend,
+.app.touch-ui .legend-stack {
+  margin-bottom: calc(var(--h-md) + 6px);
+}
+/* 底部条最下面一行：现在这个工具做什么（手指没有悬停） */
+.bb-how {
+  margin: 0;
+  max-width: 100%;
+  text-align: center;
+}
+/* 只看地图时回来的按钮（鼠标下是一句“按 Tab 显示界面”） */
+button.hidden-show {
+  position: absolute;
+  right: var(--sp-3);
+  bottom: var(--sp-3);
+  background-color: var(--glass);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+}
+/* 屏幕太窄时最上面的一句：在向导、弹窗的上面 */
+.narrow-note {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-3);
+  padding-top: calc(var(--sp-1) + env(safe-area-inset-top, 0px));
+  font-size: var(--fs-sm);
+  color: var(--warn-text);
+  background: var(--warn-bg);
+}
+
+/* ---------- 3. 粗指针（平板）：可点的东西至少 44×44 ---------- */
+
+@media (pointer: coarse) {
+  /* 控件的两档高度都放到 44：按钮、列表行、顶栏、底部条的工具、面板头上的关闭……都是按这两个量定的 */
+  :root {
+    --h-sm: 44px;
+    --h-md: 44px;
+  }
+  /* 写死了更小的几种 */
+  button,
+  .file-button {
+    min-width: 44px;
+  }
+  button.small,
+  select.small,
+  .seg button,
+  button.link-btn,
+  button.label-edit,
+  button.bar-chip {
+    min-height: 44px;
+  }
+  button.small.icon,
+  .popover-head .icon-btn,
+  .here-head .icon-btn {
+    width: 44px;
+    min-height: 44px;
+  }
+  .seg button {
+    padding: 0 var(--sp-3);
+  }
+  /* 框、下拉：高 44 */
+  input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='file']):not([type='range']),
+  select,
+  input.slider-entry {
+    min-height: 44px;
+  }
+  /* 资源库面板里写死了更矮的几种：列表的一行、一段的标题、面包屑、分组的小标题；取色的框 */
+  .lib-panel .lp-row,
+  .lib-panel .lp-row-main,
+  .lp-seg-head,
+  .lp-section-link {
+    min-height: 44px;
+  }
+  .lib-panel .lp-row {
+    contain-intrinsic-size: auto 44px;
+  }
+  .lp-crumb {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  input[type='color'] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* 折叠的一段的标题（“单独导出”） */
+  summary {
+    min-height: 44px;
+    line-height: 44px;
+  }
+  /* 勾选框：点得着的是整行 */
+  label.check,
+  label.inline {
+    min-height: 44px;
+    align-items: center;
+  }
+  label.check input {
+    margin-top: 0;
+    width: 20px;
+    height: 20px;
+  }
+  /* 滑块：能按的那一条高 44（按在这一条上哪里都算），把手画大一些 */
+  .slider {
+    --thumb: 28px;
+  }
+  .slider-track {
+    height: 44px;
+  }
+  .slider-track::before,
+  .slider-fill {
+    top: 20px;
+  }
+  .slider-detent {
+    top: 18px;
+  }
+  .slider-thumb {
+    top: 8px;
+  }
+  /* 滑块右边能点开打字的数 */
+  .slider .slider-value.can-type,
+  .slider.stacked .slider-value.can-type {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* 开关：轨道画大一些 */
+  .toggle-track {
+    width: 40px;
+    height: 24px;
+  }
+  .toggle-knob {
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+  }
+  .toggle.on .toggle-knob {
+    transform: translateX(16px);
+  }
+
+  /* 安全区（刘海、圆角、底下的横条）：贴边的几样让出来。浏览器里平时是 0 */
+  .topbar {
+    top: calc(var(--sp-2) + env(safe-area-inset-top, 0px));
+    left: calc(var(--sp-2) + env(safe-area-inset-left, 0px));
+    right: calc(var(--sp-2) + env(safe-area-inset-right, 0px));
+  }
+  .bottombar {
+    bottom: calc(var(--sp-3) + env(safe-area-inset-bottom, 0px));
+    /* 一排放不下时折行（.bb-row 本来就是 flex-wrap）；再多就自己滚，不伸到屏幕外面 */
+    max-height: calc(100% - var(--top-clear) - var(--sp-4));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .here {
+    right: calc(var(--sp-3) + env(safe-area-inset-right, 0px));
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  /* 底部条高了：资源库面板停在它上面（--bar-clear 是底部条从窗口底边往上占的高，ContextBar 量的；没有底部条时照旧 84） */
+  .lib-panel {
+    bottom: max(84px, var(--bar-clear, 84px));
+  }
+  /* 顶栏的一组放不下一行时自己折行（很窄的屏幕上按钮不伸到外面） */
+  .tb-group {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  /* 左下角：量距离的按钮大了，往左挪一点让出比例尺；图例再往上让 */
+  button.ruler-btn {
+    left: calc(4px + env(safe-area-inset-left, 0px));
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  button.ruler-btn.fit-btn {
+    margin-bottom: calc(var(--h-md) + 6px + env(safe-area-inset-bottom, 0px));
+  }
+  .legend,
+  .legend-stack {
+    left: calc(4px + env(safe-area-inset-left, 0px));
+    margin-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .app.touch-ui .legend,
+  .app.touch-ui .legend-stack {
+    margin-bottom: calc(12px + var(--h-md) + 6px + env(safe-area-inset-bottom, 0px));
+  }
+  button.hidden-show {
+    right: calc(var(--sp-3) + env(safe-area-inset-right, 0px));
+    bottom: calc(var(--sp-3) + env(safe-area-inset-bottom, 0px));
+  }
+  .modal-backdrop {
+    padding-left: max(var(--sp-4), env(safe-area-inset-left, 0px));
+    padding-right: max(var(--sp-4), env(safe-area-inset-right, 0px));
+    padding-bottom: max(30px, env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 粗指针、又不够宽（竖着的平板）：顶栏只剩图标时手指没有悬停可看——字写在图标下面；右下角的“这里”抬到底部条上面 */
+@media (pointer: coarse) and (max-width: 900px) {
+  .tb-btn:not(.icon) {
+    flex-direction: column;
+    gap: 0;
+    min-width: 48px;
+    min-height: 48px;
+    padding: 3px 4px;
+  }
+  .tb-btn:not(.icon) .tb-label {
+    display: block;
+    font-size: var(--fs-xs);
+    line-height: 1.3;
+  }
+  .tb-btn.icon {
+    width: 44px;
+    min-height: 48px;
+  }
+  .tb-chevron {
+    display: none;
+  }
+  .tb-badge .tb-label {
+    display: none;
+  }
+  .here {
+    bottom: max(var(--sp-3), calc(var(--bar-clear, 0px) + var(--sp-1)));
+  }
+}

@@ -22,6 +22,8 @@ export interface Pointer {
   sy: number;
   shift: boolean;
   alt: boolean;
+  // 笔的压力 0–1（第一百轮）：只有用笔、并且开了“笔的压力影响力度”时才有；鼠标、手指没有这一项
+  pressure?: number;
   // 屏幕上这一点画的是哪一格（扭曲后的格、格以下的海岸、剪刀切线两边，与着色器相同，见 core/display.ts）。
   // 悬停卡片、吸取、选省、合并、点地名按它取；画笔、放岛等按 cell 与坐标算
   shown?: DisplayCell;

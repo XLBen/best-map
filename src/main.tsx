@@ -7,6 +7,7 @@ import { App } from './ui/App';
 import { RootGuard } from './ui/shell/Guard';
 import { startToolEffects } from './ui/defs/tools';
 import { startSaveNotes } from './ui/shell/save-note';
+import { startTouchUi } from './ui/touch-ui';
 // 第三批几处的口子（滑块的即时外观、自己写的脚本的信任、出错提示的“编辑”）
 import './ui/connect';
 import './styles.css';
@@ -20,6 +21,7 @@ import './ui/archives/lore.css';
 import './ui/shell/crash.css';
 import './ui/shell/progress.css';
 import './ui/shell/simple.css';
+import './ui/shell/touch.css';
 // 手绘画风的楷体（第八十七轮）：霞鹜文楷（OFL），按 unicode-range 切成 97 个小文件，只下载画到的字所在的那几个；
 // font-display: swap，不挡第一次画。只是 @font-face 的声明，没用到时一个文件都不下载
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css';
@@ -31,6 +33,8 @@ disallowScripts();
 startToolEffects();
 // 自动保存没存成、存储快满了时顶上说一次（第九十四轮）
 startSaveNotes();
+// 第一百轮：是不是在用手指 / 笔（给触摸补的按钮据此露）、屏幕是不是太窄
+startTouchUi();
 
 // 第九十六轮：全局的兜底（boot.ts 已经先接上了 window 的两个事件和整页的自救页）。这里把程序这边的几样接过去
 // （state/mishap.ts：不致命的错从界面顶上说、自救页导出用的页面里现在的世界、出自救页之前马上写一次自动保存）
