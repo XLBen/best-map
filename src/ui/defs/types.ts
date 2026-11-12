@@ -6,6 +6,7 @@ import type { Category, ToolId, ToolOptions, ViewMode } from '../../state';
 import type { CategoryHighlights } from '../map/highlights';
 import type { ToolEnv, ToolHandler } from '../tools';
 import type { PanelKey } from './panel-registry';
+import type { WorldSign } from './simple-ui';
 
 // 界面的注册表：工具、类别、世界调整、图层都在这里声明，
 // 顶栏、底部工具条、调整面板、图层面板、地图上按类画的高亮、光标、换工具时的清理都由它们生成。
@@ -66,6 +67,10 @@ export interface ToolSpec {
   bar?(w: World): BarItem[];
   // 不出现在工具列表里（比如没有自定义场时的“涂自定义场”）；正在用时照样显示
   hidden?(w: World): boolean;
+  // 第九十九轮：只在完整界面里露（省略就是常用）。简单界面里它在这一排末尾的“还有 N 个”里；正拿着它、按了它的数字键时照常露着
+  more?: true;
+  // 写了 more 的工具：世界里已经有它对应的东西时（simple-ui.ts 的 WORLD_SIGNS 的一个键），简单界面里也自己露出来
+  when?: WorldSign;
   // 地图上的光标：点选类的工具是手指，指针是箭头；省略时是十字（styles.css 的 .map-overlay）
   cursor?: 'pointer' | 'default';
   // 开着时底图换成这一层（地形类别、资源），换到别的工具时换回原来的（这期间在图层里换过就不动）。
@@ -145,6 +150,9 @@ export interface AdjustmentDef {
   format(v: number): string;
   // 第九十三轮：点数值打字时这个值写成什么数（省略时就是值本身；河流多少存的是位置，打的是门槛的流量）
   typed?(v: number): string;
+  // 第九十九轮：只在完整界面里露（省略就是常用）；touched：这个世界里它不在默认值上（改过的照常露着）
+  more?: true;
+  touched?(w: World): boolean;
   command(w: World, v: number): Command;
   // 'terrain'：拖动时实时预览陆海变化；'world'：停下后在副本上算出将来的世界（生态、雪、河、风），地图直接画它
   preview?: 'terrain' | 'world';

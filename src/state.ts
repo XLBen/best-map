@@ -67,7 +67,9 @@ export const flowSeason = signal<Season>('annual');
 // peaks（第二十一轮）：全部山峰画成小三角，放大后标名字
 // roads、cities、landmarks（第二十四轮）：道路两种图都画；城市在人文图里画；地标在人文图里全画、地理图里只画自然的（自定义点两种图都画）
 // wind、currents（第四十八轮）：风向、洋流两个独立的开关，任何地图模式上都能叠加；关着时一块不算、一笔不画（见 render/wind-layer.ts）
-export const overlays = signal({ rivers: true, borders: true, labels: true, scale: true, latitude: false, edits: false, peaks: false, roads: true, cities: true, landmarks: true, wind: false, currents: false });
+// 图层里各个开关一打开页面时的样子（第九十九轮：简单界面里不常用的开关不在这个样子上时照常露着，见 ui/defs/simple-ui.ts）
+export const OVERLAY_DEFAULTS = { rivers: true, borders: true, labels: true, scale: true, latitude: false, edits: false, peaks: false, roads: true, cities: true, landmarks: true, wind: false, currents: false };
+export const overlays = signal({ ...OVERLAY_DEFAULTS });
 export const hoverCell = signal<number>(-1);
 // 鼠标下画出来的省按哪一格算（扭曲后的格、剪刀切线旁按显示的那一边，见 core/display.ts）：“这里”的省份一行用它。
 // 与 hoverCell 一起设

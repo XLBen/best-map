@@ -32,6 +32,8 @@ export const SETTLEMENT_TOOLS = {
   },
   point: {
     category: 'settlements',
+    more: true,
+    when: 'points',
     icon: MapPin,
     name: '自定义点',
     short: '点',

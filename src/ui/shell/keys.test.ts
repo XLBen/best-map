@@ -91,3 +91,34 @@ describe('? 键', () => {
     expect(helpOpen.value).toBe(true);
   });
 });
+
+// 第九十九轮：数字键按完整的那一排数。简单界面里藏着的工具按了它的键照样换过去，并且露在那一排上
+describe('数字键（简单界面）', () => {
+  it('地形里按 3 换到岛链（简单界面里它藏着）：换过去了、露出来了；按 1 回到画陆地，它又收回去；按 4 还是堆山', async () => {
+    const { continents } = await import('../../../core/testing/fixtures');
+    const { barTools, setTool } = await import('../defs/tools');
+    const { tool } = await import('../../state');
+    const { fullUi } = await import('../ui-prefs');
+    expect(fullUi()).toBe(false);
+    const w = (world.value = continents().world);
+    try {
+      setTool('land');
+      expect(barTools('terrain', w).shown).toEqual(['land', 'island', 'relief']);
+      key('3');
+      expect(tool.value).toBe('chain');
+      expect(barTools('terrain', w).shown).toEqual(['land', 'island', 'chain', 'relief']);
+      key('4');
+      expect(tool.value).toBe('relief');
+      expect(barTools('terrain', w).shown).toEqual(['land', 'island', 'relief']);
+      key('7');
+      expect(tool.value).toBe('terrainClass');
+      key('1');
+      expect(tool.value).toBe('land');
+      // 没有那么多工具的键不管
+      key('8');
+      expect(tool.value).toBe('land');
+    } finally {
+      setTool('land');
+    }
+  });
+});

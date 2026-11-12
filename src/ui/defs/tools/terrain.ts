@@ -45,6 +45,8 @@ export const TERRAIN_TOOLS = {
   },
   chain: {
     category: 'terrain',
+    more: true,
+    when: 'chains',
     icon: Waypoints,
     name: '画岛链',
     short: '岛链',
@@ -85,6 +87,7 @@ export const TERRAIN_TOOLS = {
   fragment: {
     // 第十八轮：打碎
     category: 'terrain',
+    more: true,
     icon: Hammer,
     name: '打碎',
     short: '打碎',
@@ -104,6 +107,7 @@ export const TERRAIN_TOOLS = {
   },
   reroll: {
     category: 'terrain',
+    more: true,
     icon: Dices,
     name: '重画',
     short: '重画',
@@ -113,6 +117,8 @@ export const TERRAIN_TOOLS = {
   terrainClass: {
     // 第二十一轮：画地形类别；第五十八轮：地面跟着升降到这一类的典型高度，力度 0 只改类别
     category: 'terrain',
+    more: true,
+    when: 'classPainted',
     icon: LandPlot,
     name: '地形类别',
     short: '类别',

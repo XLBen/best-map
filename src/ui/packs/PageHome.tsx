@@ -16,6 +16,9 @@ import { tidyWorld } from './tidy';
 import { mergeIntoMine } from './save-mine-run';
 import { GEN_CARD_NOTE, GEN_TITLE, MERGE_TO_MINE, MERGE_TO_MINE_TIP, SEARCH_LIB, SEARCH_TIP, SEARCH_WORLD, TIDY, TIDY_TIP } from './copy';
 import { genPage, genSummary } from './gen-settings';
+import { ARRANGE_NOTE } from '../copy';
+import { HOME_PLACE, simpleHome } from './home-simple';
+import { RestLine, simpleView } from '../shell/RestLine';
 
 // 首页与“生态与水系”这一层（第五十九轮）：几段，每种内容一张带个数的卡片（数据见 pages.ts 的 homePage）。
 // 第六十轮：我的库里能把一张卡拖到另一张上（融入），上级写的“含 X”能拖出来（拆出来）；卡片的“⋯”做同样的事，没有鼠标时用。
@@ -267,9 +270,13 @@ export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
       </>
     );
   }
+  // 第九十九轮：简单界面里只露常用的几类，别的在最下面的“还有 N 类”里（上面的搜索照常搜得到）；挑选时勾了东西的那一类照常露着
+  const home = simpleHome(p.sections, simpleView(HOME_PLACE), (c) => cardPicks(c, v) > 0);
   return (
     <>
       {search}
+      {/* 第九十九轮：能拖卡片的地方（我的库）写一句“融入”是什么 */}
+      {a && <p class="hint lp-note">{ARRANGE_NOTE}</p>}
       {src.t === 'world' && <GenCard ctx={ctx} />}
       {p.era && <EraCard era={p.era} a={a} v={v} />}
       {p.note && (
@@ -289,7 +296,7 @@ export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
           <span class="lp-count">{clean}</span>
         </button>
       )}
-      {p.sections.map((s) => (
+      {home.sections.map((s) => (
         <section class="lp-section" key={s.id}>
           <h5>{s.title}</h5>
           <div class="lp-cards">
@@ -299,6 +306,9 @@ export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
           </div>
         </section>
       ))}
+      <div class="lp-rest">
+        <RestLine place={HOME_PLACE} hidden={home.hidden.length} foldable={home.foldable} unit="类" names={home.hidden.map((c) => c.title)} />
+      </div>
     </>
   );
 }

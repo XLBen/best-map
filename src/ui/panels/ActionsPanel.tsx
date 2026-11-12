@@ -25,7 +25,8 @@ import { EE_HALF_W } from '../../render/projection';
 import type { World } from '../../../core/world';
 import { exportFullMap, snapshotCanvas } from '../map/export';
 import { HistoryPanel } from '../panels';
-import { BACKUP_TEXT, FILE_TEXT, HELP_KEY_TIP, LIBRARY_NOTE, SAVE_TEXT, VERSION_TEXT } from '../copy';
+import { BACKUP_TEXT, FILE_TEXT, HELP_KEY_TIP, LIBRARY_NOTE, SAVE_TEXT, SIMPLE_TEXT, VERSION_TEXT } from '../copy';
+import { fullUi, setFullUi } from '../ui-prefs';
 import { fileLine, pickFile, reloadSaved, resumeFileHere, saveNote, stopFileHere, takeOverHere } from '../shell/save-note';
 import { openLibrary } from '../packs/panel-store';
 import { fileNameOf } from '../../maps';
@@ -60,7 +61,7 @@ export function WorldMenu() {
       >
         <FilePlus />
         <span class="grow item-text">
-          <b>新世界…</b>
+          <b>新建世界…</b>
           <span class="hint">选类型、大小和位置</span>
         </span>
       </button>
@@ -526,7 +527,7 @@ function ExportSection() {
   );
 }
 
-// “更多”：历史、偏好、帮助（第九十八轮以前叫“上手说明”）
+// “更多”：历史、偏好（滚轮、第九十九轮的“完整界面”）、帮助（第九十八轮以前叫“上手说明”）
 export function MorePanel() {
   return (
     <>
@@ -543,6 +544,13 @@ export function MorePanel() {
           <Seg value={prefs.value.wheel} options={WHEEL} onChange={(v) => setPrefs({ wheel: v })} />
         </div>
         <p class="hint">自动：滚轮缩放，双指滑动平移；认错时选“缩放”或“平移”</p>
+        {/* 第九十九轮：简单界面 / 完整界面。整个应用只有这一个开关（ui-prefs.ts），记在这台机器上 */}
+        <div class="full-ui">
+          <Toggle on={fullUi()} onChange={setFullUi}>
+            {SIMPLE_TEXT.toggle}
+          </Toggle>
+          <p class="hint">{fullUi() ? SIMPLE_TEXT.toggleOn : SIMPLE_TEXT.toggleOff}</p>
+        </div>
       </section>
       <button
         title={HELP_KEY_TIP}

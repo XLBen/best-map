@@ -36,6 +36,7 @@ export const COUNTRY_TOOLS = {
   },
   cmerge: {
     category: 'countries',
+    more: true,
     icon: Merge,
     name: '合并国家',
     short: '合并',

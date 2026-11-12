@@ -24,7 +24,7 @@ const GOV_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
   { key: 'category', more: true, label: '类别', type: 'tags', ref: 'govCategory', hint: '君主制、共和制……；旗的纹章、地标按它挑' },
-  { key: 'factions', more: true, label: '有哪些派系', type: 'tags', optional: true, ref: 'faction', dep: 'auto', hint: '只选有哪些，比重在国家档案里' },
+  { key: 'factions', more: true, label: '有哪些派系', type: 'tags', optional: true, ref: 'faction', dep: 'auto', hint: '只选有哪些，各占多少在国家档案里' },
   { key: 'color', label: '颜色', type: 'color', optional: true },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'titles', label: '国家称号', type: 'title', keyRef: 'countryTier', dep: 'strip', hint: '按等级；没写的用最近的一级' },

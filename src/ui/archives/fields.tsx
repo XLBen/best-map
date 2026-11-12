@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { CountryMeta } from '../../../core/world';
 import { shareText } from '../domain/human';
 import { parseYear } from '../domain/country-lore';
+import { ORIG_NAME } from '../copy';
 
 // 国家档案的几样小部件（第七十轮从 CountryArchive.tsx 分出来）：一行、离开框才提交的字、占比的一行、名字和原文；城市、集团的档案也用
 
@@ -130,8 +131,8 @@ export function NamePair({ name, orig, onCommit, placeholder = '空着恢复自�
       <Line label="名字">
         <input class="grow" value={n} maxLength={40} placeholder={placeholder} onInput={(e) => setN((e.target as HTMLInputElement).value)} onKeyDown={onKey} />
       </Line>
-      <Line label="原文">
-        <input class="grow" value={o} maxLength={80} placeholder="原文" onInput={(e) => setO((e.target as HTMLInputElement).value)} onKeyDown={onKey} />
+      <Line label={ORIG_NAME}>
+        <input class="grow" value={o} maxLength={80} placeholder={ORIG_NAME} onInput={(e) => setO((e.target as HTMLInputElement).value)} onKeyDown={onKey} />
       </Line>
     </div>
   );

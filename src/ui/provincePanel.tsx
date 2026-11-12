@@ -19,7 +19,7 @@ import { TypePicker } from './shell/TypePicker';
 import { defaultStyleName, restyleOffer, styleChoices } from './packs/styles';
 import { clearBarPreview, holdBarPreview, showProvinceCommand, showSplit } from './provincePreview';
 import { provinceMultiCommands } from './province-panel';
-import { PROVINCE_RULES_NOTE, PROVINCE_RULES_TIP } from './copy';
+import { ORIG_NAME, PROVINCE_RULES_NOTE, PROVINCE_RULES_TIP } from './copy';
 import { openProvinceRules } from './packs/open-province';
 import { openGenSettings } from './packs/open-era';
 import { GEN_OPEN_TIP, GEN_TITLE } from './packs/copy';
@@ -95,7 +95,7 @@ function ProvinceName({ id, name, orig }: { id: number; name: string; orig: stri
       }}
     >
       <input class="bar-input" value={n} onInput={(e) => setN((e.target as HTMLInputElement).value)} onKeyDown={onKey} />
-      <input class="bar-input label-input" value={o} placeholder="原文" maxLength={80} onInput={(e) => setO((e.target as HTMLInputElement).value)} onKeyDown={onKey} />
+      <input class="bar-input label-input" value={o} placeholder={ORIG_NAME} maxLength={80} onInput={(e) => setO((e.target as HTMLInputElement).value)} onKeyDown={onKey} />
     </span>
   );
 }

@@ -23,7 +23,7 @@ export const CULTURE_TOOLS = {
         kind: 'choice',
         key: 'cultureMode',
         options: [
-          { value: 'keep', label: '只换文化', hint: '宗教等别的维度不变' },
+          { value: 'keep', label: '只换文化', hint: '宗教等别的变量不变' },
           { value: 'typical', label: '连同倾向', hint: '换成这个文化最常见的一群人' },
         ],
       },
@@ -56,7 +56,7 @@ export const CULTURE_TOOLS = {
         options: [
           { value: 'share', label: '改成分', hint: '这群人的占比升降，人数不变；力度为负或 Shift 减少' },
           { value: 'count', label: '改人数', hint: '人数增减；Shift 反过来' },
-          { value: 'value', label: '改一个维度', hint: '改宗、传教：只改这一维；力度为负或 Shift 减少' },
+          { value: 'value', label: '改一个变量', hint: '改宗、传教：只改这一个变量；力度为负或 Shift 减少' },
         ],
       },
       { kind: 'custom', panel: 'PopTuplePick' },
@@ -69,6 +69,8 @@ export const CULTURE_TOOLS = {
   hearth: {
     // 发源地：拖动，人文重新生成
     category: 'culture',
+    more: true,
+    when: 'hearthMoved',
     icon: Flag,
     name: '发源地',
     short: '发源地',

@@ -179,7 +179,7 @@ export function ValueMenu() {
   if (!w) return null;
   const dims = worldDimensions(w.small);
   const cur = chosenValue(w);
-  if (!dims.length || !cur) return <p class="hint">这个时代没有别的维度</p>;
+  if (!dims.length || !cur) return <p class="hint">这个时代没有别的变量</p>;
   return (
     <>
       {dims.length > 1 && dims.length <= 3 && (

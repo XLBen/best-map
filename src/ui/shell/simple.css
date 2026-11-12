@@ -1,0 +1,78 @@
+/* 第九十九轮：简单界面 / 完整界面，帮助的搜索。颜色、字号都取 styles.css 的 token */
+
+/* 底部条上工具那一排末尾的“还有 N 个”/“只留常用的”：和工具同一种按钮，字淡一些 */
+.bb-tool.bb-rest {
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.bb-tool.bb-rest:hover:not(:disabled) {
+  color: var(--text);
+}
+
+/* 面板里的那一行：“还有 N 种底图”；展开着时是“只留常用的”和一句怎么一直露着 */
+button.link-btn.rest-line {
+  display: block;
+  margin: var(--sp-2) 0;
+}
+p.rest-line.open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-2);
+  margin: var(--sp-2) 0 0;
+}
+/* 资源库首页最下面 */
+.lp-rest {
+  margin-top: var(--sp-3);
+}
+.lp-rest:empty {
+  display: none;
+}
+
+/* “更多 → 偏好”里的开关 */
+.full-ui {
+  margin: var(--sp-2) 0;
+}
+.full-ui .hint {
+  margin: 2px 0 0;
+}
+
+/* 帮助：搜索框一直在标题下面；“现在这个工具”是一块淡淡的底 */
+.help-search {
+  display: flex;
+  margin: var(--sp-2) 0 var(--sp-1);
+}
+.help-search input {
+  flex: 1;
+  min-width: 0;
+}
+.help-now {
+  margin: var(--sp-2) 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--fill);
+  border-radius: var(--r-md);
+}
+.help-now-title {
+  margin: 0 0 2px;
+}
+.help-now ul,
+.help-hits ul {
+  margin: var(--sp-1) 0 0;
+  padding-left: 18px;
+}
+.help-now li,
+.help-hits li {
+  margin: 2px 0;
+}
+.help-now .help-tool {
+  margin: 0;
+}
+.help-hits .help-where {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.help-none {
+  margin: var(--sp-3) 0;
+}

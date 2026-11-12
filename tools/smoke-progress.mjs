@@ -32,7 +32,7 @@ export async function progressSteps({ cdp, q, origin, check, sleep, stroke, coun
   const names = (seen) => [...new Set(seen.map((s) => s.text))];
   const rising = (seen) => seen.every((s, k) => k === 0 || s.width >= seen[k - 1].width);
   const openWizard = async () => {
-    await q.eval(clickMenuItem('新世界…'));
+    await q.eval(clickMenuItem('新建世界…'));
     // 有没存进“我的地图”的改动时先问一句：不保存
     await sleep(400);
     if (await q.eval(ASK)) await q.eval(`[...document.querySelectorAll('.modal.ask .ask-actions button')].find((x) => x.textContent === '不保存').click()`);

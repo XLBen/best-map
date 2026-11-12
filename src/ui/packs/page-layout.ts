@@ -13,6 +13,10 @@ export const HOME_LAYOUT: readonly { id: string; title: string; cards: readonly 
   { id: 'look', title: '外观', cards: ['mapStyle'] },
 ];
 
+// 第九十九轮：只在完整界面里露的卡片（没列的就是常用）。简单界面里它们在首页最下面的“还有 N 类”里（点了只在首页展开）；
+// 搜索、地图上点到的东西直达、别的页面的链接照常找得到它们。算法在 home-simple.ts，整张表钉在 src/ui/simple-ui.test.ts
+export const HOME_MORE_CARDS: readonly CardDef[] = ['valueGroup', 'variables', 'faction', 'countryTier', 'countryPattern', 'cityRank', 'pointType', 'planetForm', 'terrainClass', 'resource', 'provinceRules'];
+
 // 第九十二轮：这张地图的首页上，融入了上级的这几种也留着自己的卡片（上级照旧写“含……”）：文化是最常找的，
 // 不该先想起它在哪个文化组里。库的首页不变（库的安排是库自己的）；登记表、融入的安排都没动
 export const WORLD_OWN_CARDS: readonly string[] = ['culture'];

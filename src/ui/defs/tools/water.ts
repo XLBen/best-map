@@ -43,6 +43,8 @@ export const WATER_TOOLS = {
   },
   unwater: {
     category: 'water',
+    more: true,
+    when: 'drawnWater',
     icon: Trash2,
     name: '删除河湖',
     short: '删河湖',

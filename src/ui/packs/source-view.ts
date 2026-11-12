@@ -15,7 +15,7 @@ export interface EditingLine {
   head: string;
   // “这张地图”“我的库“X””“中世纪与近世”
   name: string;
-  // 括号里的一句：“新地图会用”
+  // 括号里的一句：“新世界会用”
   note?: string;
 }
 

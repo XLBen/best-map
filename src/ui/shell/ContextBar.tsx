@@ -1,17 +1,20 @@
-import { Ellipsis, Eraser, Pipette, Ruler } from 'lucide-preact';
+import { ChevronsLeft, ChevronsRight, Ellipsis, Eraser, Pipette, Ruler } from 'lucide-preact';
 import { roundKm } from '../../../core/terrain';
 import type { World } from '../../../core/world';
 import { type PanelId, erasing, measure, openPanel, options, picking, setOptions, togglePanel, tool, world } from '../../state';
 import { panelOf } from '../defs/panel-registry';
-import { CATEGORY_DEFS, TOOL_DEFS, category, eraserModes, setTool, toolsOf } from '../defs/tools';
+import { CATEGORY_DEFS, TOOL_DEFS, barTools, category, eraserModes, setTool, toolKey, toolsPlace } from '../defs/tools';
 import { BRUSH } from '../defs/tool-sliders';
 import type { BarItem, SliderDef } from '../defs/types';
 import { pathKm } from '../tools';
 import { Seg } from '../common';
+import { SIMPLE_TEXT } from '../copy';
+import { setRestOpen } from '../ui-prefs';
 import { OptionSlider } from './OptionSlider';
 import { bottomBarRef } from './bottom-bar';
 
-// 底部条：上一行是这一类的全部工具（点一下就换，末尾“⋯”是这一类的设置；工具做什么写在工具按钮的悬停里），
+// 底部条：上一行是这一类的工具（点一下就换，末尾“⋯”是这一类的设置；工具做什么写在工具按钮的悬停里；
+// 第九十九轮：简单界面里只露常用的，末尾“还有 N 个”，见 defs/simple-ui.ts），
 // 下一行是当前工具的设置——带名字、数值一直显示的滑块，和模式选择。用不上的滑块不显示
 
 function Item({ item }: { item: BarItem }) {
@@ -132,6 +135,7 @@ export function ContextBar() {
   const sliders = erase ? [BRUSH] : [def.size, def.amount].filter((s): s is SliderDef => !!s && s.enabled?.(w) !== false);
   const items = erase ? [] : (def.bar?.(w) ?? []);
   const more: PanelId = `cat:${c}`;
+  const bar = barTools(c, w);
   // 指针（第二十五轮）没有底部条（量距离时照旧显示量出来的数）
   if (c === 'inspect')
     return measure.value ? (
@@ -142,16 +146,31 @@ export function ContextBar() {
   return (
     <div class="bottombar" ref={bottomBarRef}>
       <div class="bb-row bb-tools">
-        {toolsOf(c, w).map((id, k) => {
+        {bar.shown.map((id) => {
           const t = TOOL_DEFS[id];
           const I = t.icon;
+          // 括号里是它的数字键：按完整的那一排数，简单界面里藏了几个也不换位
+          const k = toolKey(id, w);
           return (
-            <button class={`bb-tool ${tool.value === id ? 'on' : ''}`} onClick={() => setTool(id)} title={`${t.name}：${t.how}（${k + 1}）`}>
+            <button class={`bb-tool ${tool.value === id ? 'on' : ''}`} data-tool={id} onClick={() => setTool(id)} title={`${t.name}：${t.how}${k ? `（${k}）` : ''}`}>
               <I />
               <span>{t.short}</span>
             </button>
           );
         })}
+        {/* 第九十九轮：简单界面里这一类还有几个工具没露着。点了只在这一排展开；展开着时换成“只留常用的” */}
+        {bar.hidden.length > 0 && (
+          <button class="bb-tool bb-rest" data-rest={bar.hidden.length} onClick={() => setRestOpen(toolsPlace(c), true)} title={SIMPLE_TEXT.restTip(bar.hidden.map((id) => TOOL_DEFS[id].name))}>
+            <ChevronsRight />
+            <span>{SIMPLE_TEXT.restShort(bar.hidden.length)}</span>
+          </button>
+        )}
+        {bar.foldable > 0 && (
+          <button class="bb-tool bb-rest open" onClick={() => setRestOpen(toolsPlace(c), false)} title={SIMPLE_TEXT.always}>
+            <ChevronsLeft />
+            <span>{SIMPLE_TEXT.fold}</span>
+          </button>
+        )}
         {cat.extras && (
           <button class={`bb-tool more ${openPanel.value === more ? 'open' : ''}`} data-panel={more} onClick={() => togglePanel(more)} title={`${cat.label}设置`}>
             <Ellipsis />

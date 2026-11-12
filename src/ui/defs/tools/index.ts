@@ -5,6 +5,7 @@ import type { World } from '../../../../core/world';
 import {
   type Category,
   type ViewMode,
+  commandsNow,
   selectedCountry,
   selectedSettle,
   cursorHint,
@@ -22,6 +23,8 @@ import {
   world,
 } from '../../../state';
 import { clearBarPreview } from '../../barPreview';
+import { fullUi, restOpen } from '../../ui-prefs';
+import { type Split, shownTools, signsOf } from '../simple-ui';
 import { failingHighlights, featureHighlights, provinceHighlights } from '../../map/highlights';
 import type { CategoryDef, ToolBehavior, ToolDef, ToolSpec } from '../types';
 import type { ToolEnv, ToolHandler } from '../../tools';
@@ -117,6 +120,32 @@ export const category = computed<Category>(() => TOOL_DEFS[tool.value].category)
 export function toolsOf(c: Category, w: World | null): ToolId[] {
   return CATEGORY_DEFS[c].tools.filter((id) => id === tool.value || !w || !TOOL_DEFS[id].hidden?.(w));
 }
+
+// ---------- 简单界面（第九十九轮，规则在 simple-ui.ts） ----------
+
+// 一类工具“还有 N 个”展开着没有，记在 ui-prefs.ts 的这个名字下
+export const toolsPlace = (c: Category) => `tools:${c}`;
+
+// 这个世界里已经有什么（省份、自定义场、画的河……）：写了 when 的工具、图层凭它自己露出来
+export const worldHas = (w: World | null) => signsOf(w, commandsNow);
+
+// 底部条上这一类现在露哪些工具：简单界面里只露常用的、世界里已经有它的东西的、正拿着的；
+// hidden 是这一排末尾“还有 N 个”里的。完整界面、点过“还有 N 个”时都露着。先后不变
+export function barTools(c: Category, w: World | null): Split<ToolId> {
+  return shownTools(toolsOf(c, w), (id) => TOOL_DEFS[id], { full: fullUi(), open: restOpen(toolsPlace(c)) }, worldHas(w), tool.value);
+}
+
+// 数字键对应的工具：这一类在这个世界里的全部工具（工具表里的先后）。不因为简单界面藏了几个、正拿着哪个而换位——
+// 同一个世界里一个键永远是同一个工具；藏着的工具按了它的键照样换过去（正拿着的总露着）。
+// 世界里用不上的不占键（没有自定义场时的“涂自定义场”、只从生态编辑器进的“选生态的范围”）
+export function keyTools(c: Category, w: World | null): ToolId[] {
+  return CATEGORY_DEFS[c].tools.filter((id) => {
+    const hidden = TOOL_DEFS[id].hidden;
+    return !hidden || (!!w && !hidden(w));
+  });
+}
+// 这个工具是数字几（没有键的 0）
+export const toolKey = (id: ToolId, w: World | null): number => keyTools(TOOL_DEFS[id].category, w).indexOf(id) + 1;
 
 // 地图跟着重画的状态：所有工具、类别声明的（不管开着的是哪个）
 export function watchTools() {

@@ -83,7 +83,7 @@ const WATER_FIELDS: readonly FieldDesc[] = [
   { key: 'name', label: '名字', type: 'text' },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'atlasColor', label: '另一种颜色', type: 'color', optional: true, more: true, hint: '地图册画风用；空着同颜色' },
-  { key: 'natural', label: '自然生成', type: 'bool', optional: true, default: true },
+  { key: 'natural', label: '自然生成', type: 'bool', optional: true, default: true, hint: '关掉后只用在画的、选了它的上面' },
   { key: 'biomes', label: '只在这些生态里', type: 'tags', optional: true, ref: 'biome', dep: 'auto' },
   whenField(WHEN_KEYS),
   {
@@ -143,7 +143,7 @@ registerKind<Species>({
     // 第七十一轮：以前叫“地形类别”，和地形类别那一层（平原、丘陵……）撞名；选项写中文，存的是 id
     { key: 'terrain', label: '导出用的地形', type: 'enum', more: true, options: BIOME_TERRAINS.map((t) => ({ value: t.id, label: t.label })), hint: '导出的地形图按它着色' },
     { key: 'competition', label: '强弱', type: 'number', ...COMPETITION, hint: '都能长时强的占上风' },
-    { key: 'natural', label: '自然生成', type: 'bool', optional: true, default: true },
+    { key: 'natural', label: '自然生成', type: 'bool', optional: true, default: true, hint: '关掉后只用在画的、选了它的上面' },
     { key: 'habitability', label: '宜居度', type: 'number', optional: true, more: true, min: 0, max: 1, step: 0.05, hint: '0–1；空着时按气候估' },
     { key: 'movement', label: '通行难度', type: 'number', optional: true, more: true, min: 0.1, max: 20, step: 0.05, hint: '草原为 1；空着时按生态估' },
     { key: 'height', label: '高度范围', type: 'range', optional: true, ...HEIGHT_RANGE, hint: '海拔；空着时不看高度' },

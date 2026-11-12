@@ -14,7 +14,7 @@ import { CityGlyph } from './panels/settlements';
 import { selectSettle } from './tools/settlements';
 import { iconOf } from '../render/settle-draw';
 import { cityIconOf } from './domain/settlements';
-import { IN_LIBRARY_TITLE } from './copy';
+import { IN_LIBRARY_TITLE, ORIG_NAME } from './copy';
 import { cellTargets } from './packs/open-item';
 import { LibItemLines } from './shell/LibItemLine';
 
@@ -379,7 +379,7 @@ function Editable({ a, w }: { a: CellArchive; w: World }) {
           class="arch-orig"
           value={orig}
           maxLength={80}
-          placeholder="原文"
+          placeholder={ORIG_NAME}
           onInput={(e) => setOrig((e.target as HTMLInputElement).value)}
           onKeyDown={keys(() => setOrig(a.orig ?? ''))}
           onBlur={() => (orig.trim() !== (a.orig ?? '') ? commitName() : undefined)}

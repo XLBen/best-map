@@ -67,6 +67,48 @@ export const CLIMATE_BELT_NOTE = '越往极地越冷；地图本身跨几个气�
 // 帮助（第九十八轮）：按 ? 开关；向导上、“更多”里的按钮悬停都写这一句
 export const HELP_KEY_TIP = '怎么开始、各类工具、按键（按 ? 开关）';
 
+// 名字的外文写法（第八十一轮定的叫法是“外文名”，资源库里早就这样叫；第九十九轮：档案、底部条、图层里的“原文”也改成它）
+export const ORIG_NAME = '外文名';
+// 图层里地名显示哪一种（core/name-display.ts 的三种；界面上的字在这里）
+export const NAME_MODE_LABELS = { zh: '中文', orig: '外文名', both: '两者' } as const;
+export const NAME_MODE_TIP = '没有外文名的照旧写中文';
+
+// 第九十九轮：术语在它出现的地方写一行人话（不放在悬停里）。同一个词各处用同一句
+// 自定义场：“调整”里的那一段、“图层”里看着一个场时
+export const FIELD_NOTE = '自己起名的一层数值，如“魔力”“文明度”';
+
+// 安全模式：顶上那一条
+export const SAFE_MODE_TEXT = '安全模式：这个世界里的脚本这次没有运行，别的照常';
+// 锁定：档案里开关下面的一行（底部条上的锁定放不下一行，照旧在悬停里）
+export const LOCK_NOTES = {
+  country: '重新生成国家时，它的领土、档案都不动',
+  city: '重新生成城市时留着它',
+  landmark: '重新生成地标时留着它',
+} as const;
+// 时代：新建向导里选库的那一段
+export const ERA_NOTE = '库定这个世界的时代（人口、国家怎么生成的一套规则）、文化和政体';
+// 融入：我的库的首页（只有那里能拖卡片）
+export const ARRANGE_NOTE = '融入：把一类收进另一类的页面里，比如文化收进文化组。拖卡片，或点卡片上的“⋯”';
+// 脚本：生态“更多设置”里的那一段
+export const SCRIPT_NOTE = '脚本是几行 JavaScript：自己定它长在哪里、什么颜色。不会写可以不管';
+
+// 第九十九轮：简单界面 / 完整界面（一个开关，在“更多 → 偏好”；偏好在 ui-prefs.ts）。藏了东西的地方末尾都是同一句“还有 N 个”，
+// 点了只在这一处展开，再点“只留常用的”收回
+export const SIMPLE_TEXT = {
+  toggle: '完整界面',
+  toggleOn: '全部工具、底图和设置都露着',
+  toggleOff: '只露常用的工具、底图和设置；别的在各处末尾的“还有 N 个”里',
+  // 一排末尾的入口：unit 是“个工具”“种底图”这样的量词加名词
+  rest: (n: number, unit: string) => `还有 ${n} ${unit}`,
+  // 底部条上工具按钮那么窄的地方
+  restShort: (n: number) => `还有 ${n} 个`,
+  fold: '只留常用的',
+  // 入口的悬停：藏着的是哪几个、怎么一直露着
+  restTip: (names: readonly string[]) => `${names.join('、')}。点了都露出来；想一直露着：更多 → 偏好 → 完整界面`,
+  // 展开以后那一处下面的一行
+  always: '想一直露着：更多 → 偏好 → 完整界面',
+} as const;
+
 // 各处“重新生成”留着什么（第九十八轮：写在按钮下面，同一件事只写一处）。会换掉手改的东西时另问一次（domain/regen-ask.ts）
 export const REGEN_KEEPS = {
   human: '手改过的格、拖过的发源地、国家的领土不动',
@@ -80,7 +122,7 @@ export const ADD_DIMENSION_NOTE = '文化、国家、城市都不会变。想让
 // 总表上写了规则（脚本）的河湖：规则说是的里面再看这张表
 export const SCRIPT_RIVER_NOTE = '带“规则”的先看规则，规则说是的再按这里的勾一格一格看';
 // 不自然生成的河湖
-export const WATER_MANUAL_NOTE = '不自然生成：勾了也不会自己出现，只用在画的、选了它的上面';
+export const WATER_MANUAL_NOTE = '没开“自然生成”：这里的勾只管画的、选了它的河湖';
 
 // 地貌的季节和风的季节是两个
 export const SEASON_NOTE = '只改雪和植被的样子。风向有自己的季节，在左下角的图例里';
@@ -109,7 +151,7 @@ export const ARCHIVE_TEXT = {
   parent: '父母',
   noParent: '没写',
   title: '称号',
-  orig: '原文',
+  orig: ORIG_NAME,
   reign: '在位',
   now: '至今',
   earlier: '往前',

@@ -1,5 +1,5 @@
 import { beltsIn, latText } from '../../../core/presets';
-import type { Planet, World } from '../../../core/world';
+import { type Planet, type World, planetSchema } from '../../../core/world';
 import type { AdjustmentDef } from './types';
 import { CLIMATE_BELT_NOTE } from '../copy';
 
@@ -9,6 +9,9 @@ import { CLIMATE_BELT_NOTE } from '../copy';
 
 const level = (v: number, words: [string, string, string, string]) => (v < 0.25 ? words[0] : v < 0.5 ? words[1] : v < 0.8 ? words[2] : words[3]);
 
+// 星球参数的默认值：不在默认值上的一项，简单界面里也露着（第九十九轮）
+const PLANET0: Planet = planetSchema.parse({});
+
 function planet(key: keyof Planet, label: string, hint: string, range: [number, number], step: number, format: (v: number) => string, scale: 'log' | 'linear' = 'linear'): AdjustmentDef {
   return {
     id: key,
@@ -17,6 +20,7 @@ function planet(key: keyof Planet, label: string, hint: string, range: [number, 
     hint,
     available: () => true,
     read: (w) => Number(w.small.planet[key]),
+    touched: (w) => w.small.planet[key] !== PLANET0[key],
     range,
     scale,
     step,
@@ -66,8 +70,8 @@ export const ADJUSTMENTS: AdjustmentDef[] = [
   LATITUDE,
   planet('solar', '整体冷暖', '太阳亮度，整个世界更热或更冷', [0.7, 1.3], 0.01, (v) => `${v < 0.97 ? '偏冷' : v > 1.03 ? '偏热' : '和地球差不多'}（×${v.toFixed(2)}）`),
   planet('humidity', '整体干湿', '整个世界的水汽更多或更少', [0.2, 3], 0.05, (v) => `${v < 0.8 ? '偏干' : v > 1.25 ? '偏湿' : '适中'}（×${v.toFixed(2)}）`, 'log'),
-  planet('tilt', '四季分明', '轴倾角越大，冬夏差别越大', [0, 60], 0.5, (v) => `轴倾角 ${v.toFixed(1)}°`),
-  planet('lapse', '越高越冷', '山上比山下冷多少', [2, 10], 0.1, (v) => `每升高 1 km 冷 ${v.toFixed(1)} °C`),
+  { ...planet('tilt', '四季分明', '轴倾角越大，冬夏差别越大', [0, 60], 0.5, (v) => `轴倾角 ${v.toFixed(1)}°`), more: true },
+  { ...planet('lapse', '越高越冷', '山上比山下冷多少', [2, 10], 0.1, (v) => `每升高 1 km 冷 ${v.toFixed(1)} °C`), more: true },
   {
     ...planet('riverThreshold', '河流多少', '往右河越多', [0, 1], 0.01, (p) => `${level(p, ['很少', '较少', '较多', '很多'])} · ≥ ${riverThr(p)} m³/s`),
     read: (w: World) => riverPos(w.small.planet.riverThreshold),
@@ -78,13 +82,33 @@ export const ADJUSTMENTS: AdjustmentDef[] = [
   {
     // 第四十六轮：一块地区也有洋流
     ...planet('currents', '洋流强弱', '洋流对沿海冷暖干湿的影响', [0, 2], 0.05, (v) => (v === 0 ? '没有洋流' : `${v < 0.7 ? '偏弱' : v > 1.3 ? '偏强' : '和地球差不多'}（×${v.toFixed(2)}）`)),
+    more: true,
   },
-  planet('terrainWind', '山挡风', '高山挡风，背风坡风小雨少', [0, 2], 0.05, (v) => (v === 0 ? '不挡' : `${v < 0.7 ? '偏弱' : v > 1.3 ? '偏强' : '和地球差不多'}（×${v.toFixed(2)}）`)),
-  planet('vegSharpness', '生态边界', '小则混交过渡，大则边界分明', [0.5, 12], 0.5, (v) => (v < 3 ? `柔和（${v}）` : v < 7 ? `适中（${v}）` : `分明（${v}）`)),
+  { ...planet('terrainWind', '山挡风', '高山挡风，背风坡风小雨少', [0, 2], 0.05, (v) => (v === 0 ? '不挡' : `${v < 0.7 ? '偏弱' : v > 1.3 ? '偏强' : '和地球差不多'}（×${v.toFixed(2)}）`)), more: true },
+  { ...planet('vegSharpness', '生态边界', '小则混交过渡，大则边界分明', [0.5, 12], 0.5, (v) => (v < 3 ? `柔和（${v}）` : v < 7 ? `适中（${v}）` : `分明（${v}）`)), more: true },
 ];
 
-// 两个开关（整个星球没有“地图外面”）
-export const PLANET_TOGGLES: { key: 'rotation' | 'outsideOcean'; label: string; hint?: string; read: (w: World) => boolean; patch: (on: boolean) => Partial<Planet>; hidden?: (w: World) => boolean }[] = [
-  { key: 'rotation', label: '反向自转', hint: '信风变成西风', read: (w) => w.small.planet.rotation === -1, patch: (on) => ({ rotation: on ? -1 : 1 }) },
-  { key: 'outsideOcean', label: '地图外面是海', hint: '从图边吹来的风带着水汽', read: (w) => w.small.planet.outsideOcean, patch: (on) => ({ outsideOcean: on }), hidden: (w) => !!w.settings.globe },
+// 两个开关（整个星球没有“地图外面”）。第九十九轮：都只在完整界面里露；不在默认值上的照常露着
+export interface PlanetToggle {
+  key: 'rotation' | 'outsideOcean';
+  label: string;
+  hint?: string;
+  read: (w: World) => boolean;
+  patch: (on: boolean) => Partial<Planet>;
+  hidden?: (w: World) => boolean;
+  more?: true;
+  touched(w: World): boolean;
+}
+export const PLANET_TOGGLES: PlanetToggle[] = [
+  { key: 'rotation', label: '反向自转', hint: '信风变成西风', read: (w) => w.small.planet.rotation === -1, patch: (on) => ({ rotation: on ? -1 : 1 }), more: true, touched: (w) => w.small.planet.rotation !== PLANET0.rotation },
+  {
+    key: 'outsideOcean',
+    label: '地图外面是海',
+    hint: '从图边吹来的风带着水汽',
+    read: (w) => w.small.planet.outsideOcean,
+    patch: (on) => ({ outsideOcean: on }),
+    hidden: (w) => !!w.settings.globe,
+    more: true,
+    touched: (w) => w.small.planet.outsideOcean !== PLANET0.outsideOcean,
+  },
 ];

@@ -2,7 +2,7 @@
 //   node tools/smoke.mjs [--chrome <Chrome 的路径>] [--keep] [--show] [--shots <目录>]
 //     --keep：留下临时目录（Chrome 的用户目录）；--show：不用无头，看着它跑；
 //     --shots：把几处界面截成图存进那个目录（第二个页面顶上的那一条、“世界”菜单的第一行），给人看排版
-//     --only 12 / --only 13：新建以后直接走第十二段 / 第十三段（改那一段时用，约一两分钟；交差要跑全的）
+//     --only 12 / --only 13 / --only 14：新建以后直接走第十二段 / 第十三段 / 第十四段（改那一段时用，约一两分钟；交差要跑全的）
 //   要先打包（npm run build）：用的是 dist/。不进 vitest（要 Chrome）。
 //   做法：自己起一个只绑 127.0.0.1、随机空闲端口的静态服务器（跑完就关；不碰 5191 / 5196），Chrome 开在一个临时的用户目录里，
 //   经调试端口（WebSocket，Node 自带的）点页面、拖鼠标、读浏览器里存的自动保存。
@@ -47,6 +47,11 @@
 //        点一张 → 世界生成；再开向导、展开“自定义…”、什么都不改、点同一张 → 逐字节相同；在输入框里打 ? 不开帮助；
 //        “文化 ⋯ → 重新生成”没有手改时不问就做；用人口笔刷手改几格后：只重新生成人文（留着手改的格）不问，换一个库重新生成
 //        （不留）问、数对、点“先不”世界不变；“删除人文”的问话里写着国家、城市、道路的个数。
+//   第九十九轮加的（接在后面，写在 tools/smoke-simple.mjs）：简单界面与帮助。另开一个存储是空的浏览器环境：
+//    14. 一打开是简单界面（数得出每一类露着几个工具，藏着的那几排末尾有“还有 N 个”）；藏着的工具按它的数字键能用、露出来；
+//        “还有 N 个”只展开这一排；“图层”“调整”里也只露常用的；打开一份没划分过省份的世界文件 → 省份只露“选择”，
+//        点“划分省份”→ 画笔、剪刀自己露出来；“更多 → 偏好 → 完整界面”打开后全都在，刷新后还记着；
+//        帮助最上面是现在这个工具，搜得到、没搜到时说一句，在搜索框里打 ? 不关帮助；向导里“回到缩略图”不挪动向导。
 //   退出码：有没过的 1
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -56,6 +61,7 @@ import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { progressSteps } from './smoke-progress.mjs';
 import { safetySteps } from './smoke-safety.mjs';
+import { simpleSteps } from './smoke-simple.mjs';
 import { startSteps } from './smoke-start.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -374,6 +380,11 @@ try {
     console.log(`${failed ? `没过 ${failed} 项` : '都通过'}（只走了第 1、13 段，${((Date.now() - t0) / 1000).toFixed(0)} 秒）`);
     throw DONE;
   }
+  if (only === '14') {
+    await simpleSteps({ cdp, Page, origin, check, sleep, READY, HEAD, ASK, clickMenuItem, tmp: profile });
+    console.log(`${failed ? `没过 ${failed} 项` : '都通过'}（只走了第 1、14 段，${((Date.now() - t0) / 1000).toFixed(0)} 秒）`);
+    throw DONE;
+  }
 
   console.log('2. 画一笔 → 等自动保存 → 刷新');
   await stroke(p, 0.5);
@@ -659,6 +670,8 @@ try {
   check(q.errors.length === before12, '第十二段：页面里没有没接住的错', q.errors.slice(before12, before12 + 3).join('；'));
   // ---------- 第九十八轮 ----------
   await startSteps({ cdp, Page, origin, check, sleep, READY, HEAD, ASK, clickMenuItem });
+  // ---------- 第九十九轮 ----------
+  await simpleSteps({ cdp, Page, origin, check, sleep, READY, HEAD, ASK, clickMenuItem, tmp: profile });
   console.log(`${failed ? `没过 ${failed} 项` : '都通过'}（${((Date.now() - t0) / 1000).toFixed(0)} 秒）`);
 } catch (e) {
   if (e !== DONE) {

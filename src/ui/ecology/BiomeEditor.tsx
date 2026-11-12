@@ -52,7 +52,7 @@ export interface BiomeEditorProps {
 
 export function BiomeEditor({ sp, src, ctx, onSelect }: BiomeEditorProps) {
   const t = biomeTarget(src, ctx);
-  // 第九十轮：顶上写改了什么时候用上（本世界“即时”，我的库“只影响新地图”，只读的不写；timing.ts）
+  // 第九十轮：顶上写改了什么时候用上（本世界“即时”，我的库“只影响新世界”，只读的不写；timing.ts）
   const timing = t.readonly ? null : kindTiming(sourceKind(src, ctx), 'biome');
   const w = world.value;
   const inWorld = !!w?.small.species.some((s) => s.id === sp.id);

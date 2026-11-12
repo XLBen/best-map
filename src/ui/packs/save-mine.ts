@@ -12,10 +12,10 @@ import { hasEra, isLibrary } from '../domain/packChoice';
 // 存到我的库（第九十二轮）：一个动作、一种文字、一个去向。
 //
 // 以前有三个“存到我的库”，去向各不一样：一项和来源的库不同时“存回”来源的库（只读的先复制）；自己新建的一项存进“我的资源”
-// （没有时代，新建地图时选不到——存进去就再也用不上）；“⋯”里的是挑几样做成另一个包。现在都存进同一个库：
-// **我的库**——一个带时代、带世界底子的库，新建地图的向导里选得到（domain/packChoice.ts 的 isLibrary(…, true)）。
+// （没有时代，新建世界时选不到——存进去就再也用不上）；“⋯”里的是挑几样做成另一个包。现在都存进同一个库：
+// **我的库**——一个带时代、带世界底子的库，新建世界的向导里选得到（domain/packChoice.ts 的 isLibrary(…, true)）。
 //
-//   去向（myLibraryOf）：这张地图用的库就是我的库时是它；不然是上次存进去的那个；不然是第一个新建地图时选得到的我的库；
+//   去向（myLibraryOf）：这张地图用的库就是我的库时是它；不然是上次存进去的那个；不然是第一个新建世界时选得到的我的库；
 //   一个都没有时（copyBaseOf）把这张地图用的库复制一份叫“我的库”（内置的库只读，复制出来的才能改；这张地图用的库不在了时复制默认的库）。
 //   怎么存（savePlan）：这一项是从这个库来的（或这个库里有同 id 的一项）就换掉库里的那一份（id、引用换回库里的写法，
 //   core/packs/source-diff.ts 的 savedBackItem）；库里没有的新加，它写到的、库里没有的内容一起带上（导入的闭包，
@@ -27,7 +27,7 @@ export const MY_LIBRARY_NAME = '我的库';
 
 type Entry = Pick<LibraryEntry, 'key' | 'pack' | 'mine' | 'builtin'> & { file?: string };
 
-// 新建地图的向导里选得到的我的库
+// 新建世界的向导里选得到的我的库
 export const usableForNew = (e: Entry): boolean => e.mine && !e.builtin && !e.file && isLibrary(e.pack, true);
 
 // 存进哪一个库；还没有时 null（先复制一份，见 copyBaseOf）
@@ -36,7 +36,7 @@ export function myLibraryOf<E extends Entry>(lib: readonly E[], worldLib: string
   return ok.find((e) => e.key === worldLib) ?? ok.find((e) => e.key === remembered) ?? ok[0] ?? null;
 }
 
-// 还没有我的库时复制哪一个库来做它：这张地图用的库（够新建地图用时），不然默认的库，再不然第一个够用的
+// 还没有我的库时复制哪一个库来做它：这张地图用的库（够新建世界用时），不然默认的库，再不然第一个够用的
 export function copyBaseOf(lib: readonly Entry[], worldLib: string | undefined): string | null {
   const ok = (e: Entry) => !e.file && isLibrary(e.pack, true);
   return (lib.find((e) => e.key === worldLib && ok(e)) ?? lib.find((e) => e.key === DEFAULT_LIBRARY && ok(e)) ?? lib.find(ok))?.key ?? null;
@@ -164,7 +164,7 @@ export const saveLabel = (p: Pick<SavePlan, 'names' | 'count'>): string => `存$
 export function savedNote(p: Pick<SavePlan, 'names' | 'count' | 'missing' | 'skipped'>, libName: string): string {
   const lost = p.missing.length ? `；这个库里没有：${p.missing.slice(0, 3).join('、')}` : '';
   const skipped = p.skipped.length ? `；有 ${p.skipped.length} 项没存进去` : '';
-  return `已把${head(p.names, p.count)}存到“${libName}”：新建地图时选“${libName}”就带上${lost}${skipped}`;
+  return `已把${head(p.names, p.count)}存到“${libName}”：新建世界时选“${libName}”就带上${lost}${skipped}`;
 }
 
 // 没有可存的时候说什么
@@ -175,7 +175,7 @@ export function nothingNote(p: Pick<SavePlan, 'same' | 'skipped'>, libName: stri
 
 // ---------- 没有时代的库（以前存的“我的资源”“来自《X》”）并进我的库 ----------
 
-// 这个库新建地图时选不到（没有时代，或不够完整）、里面又有东西：首页上给“并进我的库”
+// 这个库新建世界时选不到（没有时代，或不够完整）、里面又有东西：首页上给“并进我的库”
 export function mergeable(e: Entry): boolean {
   if (e.builtin || e.file || isLibrary(e.pack, true)) return false;
   return packSections().some((k) => packItems(e.pack, k.pack.key).length > 0);

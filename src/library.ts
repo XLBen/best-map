@@ -180,7 +180,7 @@ addTrustedSource(async () => {
 // 里面的脚本由编辑器记为信任（是自己写的、或者打开编辑器时信任过的），这里不管
 // 第九十二轮：界面上不再有“我的资源”这个词。这个包的键没变（以前存的照旧读得到、形态编辑器照旧存进它），
 // 新建它时叫“我的星球形态”；以前存下的、还叫旧名字的那一个读出来时显示成“以前存的内容”（shownPack）。
-// 世界里的内容不再往它里面存（没有时代，新建地图时选不到）：存到我的库见 ui/packs/save-mine.ts
+// 世界里的内容不再往它里面存（没有时代，新建世界时选不到）：存到我的库见 ui/packs/save-mine.ts
 const LEGACY_PACK_NAME = '我的资源';
 export const MY_PACK_KEY = packIdFor(LEGACY_PACK_NAME);
 export const MY_PACK_NAME = '我的星球形态';

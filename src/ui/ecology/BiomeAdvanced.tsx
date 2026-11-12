@@ -20,6 +20,7 @@ import { type ClimateChange, DEFAULT_INVADE_STRENGTH, DEFAULT_RADIUS_KM, MAX_LAB
 import { shownTolerances, tolerancesPatch } from './biome-edit';
 import type { BiomeTarget } from './biome-target';
 import { type SpeciesScriptKind, applySpeciesScript, settleSpeciesEdits, speciesEditsSettled, speciesIssue } from './species-scripts';
+import { SCRIPT_NOTE } from '../copy';
 
 // 生态编辑器里收起来的“更多设置”（第九十三轮以前叫“高级”；第七十二轮从 SpeciesAdvanced.tsx、ClimateChart.tsx 的“更精细的条件”合来）：
 // 水系、人文（第九十三轮从外面挪进来）、更精细的条件、导出用的地形、图案与发光、对周围的影响、侵占、地名、脚本、id。
@@ -320,7 +321,7 @@ function ScriptsSection({ sp, t }: Props) {
   return (
     <>
       <h5>脚本</h5>
-      <p class="hint">用 JavaScript 决定它长在哪里、什么颜色</p>
+      <p class="hint">{SCRIPT_NOTE}</p>
       {t.inWorld ? (
         SPECIES_SCRIPT_KINDS.map((kind) => (
           <ScriptBox

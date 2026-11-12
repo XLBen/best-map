@@ -1,6 +1,6 @@
 import { erasing, helpOpen, measure, openPanel, picking, provinceSet, selectedFeature, selectedLake, selectedProvince, selectedRiver, sheet, tool, uiHidden, wizardOpen, world } from '../../state';
 import { mapApi } from '../camera';
-import { TOOL_DEFS, category, eraserModes, setTool, toolsOf } from '../defs/tools';
+import { TOOL_DEFS, category, eraserModes, keyTools, setTool } from '../defs/tools';
 import { nudgeSlider } from './sliders';
 import { ESC_RANK, isTyping, pushEscape, runEscape } from './escape';
 import { packDialog } from '../packs/store';
@@ -144,8 +144,9 @@ export function onKeyDown(e: KeyboardEvent) {
     }
   }
   else {
+    // 数字键：这一类的第几个工具。第九十九轮：按完整的那一排数（keyTools），简单界面里藏着的工具按了它的键也换过去、露出来
     const n = Number(e.key);
-    const list = toolsOf(category.value, world.value);
+    const list = keyTools(category.value, world.value);
     if (Number.isInteger(n) && n >= 1 && n <= list.length) setTool(list[n - 1]);
   }
 }

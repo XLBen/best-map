@@ -19,6 +19,7 @@ import './ui/packs/lib-form.css';
 import './ui/archives/lore.css';
 import './ui/shell/crash.css';
 import './ui/shell/progress.css';
+import './ui/shell/simple.css';
 // 手绘画风的楷体（第八十七轮）：霞鹜文楷（OFL），按 unicode-range 切成 97 个小文件，只下载画到的字所在的那几个；
 // font-display: swap，不挡第一次画。只是 @font-face 的声明，没用到时一个文件都不下载
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css';

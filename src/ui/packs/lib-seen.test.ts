@@ -181,7 +181,7 @@ describe('改了什么时候用上', () => {
     expect(got).toEqual(WORLD_TIMING);
   });
 
-  it('我的库：都是“只影响新地图”；只读的库、本世界的星球形态、示例那一段不标', () => {
+  it('我的库：都是“只影响新世界”；只读的库、本世界的星球形态、示例那一段不标', () => {
     for (const kind of allKinds()) {
       for (const s of segmentsOf(kind)) {
         const t = segmentTiming('mine', kind, s);

@@ -30,6 +30,17 @@ describe('文字的规矩', () => {
     expect(RESCUE_TEXT.noWebgl.lead).toContain('硬件加速');
   });
 
+  it('自救页开头那一句只说发生了什么：先导出还是直接重新载入，只由“你的世界”那一行说（第九十九轮：以前两处说法不一样）', () => {
+    expect(RESCUE_TEXT.crash.lead).not.toMatch(/请先导出|再重新载入/);
+    expect(RESCUE_TEXT.crash.lead).toContain('看下面这一行');
+    // 每一种情形那一行都说了现在做什么：导出，或重新载入，或什么都不会丢
+    for (const w of ['live', 'live-unsaved', 'saved', 'partial', 'none'] as const) expect(rescueWorldLine(w, 0, 0), w).toMatch(/重新载入|导出|没有东西会丢/);
+    // 只有没存好的两种才叫人先导出
+    expect(rescueWorldLine('live', 0, 0)).not.toContain('导出');
+    expect(rescueWorldLine('saved', 0, 0)).not.toContain('导出');
+    expect(rescueWorldLine('none', 0, 0)).not.toContain('导出');
+  });
+
   it('浏览器里存着的那一份：写着是什么时候存的', () => {
     const now = new Date(2026, 10, 11, 15, 0).getTime();
     expect(rescueWorldLine('saved', new Date(2026, 10, 11, 14, 5).getTime(), now)).toBe('你的世界还在浏览器里，是今天 14:05 存的。重新载入后接着做。');

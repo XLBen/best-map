@@ -11,6 +11,7 @@ import { Seg } from './common';
 import { countriesByName, withId, withoutId } from './domain/countries';
 import { showCountry } from './panels/countries';
 import { registerArchive } from './defs/archive-registry';
+import { ORIG_NAME } from './copy';
 
 // 集团的档案（第二十六轮）：帝国、联邦、同盟。名字与原文、种类、盟主、成员、颜色、删除。改的都是 set_bloc
 
@@ -29,8 +30,8 @@ function NameLines({ b }: { b: Bloc }) {
       <Line label="中文">
         <TextField value={b.name} onCommit={(v) => void patch(v, orig)} placeholder="空着恢复自动" />
       </Line>
-      <Line label="原文">
-        <TextField value={b.orig ?? ''} maxLength={80} onCommit={(v) => (setOrig(v), void patch(b.name, v))} placeholder="原文" />
+      <Line label={ORIG_NAME}>
+        <TextField value={b.orig ?? ''} maxLength={80} onCommit={(v) => (setOrig(v), void patch(b.name, v))} placeholder={ORIG_NAME} />
       </Line>
       <div class="row between">
         <span class="hint">{b.nameLocked ? '改过名字：换盟主时不变' : '按盟主的地名自动起'}</span>

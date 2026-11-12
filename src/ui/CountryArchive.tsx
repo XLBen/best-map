@@ -15,7 +15,7 @@ import { CitySection, StatsSection } from './archives/country-people';
 import { DiplomacySection } from './archives/country-relations';
 import { HistorySection } from './archives/country-history';
 import { registerArchive } from './defs/archive-registry';
-import { IN_LIBRARY_TITLE } from './copy';
+import { IN_LIBRARY_TITLE, LOCK_NOTES } from './copy';
 import { countryTargets } from './packs/open-item';
 import { LibItemLines } from './shell/LibItemLine';
 
@@ -69,6 +69,7 @@ export function CountryArchive() {
       <Toggle on={!!m.locked} onChange={(locked) => void patch(m.id, { locked })} title="重新生成国家时领土、档案都不动">
         {m.locked ? <Lock /> : <LockOpen />} 锁定
       </Toggle>
+      <p class="hint lock-note">{LOCK_NOTES.country}</p>
       <Seg<CountryTab> value={tab} options={COUNTRY_TABS} onChange={(t) => (countryTab.value = t)} wide />
       {tab === 'overview' && (
         <>

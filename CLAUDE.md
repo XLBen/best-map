@@ -12,7 +12,7 @@ npm run test:fast                # 跳过最慢的几个文件
 npx vitest run core/foo.test.ts  # 单个文件；机器忙时 core/sizing 的“滑块最小值命令都接受”会超时，单独重跑；整套里 `tools/realism.test.ts` 的“类地星球”、`src/ui/speed-r80.test.ts` 的“一串编辑”也常超时，这两个文件单独重跑
 npm run golden                   # 只跑金标准
 npm run build                    # 查类型后打包
-npm run smoke                    # 打包后在无头 Chrome 里走一遍：新建、画一笔、刷新后还在、两个页面、打不开先问、计算卡住能取消、画面丢了能恢复、页面出错有自救页、进度与取消、第一次打开一键开始、重新生成前的确认（约 9 分钟；--shots <目录> 截图；只跑一段 node tools/smoke.mjs --only 12 或 13；第十二段“平常画一笔不闪进度条”在机器忙时偶尔不过，重跑）
+npm run smoke                    # 打包后在无头 Chrome 里走一遍：新建、画一笔、刷新后还在、两个页面、打不开先问、计算卡住能取消、画面丢了能恢复、页面出错有自救页、进度与取消、第一次打开一键开始、重新生成前的确认、简单界面与帮助的搜索（约 10 分钟；--shots <目录> 截图；只跑一段 node tools/smoke.mjs --only 12、13 或 14；第十二段“平常画一笔不闪进度条”在机器忙时偶尔不过，重跑）
 node tools/bench-median.mjs 5 --against <提交> --           # 一块地区的加工各步与旧提交对照，五次中位数（结尾的 -- 不能省：省了只测星球）
 node tools/bench-median.mjs 5 --against <提交> -- --globe   # 整个星球
 node tools/bench-median.mjs 5 --against <提交> -- --library # 带着一整个时代库的世界（small.content 约 300 KB）：同样的加工，另计不重算的几步（libEdit、libUndo……）
@@ -67,7 +67,8 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 | 久的一步的进度、“取消” | 回报 `core/progress.ts` 的 `reportStage`（新加久的步骤：那一步开头说一声，`src/ui/copy.ts` 的 `PROGRESS_TEXT.steps` 写人话，`src/progress-defaults.ts` 给默认耗时——`src/progress.test.ts` 查着两张表对得上）；画多长 `src/progress.ts`，接线 `src/state/progress.ts`（`progressView`、`cancelling`）；界面 `src/ui/shell/BusyLine.tsx`、`busy-line.ts`、`components/ProgressBar.tsx`；取消 `src/state/worker-host.ts` 的 `stopBusy`（轻的 `sandbox.ts` 的 `cancelEdits`：计算程序在两步之间自己停；重的 `stopAny`：新建、打开、卡住时结束它）、`src/worker-steps.ts`、`Engine.execSteps`、`core/commands.ts` 的 `applyCommandSteps`；默认耗时重量 `node --import tsx tools/progress-weights.ts [--globe] --runs 5`；冒烟 `tools/smoke-progress.mjs`；设计见 `docs/dev/history/第97轮.md` |
 | 新建向导：第一屏、“自定义…”、默认的选择 | `src/ui/Wizard.tsx`（第一屏只有缩略图）；默认值、点一张发出去的设置和命令、收着时的一行小字 `src/ui/domain/wizardChoice.ts`（`wizard-choice.test.ts` 钉着默认选择和第九十七轮逐字相同）；展开过没有 `src/ui/wizard-prefs.ts`；向导里只写和新建有关的话：`showToast(…, …, 'open')`；冒烟 `tools/smoke-start.mjs`；设计见 `docs/dev/history/第98轮.md` |
 | 重新生成之前问不问、删除之前写什么 | 数 `core/regen-loss.ts`（`regenLoss`、`isRegen`、`removalCounts`；每种手改怎么认、留不留的表在第98轮）；问 `src/ui/domain/regen-ask.ts`（`execRegen`、`execRemoval`，各处的重新生成都走它，资源库里经 `packs/row-actions.ts` 的 `runTrusted`）；按钮下面“留着什么” `copy.ts` 的 `REGEN_KEEPS`；命令记录 `state.ts` 的 `commandsNow`；问话框 `choices` 里主要的按钮写第一个（`shell/Ask.tsx` 倒着画，它在最右）；改完跑 `npm run smoke` |
-| 帮助、`?` 键 | `src/ui/Help.tsx`（`HELP_START`、步骤、按键表）、`src/ui/shell/keys.ts` 的 `isHelpKey`；向导上的入口是 `common.tsx` 的 `ModalHead` 的 `extra` |
+| 简单界面 / 完整界面：哪些算常用、藏了东西的地方怎么露、数字键 | 偏好 `src/ui/ui-prefs.ts`（`fullUi`、`restOpen`；键 `map2.lib.allSources`，`packs/lib-prefs.ts` 的两问就是它）；规则 `src/ui/defs/simple-ui.ts`（`WORLD_SIGNS`、`splitSimple`、`shownTools`）；声明里的 `more` / `when`（`defs/tools/<类>.ts`、`defs/layers.ts`、`defs/adjustments.ts`、`packs/page-layout.ts` 的 `HOME_MORE_CARDS`）；`defs/tools/index.ts` 的 `barTools` / `keyTools`（`toolsOf` 还是全部）；部件 `shell/RestLine.tsx`、`ContextBar.tsx` 的 `.bb-rest`，字 `copy.ts` 的 `SIMPLE_TEXT`；整张表钉在 `src/ui/simple-ui.test.ts`；冒烟 `tools/smoke-simple.mjs`；设计见 `docs/dev/history/第99轮.md` |
+| 帮助、`?` 键 | 字 `src/ui/help-data.ts`（新加工具要给它一条 `on('…', '工具 id')`，`help.test.ts` 查着）；搜索、“现在这个工具” `help-search.ts`；组件 `Help.tsx`（搜索框不抢焦点：一打开按 `?` 要能关上）；`src/ui/shell/keys.ts` 的 `isHelpKey`；向导上的入口是 `common.tsx` 的 `ModalHead` 的 `extra` |
 | 以前的版本（留哪些、记在哪一串上、回到这一份、盖掉地图之前留一份） | 规则 `src/versions.ts`（`thin`、`planDrop`、`addVersion`、`overwriteKeeping`；表 `versions` / `versionDocs`）；接线 `src/state/versions.ts`（`worldId`、`keepVersion`、`versionAfterSave`、`overwriteLinked`）；界面 `src/ui/maps/versions.ts`、`VersionsDialog.tsx`，文字 `VERSION_TEXT`；世界文件的字 `src/doc-text.ts`；设计见 `docs/dev/history/第95轮.md` |
 | 存到电脑上的文件 | 规则 `src/file-save.ts`（`FileSaver`、`FileIo`、`FILE_SAVE_MS`）；接线 `src/state/file-save.ts`；界面 `src/ui/shell/save-note.ts`（`fileLine`、`pickFile`）、`SaveBanner.tsx` 的 `FileBanner`、`ActionsPanel.tsx` 的 `FileStatusLine`，文字 `FILE_TEXT`；真的选择框没法自动点，冒烟里换成浏览器自己管的文件 |
 | 撤销的内存上限 | `core/undo-budget.ts`、`core/engine.ts` 的 `settleUndo` / `trimUndo`（`core/engine.ts` 约 760 行，再加要拆；一步之后的整理已在 `core/engine-fixes.ts`）；界面 `UNDO_LIMIT_TEXT`；量：`node --expose-gc --import tsx tools/undo-bytes.ts [--globe] [--human]` |
@@ -85,6 +86,7 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 - **冻结的参照不要改**：`src/testing/frozen/`、测试里标着“不要改它”的原样拷贝。
 - **计算程序主动发的消息不带 `id`**：带 `id` 的只有回复（`src/sandbox.ts` 的 `readWorkerMessage` 按它认）；进度的那一条用 `req`。
 - **界面只经 `src/state.ts` 引用状态**：`src/ui/` 里不直接引用 `src/state/*.ts`（`src/ui/layering.test.ts` 查着）。
+- **新加的东西先想算不算常用**：新加工具、底图、“调整”的项、资源库的卡片时在声明里写不写 `more`（每一类常用的工具不超过三个）；藏了东西的地方只用“还有 N 个”在原地展开这一种做法。
 - 用户是新手：结果要可以预料，界面像 Procreate，控件是连续的（滑块），文字的规矩见 `docs/dev/ui-design.md`。
 
 ## 文档

@@ -7,23 +7,25 @@ import type { LabelGroup, Season, ViewMode } from '../../state';
 export interface ViewDef {
   id: ViewMode;
   label: string;
-  // 收在“更多”里
-  more?: boolean;
+  // 第九十九轮：只在完整界面里露（省略就是常用）。简单界面里在“还有 N 种底图”里；正看着的那一种照常露着。
+  // （第九十九轮以前这个记号只有“抬升”有，意思是收在“更多底图”里——现在是全应用同一个意思，见 simple-ui.ts）
+  more?: true;
   hint?: string;
 }
 
 export const VIEWS: ViewDef[] = [
   { id: 'terrain', label: '地貌' },
   { id: 'dominant', label: '生态分区' },
-  { id: 'provinces', label: '省份' },
-  { id: 'terrainClass', label: '地形类别' },
-  { id: 'resource', label: '资源', hint: '灰色是没有资源的陆地' },
+  { id: 'provinces', label: '省份', more: true },
+  { id: 'terrainClass', label: '地形类别', more: true },
+  { id: 'resource', label: '资源', hint: '灰色是没有资源的陆地', more: true },
   { id: 'temperature', label: '气温' },
   { id: 'precip', label: '降水' },
   { id: 'elevation', label: '海拔' },
   { id: 'seaTemp', label: '海水温度', hint: '海面的冷暖，色带同“气温”' },
   { id: 'uplift', label: '抬升', more: true },
 ];
+// 自定义场的底图（field:名字）排在这几种后面：世界里有场它们就露着（那是这个世界已经有的东西）
 // 第七十二轮：湿润程度、地形湿度、离海远近、涂生态时的两种调整、某种生态的适宜程度挪到生态编辑器的“在地图上看”（ecology/base-map.ts），
 // 图层里和生态有关的只留地貌、生态分区
 
@@ -62,19 +64,30 @@ export type OverlayKey = 'labels' | 'rivers' | 'borders' | 'scale' | 'latitude' 
 
 // planetLabel / planetHint：整个星球上的说法；planetOnly：只在整个星球上出现；settle：世界里有城市、道路、地标或自定义点时才出现（第二十四轮）
 // 第四十八轮：风向、洋流回到这里，是两个独立的开关（第四十六轮时是一种地图模式），开着时左下角有图例和风的季节
-export const OVERLAYS: { key: OverlayKey; label: string; hint?: string; planetLabel?: string; planetHint?: string; planetOnly?: boolean; settle?: boolean }[] = [
+// 第九十九轮 more：只在完整界面里露（省略就是常用）。简单界面里在“还有 N 项”里；和默认不一样的（开着的风向、关掉的省份边界）照常露着
+export interface OverlayDef {
+  key: OverlayKey;
+  label: string;
+  hint?: string;
+  planetLabel?: string;
+  planetHint?: string;
+  planetOnly?: boolean;
+  settle?: boolean;
+  more?: true;
+}
+export const OVERLAYS: OverlayDef[] = [
   { key: 'labels', label: '地名' },
   { key: 'rivers', label: '河流' },
-  { key: 'borders', label: '省份边界', hint: '省份底图或省份工具里显示' },
+  { key: 'borders', label: '省份边界', hint: '省份底图或省份工具里显示', more: true },
   { key: 'peaks', label: '山峰', hint: '放大后标名字' },
   { key: 'roads', label: '道路', hint: '放大后才画小路', settle: true },
   { key: 'cities', label: '城市', hint: '国家模式全画，文化等模式只画首都', settle: true },
   { key: 'landmarks', label: '地标', hint: '含自定义点；地理模式只画自然的', settle: true },
-  { key: 'wind', label: '风向', hint: '线越粗越亮风越大，左下角选季节' },
-  { key: 'currents', label: '洋流', hint: '暖流橙、寒流蓝，全年平均' },
+  { key: 'wind', label: '风向', hint: '线越粗越亮风越大，左下角选季节', more: true },
+  { key: 'currents', label: '洋流', hint: '暖流橙、寒流蓝，全年平均', more: true },
   { key: 'scale', label: '比例尺', hint: '左下角，导出的图片里也有' },
   { key: 'edits', label: '我改过的地方', hint: '地形橙、气候蓝、生态绿、河湖青' },
-  { key: 'latitude', label: '纬度刻度', hint: '地图左边每 10° 一格，回归线、极圈', planetLabel: '经纬网', planetHint: '经线、纬线，回归线、极圈' },
+  { key: 'latitude', label: '纬度刻度', hint: '地图左边每 10° 一格，回归线、极圈', planetLabel: '经纬网', planetHint: '经线、纬线，回归线、极圈', more: true },
 ];
 
 export const LABEL_GROUPS: { group: LabelGroup; label: string }[] = [

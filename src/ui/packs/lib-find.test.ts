@@ -27,7 +27,7 @@ import { editingLine, editingText, sourceMenuView } from './source-view';
 
 // 第九十二轮：资源库（三）找得到、分得清。
 // 找得到：这张地图的首页能搜、文化有自己的卡片、地图上点到的东西直达库里那一项、“在地图上”都能定位；
-// 分得清：顶上一句“改的是哪一份”、来源下拉平时只有这张地图、存到我的库只有一个去向（新建地图时选得到）
+// 分得清：顶上一句“改的是哪一份”、来源下拉平时只有这张地图、存到我的库只有一个去向（新建世界时选得到）
 
 const BUILTIN: LibraryEntry[] = builtinPacks().map((pack) => ({ key: pack.id, pack, builtin: true, mine: false, installedAt: 0 }));
 const ROOTS = BUILTIN.map((e) => ({ key: e.key, pack: e.pack }));
@@ -181,14 +181,14 @@ describe('地图上点到什么就改什么', () => {
 });
 
 describe('分得清：改的是哪一份', () => {
-  it('顶上一句：这张地图、我的库（新地图会用）、只能看；挑选时写加到哪', () => {
+  it('顶上一句：这张地图、我的库（新世界会用）、只能看；挑选时写加到哪', () => {
     const mine = myCopy();
     const ctx = ctxOf(full, [mine]);
     expect(editingText(editingLine(WORLD_SOURCE, ctx)!)).toBe('改的是：这张地图');
     expect(editingLine(WORLD_SOURCE, ctx)!.tone).toBe('world');
     const m = editingLine({ t: 'lib', key: mine.key }, ctx)!;
     expect(m.tone).toBe('mine');
-    expect(editingText(m)).toBe('改的是：我的库“我的库”（新地图会用，这张地图不变）');
+    expect(editingText(m)).toBe('改的是：我的库“我的库”（新世界会用，这张地图不变）');
     const r = editingLine({ t: 'lib', key: 'medieval' }, ctx)!;
     expect(r.tone).toBe('readonly');
     expect(editingText(r)).toBe(`只能看：${medieval.name}`);
@@ -237,7 +237,7 @@ describe('本机记着的两样', () => {
 });
 
 describe('存到我的库：一个动作、一个去向', () => {
-  it('去向：这张地图用的库是我的库时是它，不然上次的，不然第一个新建地图时选得到的；没有时复制这张地图用的库', () => {
+  it('去向：这张地图用的库是我的库时是它，不然上次的，不然第一个新建世界时选得到的；没有时复制这张地图用的库', () => {
     const a = myCopy('a');
     const b = myCopy('b');
     const noEra = mineEntry({ format: 'map2-pack', version: 1, id: 'old', name: '旧的', cultures: [] } as ResourcePack);
@@ -255,7 +255,7 @@ describe('存到我的库：一个动作、一个去向', () => {
     expect(copyBaseOf(BUILTIN, undefined)).toBe('medieval');
   });
 
-  it('存进去的库新建地图的向导里选得到，读得回来', () => {
+  it('存进去的库新建世界的向导里选得到，读得回来', () => {
     const e = full.clone();
     const mine = myCopy();
     const c = worldCultures(e.world.small)[0];
@@ -271,7 +271,7 @@ describe('存到我的库：一个动作、一个去向', () => {
     const options = libraryOptions([...BUILTIN, mineEntry(plan.pack, mine.key)], true);
     expect(options.find((o) => o.key === mine.key)).toMatchObject({ name: MY_LIBRARY_NAME, builtin: false });
     expect(saveLabel(plan)).toBe('存“改过的文化”');
-    expect(savedNote(plan, MY_LIBRARY_NAME)).toBe('已把“改过的文化”存到“我的库”：新建地图时选“我的库”就带上');
+    expect(savedNote(plan, MY_LIBRARY_NAME)).toBe('已把“改过的文化”存到“我的库”：新建世界时选“我的库”就带上');
   });
 
   it('没改过的不存；再存一次也不存（库里已经是这样）', () => {
@@ -302,7 +302,7 @@ describe('存到我的库：一个动作、一个去向', () => {
     expect(packItems<{ id: string }>(plan.pack, 'cultures').some((x) => x.id === c.id)).toBe(true);
     expect(packItems<{ id: string }>(plan.pack, 'cultureGroups').some((x) => x.id === g.id)).toBe(true);
     expect(parsePack(plan.pack).ok).toBe(true);
-    expect(savedNote(plan, MY_LIBRARY_NAME)).toBe('已把“我的文化”等 2 项存到“我的库”：新建地图时选“我的库”就带上');
+    expect(savedNote(plan, MY_LIBRARY_NAME)).toBe('已把“我的文化”等 2 项存到“我的库”：新建世界时选“我的库”就带上');
     // 存过以后又改了：换掉库里的那一份，不另存一份
     put(e, 'culture', { ...item(e, 'culture', String(c.id)), name: '我的文化二' });
     const again = savePlan([{ kind: 'culture', id: String(c.id) }], e.world, plan.pack);
@@ -383,15 +383,15 @@ describe('以前存的“我的资源”：读得到，能并进我的库', () =
     expect(shownPack(MY_PACK_KEY, renamed)).toBe(renamed);
   });
 
-  it('首页写新建地图时选不到，能并进我的库；并进去的都在，原来的不动', () => {
+  it('首页写新建世界时选不到，能并进我的库；并进去的都在，原来的不动', () => {
     const old = mineEntry(shownPack(MY_PACK_KEY, legacy()), MY_PACK_KEY);
     const mine = myCopy();
     const ctx: PageCtx = { world: null, lib: [...BUILTIN, old, mine] };
     const home = homePage({ t: 'lib', key: old.key }, ctx);
-    expect(home.note).toBe('这个库没有时代，新建地图时选不到');
+    expect(home.note).toBe('这个库没有时代，新建世界时选不到');
     expect(home.mergeKey).toBe(old.key);
     expect(mergeable(old)).toBe(true);
-    // 新建地图时选得到的库、内置的库没有这一句
+    // 新建世界时选得到的库、内置的库没有这一句
     expect(homePage({ t: 'lib', key: mine.key }, ctx).note).toBeNull();
     expect(homePage({ t: 'lib', key: 'medieval' }, ctx).note).toBeNull();
     expect(mergeable(mine)).toBe(false);

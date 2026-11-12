@@ -32,6 +32,7 @@ import {
 } from './domain/settlements';
 import { deleteSelected, selectSettle } from './tools/settlements';
 import { registerArchive } from './defs/archive-registry';
+import { LOCK_NOTES, ORIG_NAME } from './copy';
 
 // 城市、地标、自定义点的档案（第二十四轮）：右边的抽屉（同国家的档案），选中的那一样。
 // 改的都是 set_city / set_landmark / set_point 的 patch；字在离开框（或回车）时提交，简介、备注停下一秒也提交
@@ -72,8 +73,8 @@ function NameBox({ cur, onPatch, reroll }: { cur: { name: string; orig?: string;
       <Line label="中文">
         <TextField value={cur.name} onCommit={(v) => send(v, orig)} placeholder="空着恢复自动" />
       </Line>
-      <Line label="原文">
-        <TextField value={cur.orig ?? ''} maxLength={80} onCommit={(v) => (setOrig(v), send(cur.name, v))} placeholder="原文" />
+      <Line label={ORIG_NAME}>
+        <TextField value={cur.orig ?? ''} maxLength={80} onCommit={(v) => (setOrig(v), send(cur.name, v))} placeholder={ORIG_NAME} />
       </Line>
       <div class="row between">
         <span class="hint">{cur.customName ? '自己起的名字' : '按当地的地名风格自动起'}</span>
@@ -152,6 +153,7 @@ function CityView({ w, id }: { w: World; id: number }) {
       <Toggle on={a.locked} onChange={(locked) => void patch({ locked })} title="重新生成城市时留着">
         {a.locked ? <Lock /> : <LockOpen />} 锁定
       </Toggle>
+      <p class="hint lock-note">{LOCK_NOTES.city}</p>
       <NameBox cur={a} onPatch={(p) => void patch(p)} reroll={() => void patch({ reroll: true })} />
       <section>
         <h5>等级与所属</h5>
@@ -265,6 +267,7 @@ function LandmarkView({ w, id }: { w: World; id: number }) {
       <Toggle on={l.locked} onChange={(locked) => void patch({ locked })} title="重新生成地标时留着">
         {l.locked ? <Lock /> : <LockOpen />} 锁定
       </Toggle>
+      <p class="hint lock-note">{LOCK_NOTES.landmark}</p>
       <NameBox cur={l} onPatch={(p) => void patch(p)} />
       <section>
         <h5>类型</h5>

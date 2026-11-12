@@ -1,18 +1,20 @@
-import { useRef, useState } from 'preact/hooks';
+import { useRef } from 'preact/hooks';
 import type { World } from '../../../core/world';
 import { NAME_MODES } from '../../../core/name-display';
 import { worldMapStyleId } from '../../../core/map-style';
 import { library } from '../../library';
 import { mapStyleChoices, mapStyleCommand } from '../domain/map-styles';
-import { type ProjectionPref, type ViewMode, exec, labelGroups, mode, nameMode, overlays, prefs, reference, season, setNameMode, setPrefs, setReference, showToast, world } from '../../state';
+import { OVERLAY_DEFAULTS, type ProjectionPref, type ViewMode, exec, labelGroups, mode, nameMode, overlays, prefs, reference, season, setNameMode, setPrefs, setReference, showToast, world } from '../../state';
 import { Seg } from '../common';
 import { Slider, linear } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
-import { SEASON_NOTE } from '../copy';
+import { FIELD_NOTE, NAME_MODE_LABELS, NAME_MODE_TIP, SEASON_NOTE } from '../copy';
 import { LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, humanViews } from '../defs/layers';
+import { splitSimple } from '../defs/simple-ui';
 import { hasAnySettle } from '../domain/settlements';
 import { kindOfView, mapModes } from '../map/modes';
 import { MapKindSwitch } from '../shell/MapKind';
+import { RestLine, simpleView } from '../shell/RestLine';
 
 // 整个星球的投影（第十三轮 G4）：只是看的方式，存在这个浏览器里，不写进世界文件
 const PROJECTIONS: [ProjectionPref, string][] = [
@@ -167,11 +169,10 @@ function ReferenceBox() {
 export function LayersPanel() {
   const w = world.value;
   const planet = w?.mesh.kind === 'sphere';
-  const [more, setMore] = useState(VIEWS.some((v) => v.more && v.id === mode.value) || mode.value.startsWith('field:'));
   if (!w) return null;
   const fields = Object.keys(w.causes.fields);
   const viewButton = (id: typeof mode.value, label: string) => (
-    <button class={mode.value === id ? 'on' : ''} onClick={() => showView(id)}>
+    <button class={mode.value === id ? 'on' : ''} data-view={id} onClick={() => showView(id)}>
       {label}
     </button>
   );
@@ -179,6 +180,21 @@ export function LayersPanel() {
   const hint = [...VIEWS, ...human].find((v) => v.id === mode.value)?.hint;
   // 生成过人文才有地图模式（第八十二轮：从顶栏下面单独的一排挪到这里最上面，顶栏上另有一个写着现在模式的按钮）
   const modes = mapModes(w).length > 0;
+  // 第九十九轮：简单界面里只露常用的底图，别的在“还有 N 种底图”里（点了只在这里展开）；正看着的那一种照常露着。
+  // 自定义场的底图是这个世界里已经有的东西，有就露着
+  const at = simpleView('views');
+  const views = splitSimple(VIEWS, at, (v) => !!v.more, (v) => v.id === mode.value);
+  // 生成过人文时，模式能换的几层（国家、文化……）在上面的“地图模式”里，“人文”一组只剩宜居度：它不算常用
+  const humanGeo = splitSimple(human.filter((v) => !modes || kindOfView(v.id) === 'geo'), at, () => true, (v) => v.id === mode.value);
+  const restViews = [...views.hidden, ...humanGeo.hidden];
+  // “显示”里的开关：不常用的在“还有 N 项”里；和一打开页面时不一样的（开着的风向……）照常露着
+  const shows = splitSimple(
+    OVERLAYS.filter((o) => (!o.planetOnly || planet) && (!o.settle || hasAnySettle(w))),
+    simpleView('overlays'),
+    (o) => !!o.more,
+    (o) => overlays.value[o.key] !== OVERLAY_DEFAULTS[o.key],
+  );
+  const showName = (o: (typeof OVERLAYS)[number]) => (planet && o.planetLabel) || o.label;
   return (
     <>
       {modes && (
@@ -190,29 +206,22 @@ export function LayersPanel() {
       )}
       <section>
         <h5>底图</h5>
-        <div class="view-grid">{VIEWS.filter((v) => !v.more).map((v) => viewButton(v.id, v.label))}</div>
-        <button class="link-btn" onClick={() => setMore(!more)}>
-          {more ? '更少底图' : '更多底图'}
-        </button>
-        {more && (
-          <div class="view-grid">
-            {VIEWS.filter((v) => v.more).map((v) => viewButton(v.id, v.label))}
-            {fields.map((f) => viewButton(`field:${f}`, `场：${f}`))}
-          </div>
-        )}
-        {hint && VIEWS.some((v) => v.id === mode.value) && <p class="hint">{hint}</p>}
-      </section>
-      <section>
-        <h5>人文</h5>
         <div class="view-grid">
-          {/* 生成过人文时，模式能换的几层（国家、文化……）在上面的“地图模式”里，这里只剩宜居度 */}
-          {human
-            .filter((v) => !modes || kindOfView(v.id) === 'geo')
-            .map((v) => viewButton(v.id, v.label))}
+          {views.shown.map((v) => viewButton(v.id, v.label))}
+          {fields.map((f) => viewButton(`field:${f}`, `场：${f}`))}
         </div>
-        {!w.small.human && <p class="hint">生成人文后有文化圈、人口密度</p>}
-        {hint && !(modes && kindOfView(mode.value) !== 'geo') && human.some((v) => v.id === mode.value) && <p class="hint">{hint}</p>}
+        {hint && VIEWS.some((v) => v.id === mode.value) && <p class="hint">{hint}</p>}
+        {fields.length > 0 && mode.value.startsWith('field:') && <p class="hint">{FIELD_NOTE}</p>}
       </section>
+      {humanGeo.shown.length > 0 && (
+        <section>
+          <h5>人文</h5>
+          <div class="view-grid">{humanGeo.shown.map((v) => viewButton(v.id, v.label))}</div>
+          {!w.small.human && <p class="hint">生成人文后有文化圈、人口密度</p>}
+          {hint && !(modes && kindOfView(mode.value) !== 'geo') && human.some((v) => v.id === mode.value) && <p class="hint">{hint}</p>}
+        </section>
+      )}
+      <RestLine place="views" hidden={restViews.length} foldable={views.foldable + humanGeo.foldable} unit="种底图" names={restViews.map((v) => v.label)} />
       <MapStyleSection w={w} />
       {planet && (
         <section>
@@ -226,7 +235,7 @@ export function LayersPanel() {
       )}
       <section>
         <h5>显示</h5>
-        {OVERLAYS.filter((o) => (!o.planetOnly || planet) && (!o.settle || (w && hasAnySettle(w)))).map((o) => (
+        {shows.shown.map((o) => (
           <>
             <Toggle on={overlays.value[o.key]} onChange={(on) => (overlays.value = { ...overlays.value, [o.key]: on })} title={(planet && o.planetHint) || o.hint}>
               {(planet && o.planetLabel) || o.label}
@@ -248,12 +257,13 @@ export function LayersPanel() {
                     {label}
                   </label>
                 ))}
-                {/* 中文 / 原文 / 两者：只是显示，不改世界；没有原文的名字照旧写中文 */}
-                <Seg value={nameMode.value} options={NAME_MODES.map((m): [typeof m.id, string] => [m.id, m.label])} onChange={setNameMode} titles={{ orig: '没有原文的照旧写中文' }} wide />
+                {/* 中文 / 外文名 / 两者：只是显示，不改世界；没有外文名的名字照旧写中文 */}
+                <Seg value={nameMode.value} options={NAME_MODES.map((m): [typeof m.id, string] => [m.id, NAME_MODE_LABELS[m.id]])} onChange={setNameMode} titles={{ orig: NAME_MODE_TIP }} wide />
               </div>
             )}
           </>
         ))}
+        <RestLine place="overlays" hidden={shows.hidden.length} foldable={shows.foldable} unit="项" names={shows.hidden.map(showName)} />
       </section>
       <section>
         <h5>季节</h5>

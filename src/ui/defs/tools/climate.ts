@@ -45,6 +45,8 @@ export const CLIMATE_TOOLS = {
   },
   field: {
     category: 'climate',
+    more: true,
+    when: 'fields',
     icon: Sparkles,
     name: '涂自定义场',
     short: '场',

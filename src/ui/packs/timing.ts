@@ -5,11 +5,11 @@ import { SCOPE_KINDS } from '../../../core/regen-base';
 import type { Segment } from './page-segments';
 import type { SourceKind } from './page-source';
 
-// 改了什么时候用上（第九十轮）：一项的每一段标“即时 / 要重新生成 / 只影响新地图”之一。
+// 改了什么时候用上（第九十轮）：一项的每一段标“即时 / 要重新生成 / 只影响新世界”之一。
 // 以前只手标了两处（本世界的生态、省份划分的“湖”），别的看不出来；面板底下的“改了 N 项 · 重新生成”又把画的时候现读的几项也算了进去。
 // 这里是唯一的一张表，标记和“改了 N 项”（regen.ts）都从它推：
 //
-//   看的是我的库          只影响新地图（改库不动当前世界，用它新建、添加时才用上）
+//   看的是我的库          只影响新世界（改库不动当前世界，用它新建、添加时才用上）
 //   看的是只读的库        不标（改不了）
 //   本世界：
 //     不在“要重新生成”的种类里（生态、河、湖、岛、地形类别、资源、地名风格、画风、派系）
@@ -95,8 +95,8 @@ const SEGMENT_NOTES: Readonly<Record<string, Readonly<Record<string, string>>>> 
   era: { relations: '自己改过名字的集团不动' },
 };
 
-export const TIMING_LABEL: Record<Timing, string> = { instant: '即时', regen: '要重新生成', new: '只影响新地图' };
-export const TIMING_TIP: Record<Timing, string> = { instant: '改了地图马上变', regen: '改完点底下的“重新生成”', new: '新建地图、添加到世界时用上' };
+export const TIMING_LABEL: Record<Timing, string> = { instant: '即时', regen: '要重新生成', new: '只影响新世界' };
+export const TIMING_TIP: Record<Timing, string> = { instant: '改了地图马上变', regen: '改完点底下的“重新生成”', new: '新建世界、添加到世界时用上' };
 
 // 一段标什么。source：看的是哪一种来源；不能改的（只读的库、本世界的星球形态）、没有可改的（示例）不标
 export function segmentTiming(source: SourceKind | null, kind: ContentKind, seg: Pick<Segment, 'id' | 'fields' | 'custom'>): SegmentTiming | null {

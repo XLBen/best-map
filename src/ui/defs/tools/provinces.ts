@@ -15,6 +15,8 @@ export const PROVINCE_TOOLS = {
   },
   pbrush: {
     category: 'provinces',
+    more: true,
+    when: 'provinces',
     icon: Paintbrush,
     name: '省份画笔',
     short: '画笔',
@@ -26,6 +28,8 @@ export const PROVINCE_TOOLS = {
   },
   pcut: {
     category: 'provinces',
+    more: true,
+    when: 'provinces',
     icon: Scissors,
     name: '剪刀',
     short: '剪刀',
@@ -34,6 +38,7 @@ export const PROVINCE_TOOLS = {
   },
   pregen: {
     category: 'provinces',
+    more: true,
     icon: RefreshCw,
     name: '重新划分',
     short: '重划',

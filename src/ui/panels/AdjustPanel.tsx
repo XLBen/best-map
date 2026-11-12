@@ -4,6 +4,9 @@ import { adjustPreviewNote, askText, askUser, commitTerrain, exec, execAdjust, m
 import { Slider } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
 import { ADJUSTMENTS, PLANET_TOGGLES } from '../defs/adjustments';
+import { splitSimple } from '../defs/simple-ui';
+import { RestLine, simpleView } from '../shell/RestLine';
+import { FIELD_NOTE } from '../copy';
 import { setTool } from '../defs/tools';
 import type { AdjustmentDef } from '../defs/types';
 
@@ -110,7 +113,8 @@ function FieldsBox({ w }: { w: World }) {
   return (
     <section>
       <h5>自定义场</h5>
-      <p class="hint">如“魔力”“文明度”，可在生态“更多设置”的条件里用</p>
+      <p class="hint">{FIELD_NOTE}</p>
+      <p class="hint">在生态“更多设置”的条件里用它；用“涂抹”在地图上画</p>
       {names.map((f) => (
         <div class="item">
           <span class="grow ellipsis">{f}</span>
@@ -143,16 +147,25 @@ export function AdjustPanel() {
   const w = world.value;
   if (!w) return null;
   const groups = [...new Set(ADJUSTMENTS.map((a) => a.group))];
+  // 第九十九轮：简单界面里只露常用的几项，别的在最下面的“还有 N 项”里（点了只在这里展开）；
+  // 这个世界里不在默认值上的、世界里有自定义场时的“自定义场”照常露着
+  const at = simpleView('adjust');
+  const rows = splitSimple(ADJUSTMENTS.filter((a) => !a.hidden?.(w)), at, (a) => !!a.more, (a) => !!a.touched?.(w));
+  const toggles = splitSimple(PLANET_TOGGLES.filter((t) => !t.hidden?.(w)), at, (t) => !!t.more, (t) => t.touched(w));
+  const fields = splitSimple(['自定义场'], at, () => true, () => Object.keys(w.causes.fields).length > 0);
+  const rest = [...rows.hidden.map((a) => a.label), ...toggles.hidden.map((t) => t.label), ...fields.hidden];
   return (
     <>
       {groups.map((g) => (
         <section>
           <h5>{g}</h5>
-          {ADJUSTMENTS.filter((a) => a.group === g && !a.hidden?.(w)).map((a) => (
-            <AdjustRow def={a} w={w} />
-          ))}
+          {rows.shown
+            .filter((a) => a.group === g)
+            .map((a) => (
+              <AdjustRow def={a} w={w} />
+            ))}
           {g === '气候与河流' &&
-            PLANET_TOGGLES.filter((t) => !t.hidden?.(w)).map((t) => (
+            toggles.shown.map((t) => (
               <Toggle on={t.read(w)} title={t.hint} onChange={(on) => void exec({ op: 'set_planet', patch: t.patch(on) }, '正在计算…')}>
                 {t.label}
               </Toggle>
@@ -160,7 +173,8 @@ export function AdjustPanel() {
         </section>
       ))}
       <p class="hint">松手执行，可以撤销；地形用“地形”里的工具改</p>
-      <FieldsBox w={w} />
+      {fields.shown.length > 0 && <FieldsBox w={w} />}
+      <RestLine place="adjust" hidden={rest.length} foldable={rows.foldable + toggles.foldable + fields.foldable} unit="项" names={rest} />
     </>
   );
 }

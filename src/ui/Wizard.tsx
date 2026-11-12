@@ -2,7 +2,7 @@ import { CircleHelp } from 'lucide-preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { WORLD_TYPES, WORLD_TYPE_INFO, type WorldgenInput, type WorldType } from '../../core/generate';
 import { type PlanetForm, hasFormScripts } from '../../core/planet-form';
-import { CLIMATE_BELT_NOTE, STOP_TEXT, WIZARD_MINE_NOTE } from './copy';
+import { CLIMATE_BELT_NOTE, ERA_NOTE, STOP_TEXT, WIZARD_MINE_NOTE } from './copy';
 import { BusyLine } from './shell/BusyLine';
 import {
   CLIMATE_ZONES,
@@ -205,7 +205,8 @@ export function Wizard() {
   // 第八十一轮：建好后打开资源库的“生成设置”（国家大小、人口、省份大小；向导里不另放这几个滑块）
   const [openGen, setOpenGen] = useState(false);
   const request = useRef(0);
-  const top = useRef<HTMLDivElement>(null);
+  // 向导自己能滚的那一层（.modal-backdrop）：“回到缩略图”只滚它（第九十九轮；以前用 scrollIntoView，连外面的也滚了，整个向导往上挪了一截）
+  const scroller = useRef<HTMLDivElement>(null);
   const savedAt = !world.value ? autosaved.value : null;
   // “自定义…”展开着（记在这台机器上）
   const custom = wizardCustom();
@@ -301,7 +302,7 @@ export function Wizard() {
   const contentBox = (
     <div class="wizard-content">
       <LibraryPick value={human.library} onChange={(key) => setHuman(chooseLibrary(human, key, lib))} options={libraryOptions(lib, true)} labelOf={(key) => packLabel(lib, [key])} disabled={creating} />
-      <p class="hint">决定时代、文化和政体。建好后可以从别的库添加内容。</p>
+      <p class="hint">{ERA_NOTE}。建好后可以从别的库添加内容。</p>
       {/* 第九十二轮：“存到我的库”存进去的那个库就在这里选 */}
       {libraryOptions(lib, true).some((o) => !o.builtin) && <p class="hint">{WIZARD_MINE_NOTE}</p>}
       <Toggle on={openGen} onChange={setOpenGen} disabled={creating}>
@@ -445,8 +446,8 @@ export function Wizard() {
   const note = toast.value?.about === 'open' ? toast.value : null;
 
   return (
-    <div class="modal-backdrop">
-      <div class="modal wizard" ref={top}>
+    <div class="modal-backdrop" ref={scroller}>
+      <div class="modal wizard">
         <ModalHead
           title="新建世界"
           onClose={world.value ? () => (wizardOpen.value = false) : undefined}
@@ -528,7 +529,7 @@ export function Wizard() {
             {humanBox}
             <p class="hint">
               改了以后上面的缩略图跟着重画。
-              <button class="link" onClick={() => top.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })}>
+              <button class="link wizard-to-top" onClick={() => scroller.current?.scrollTo({ top: 0, behavior: 'smooth' })}>
                 回到缩略图
               </button>
             </p>

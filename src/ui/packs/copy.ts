@@ -1,18 +1,18 @@
 // 资源库面板上的字（第八十一轮）：同一件事只写一处，叫法见 docs/dev/ui-design.md 的“统一的叫法”
 
 // ---------- 存、导出、删除 ----------
-// 第九十二轮：存到我的库只有一个动作、一个去向（save-mine.ts）：一个新建地图时选得到的“我的库”
+// 第九十二轮：存到我的库只有一个动作、一个去向（save-mine.ts）：一个新建世界时选得到的“我的库”
 export const SAVE_TO_MINE = '存到我的库';
-export const SAVE_TO_MINE_TIP = '新建地图时选“我的库”就带上';
+export const SAVE_TO_MINE_TIP = '新建世界时选“我的库”就带上';
 // 还没有我的库时先说的一句（base：复制哪个库来做它）
-export const firstSaveText = (base: string) => `还没有“我的库”：把“${base}”复制一份叫“我的库”，以后存的都放在里面。新建地图时选“我的库”就带上。`;
+export const firstSaveText = (base: string) => `还没有“我的库”：把“${base}”复制一份叫“我的库”，以后存的都放在里面。新建世界时选“我的库”就带上。`;
 // “⋯ → 存到我的库…”：这张地图里改过的、自己做的都存
 export const SAVE_ALL_TIP = '这张地图里改过的、自己做的都存';
 export const saveAllText = (n: number, names: readonly string[], mine: string | null, base: string) =>
-  `把这张地图里改过的、自己做的 ${n} 项（${names.join('、')}${n > names.length ? ' 等' : ''}）存到“${mine ?? '我的库'}”。${mine ? `新建地图时选“${mine}”就带上。` : firstSaveText(base)}`;
+  `把这张地图里改过的、自己做的 ${n} 项（${names.join('、')}${n > names.length ? ' 等' : ''}）存到“${mine ?? '我的库'}”。${mine ? `新建世界时选“${mine}”就带上。` : firstSaveText(base)}`;
 // 没有时代的库（以前存的）首页上
-export const NO_ERA_NOTE = '这个库没有时代，新建地图时选不到';
-export const NOT_WHOLE_NOTE = '这个库不够完整，新建地图时选不到';
+export const NO_ERA_NOTE = '这个库没有时代，新建世界时选不到';
+export const NOT_WHOLE_NOTE = '这个库不够完整，新建世界时选不到';
 export const MERGE_TO_MINE = '并进我的库';
 export const MERGE_TO_MINE_TIP = '里面的都存到我的库，这个库留着';
 // 读进来的文件整个留在资源库里（另成一个库，不是存进我的库）
@@ -34,7 +34,7 @@ export const WORLD_NAME = '这张地图';
 export const EDITING = '改的是';
 export const VIEW_ONLY = '只能看';
 export const PICKING_TO = '挑了加到';
-export const MINE_EDIT_NOTE = '新地图会用';
+export const MINE_EDIT_NOTE = '新世界会用';
 export const OPEN_IN_WORLD = '在这张地图里打开';
 export const OPEN_IN_WORLD_TIP = '打开这张地图里的这一项来改';
 export const ADD_TO_WORLD = '添加到这张地图…';
@@ -54,7 +54,7 @@ export const SEARCH_LIB = '搜索整个库';
 export const SEARCH_TIP = '名字、外文名都能搜';
 
 // ---------- 改了什么时候用上 ----------
-// 第九十轮：“即时 / 要重新生成 / 只影响新地图”三种标记的字在 timing.ts（TIMING_LABEL、TIMING_TIP）
+// 第九十轮：“即时 / 要重新生成 / 只影响新世界”三种标记的字在 timing.ts（TIMING_LABEL、TIMING_TIP）
 export const REGEN_BUSY = '正在生成…';
 export const regenCountText = (n: number) => `改了 ${n} 项`;
 // 顶栏“资源库”按钮旁的小标记（第九十轮）

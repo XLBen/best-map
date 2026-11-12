@@ -123,7 +123,7 @@ export interface HomePage {
   sections: HomeSection[];
   // 本世界还没有世界时的一句话
   noWorld: boolean;
-  // 这个库新建地图时选不到：缺什么
+  // 这个库新建世界时选不到：缺什么
   note: string | null;
   // 能并进我的库的（没有时代、里面有东西的库）：这个库的键
   mergeKey?: string;
@@ -250,7 +250,7 @@ export function homePage(src: SourceRef, ctx: PageCtx, inside: Inside = arrangeF
         route: (eras.length === 1 ? { p: 'item', kind: 'era', id: eras[0].id } : { p: 'list', kind: 'era' }) as Route,
         ...says('era'),
       };
-  // 第九十二轮：新建地图时选不到的库（没有时代、不够完整）写一句；里面有东西的能并进我的库（mergeKey，save-mine.ts）
+  // 第九十二轮：新建世界时选不到的库（没有时代、不够完整）写一句；里面有东西的能并进我的库（mergeKey，save-mine.ts）
   const e = entryOf(src, ctx);
   const whole = !e || e.builtin || isLibrary(e.pack, true);
   const note = whole ? null : !eras.length ? NO_ERA_NOTE : NOT_WHOLE_NOTE;

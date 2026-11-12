@@ -281,7 +281,7 @@ const FileBar = memo(function FileBar({ src, ctx }: { src: SourceRef; ctx: PageC
   );
 });
 
-// 面板顶上一直在的一句（第九十二轮，source-view.ts）：现在改的是哪一份——“改的是：这张地图”“改的是：我的库“X”（新地图会用）”“只能看：X”，
+// 面板顶上一直在的一句（第九十二轮，source-view.ts）：现在改的是哪一份——“改的是：这张地图”“改的是：我的库“X”（新世界会用）”“只能看：X”，
 // 三种颜色、三种图标。挑选时写挑了加到哪一份。看的不是这张地图时右边一个按钮：只读的库里一项的页面上“在这张地图里打开 / 添加到这张地图…”，别的“回到这张地图”
 const EDITING_ICON = { world: MapIcon, mine: LibraryBig, readonly: Lock };
 const EditingBar = memo(function EditingBar({ src, ctx, route, pickTo }: { src: SourceRef; ctx: PageCtx; route: Route; pickTo: SourceRef | null }) {

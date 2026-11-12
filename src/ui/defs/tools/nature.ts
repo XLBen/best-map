@@ -16,6 +16,7 @@ export const NATURE_TOOLS = {
   },
   grow: {
     category: 'nature',
+    more: true,
     icon: Move,
     name: '拖动扩张',
     short: '扩张',
@@ -40,6 +41,8 @@ export const NATURE_TOOLS = {
   resource: {
     // 第二十一轮：画资源
     category: 'nature',
+    more: true,
+    when: 'resourcePainted',
     icon: Gem,
     name: '资源',
     short: '资源',

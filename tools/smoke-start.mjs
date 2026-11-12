@@ -99,7 +99,7 @@ export async function startSteps({ cdp, Page, origin, check, sleep, READY, HEAD,
     await p.until('自动保存', `(${HEAD}).then((h) => !!h && h.count > 0)`, 30000).catch(() => null);
 
     // ---- 展开“自定义…”、什么都不改、点同一张：逐字节相同 ----
-    await p.eval(clickMenuItem('新世界…'));
+    await p.eval(clickMenuItem('新建世界…'));
     await sleep(400);
     if (await p.eval(ASK)) await p.eval(clickIn('.modal.ask .ask-actions', '不保存'));
     await p.until('向导', `!!document.querySelector('.modal.wizard')`, 20000);
@@ -226,7 +226,7 @@ export async function startSteps({ cdp, Page, origin, check, sleep, READY, HEAD,
     await p.shot('98-帮助-有世界时');
     await question(p);
     check((await p.eval(HELP)) === null, '再按：关上');
-    await p.eval(clickMenuItem('新世界…'));
+    await p.eval(clickMenuItem('新建世界…'));
     await sleep(400);
     if (await p.eval(ASK)) await p.eval(clickIn('.modal.ask .ask-actions', '不保存'));
     await p.until('向导', `!!document.querySelector('.modal.wizard')`, 20000);

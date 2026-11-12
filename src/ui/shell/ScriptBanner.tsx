@@ -2,6 +2,7 @@ import { X } from 'lucide-preact';
 import type { ScriptIssue } from '../../../core/script';
 import { canEditScript, dismissedIssues, editScript, retryScripts, safeMode, showScripts, world } from '../../state';
 import { showCell } from '../editor-hooks';
+import { SAFE_MODE_TEXT } from '../copy';
 
 // 顶部的横幅（不挡操作，提示条上面）：
 // - 安全模式：这个世界里的脚本没有运行（原因），可以“再试一次”（另开一个 Worker，脚本照常运行）、“查看脚本”；
@@ -25,7 +26,7 @@ export function ScriptBanner() {
     return (
       <div class="notice banner">
         <span class="notice-text" title={safe.reason}>
-          安全模式：脚本没有运行
+          {SAFE_MODE_TEXT}
         </span>
         <button class="pill-btn" onClick={() => void retryScripts()} title="重新打开，让脚本运行">
           再试一次
