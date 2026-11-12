@@ -4,6 +4,8 @@
 //    打包好的程序比开发服务器快，而且检查点（打开时直接恢复，不必重放所有步）只在有版本号时写。打包失败时退回开发服务器。
 //    关掉这个窗口（或按 Ctrl+C）地图就停了。改代码时用 npm run dev（开发服务器，热更新）。
 // 地址固定是 http://localhost:5191：浏览器按地址保存世界，换了地址就看不到之前自动保存的世界。
+// 第一百零一轮：打包好的程序带着 service worker——这个地址打开过一次以后，这个窗口关了浏览器里也还打得开（用的是存下的那一版）；
+// 重新打包以后开着的页面顶上会说“有新版本，重新载入后用上”。开发服务器上没有 service worker（以前登记的会被取消）。
 // 测试用：MAP2_PORT 换端口，MAP2_NO_OPEN=1 不打开浏览器
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -83,7 +85,7 @@ function openBrowser() {
 }
 
 // 打包要看的源码：src、core 下的文件（测试除外），页面、依赖的版本与打包设置。内容的哈希一样就不必重新打包
-const SOURCES = ['src', 'core', 'index.html', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', join('tools', 'isolated-engine.ts'), 'public'];
+const SOURCES = ['src', 'core', 'index.html', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', join('tools', 'isolated-engine.ts'), join('tools', 'offline-plugin.ts'), 'public'];
 const STAMP = join(root, 'dist', '.map2-source-hash');
 function sourceHash() {
   const h = createHash('sha256');

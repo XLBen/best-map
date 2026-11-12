@@ -2,7 +2,7 @@ import { render } from 'preact';
 import { disallowScripts } from '../core/script';
 import { crashState } from './crash-host';
 import { installSmokeHooks } from './smoke-hooks';
-import { startMishaps } from './state';
+import { startMishaps, startOffline } from './state';
 import { App } from './ui/App';
 import { RootGuard } from './ui/shell/Guard';
 import { startToolEffects } from './ui/defs/tools';
@@ -53,3 +53,5 @@ render(
 );
 // 画出来过了：之后没接住的错只是顶上说一句（之前的算致命：页面还是白的）
 crashState.rendered = true;
+// 第一百零一轮：登记 service worker（只在打包好的程序里；登记不了什么都不说）——打开过一次以后断网也打得开
+startOffline();

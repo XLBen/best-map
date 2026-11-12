@@ -1,0 +1,17 @@
+{
+  "name": "架空世界编辑器",
+  "short_name": "架空世界",
+  "description": "生成并编辑架空世界的地图：地形、气候、河流、国家与城市。世界存在这个浏览器里，断网也能用。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#15181d",
+  "theme_color": "#15181d",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

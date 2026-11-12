@@ -66,6 +66,7 @@ import { fingerOnMap, touchUi } from './touch-ui';
 import { TOUCH_TEXT } from './copy';
 import { BackupBanner } from './shell/BackupBanner';
 import { FileBanner, SaveBanner } from './shell/SaveBanner';
+import { UpdateBanner } from './shell/UpdateBanner';
 import { ScriptBanner } from './shell/ScriptBanner';
 import { SkippedBanner } from './shell/SkippedBanner';
 import { Sheet } from './shell/Sheet';
@@ -279,6 +280,8 @@ export function App() {
           {!wizardOpen.value && <SaveBanner />}
           {/* 第九十五轮：这张地图也存在电脑上的文件里，这次打开页面还没在写 */}
           {!wizardOpen.value && <FileBanner />}
+          {/* 第一百零一轮：有新版本装好了，重新载入后用上 */}
+          <UpdateBanner />
           <ScriptBanner />
           <SkippedBanner />
           {/* 第九十六轮：没接住的错（界面还能用）：一条，不打断 */}

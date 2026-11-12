@@ -7,6 +7,11 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; worker-src 'self' data: blob:; connect-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>架空世界编辑器</title>
+    <!-- 第一百零一轮：能“装到桌面 / 主屏幕”，打开过一次以后断网也打得开（service worker 由 src/state/offline.ts 登记，只在打包好的程序里） -->
+    <meta name="theme-color" content="#15181d" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- 程序的文件没读到、读得很慢时（脚本一行都没跑，什么兜底都还没接上）：十秒后这一句自己显出来，页面不会一直是白的。
          程序起来以后第一件事就是把它拿掉（main.tsx），平常看不到 -->
     <style>

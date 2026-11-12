@@ -11,6 +11,8 @@
 
 **保存**：世界自动保存在浏览器里、按地址分开，所以地址固定是 5191。按 ⌘S（Windows 用 Ctrl+S）起个名字存进“世界 → 我的地图”（可以存很多个）；重要的世界再用“世界 → 导出世界文件”另存一份文件，换电脑、清浏览器数据时靠它。
 
+**离线、装到桌面**（第一百零一轮）：这个地址打开过一次以后，程序就存在浏览器里了——没开那个黑色窗口、断了网也打得开，世界还在、能接着画（“更多”最下面写着“断网时也能打开这个页面”时就是准备好了）。Chrome、Edge 地址栏右边有“安装”的图标，点了它就像一个单独的应用，有自己的窗口和图标；iPad、iPhone 的 Safari 用“分享 → 添加到主屏幕”。更新了代码、重新打包以后，开着的页面不会被换掉：顶上出现“有新版本，重新载入后用上”，点“重新载入”才换。见使用说明“离线、装到桌面”。
+
 **不兼容旧存档**：世界文件只认现在这一版，更早的版本保存的打不开（提示“旧版本的世界文件打不开”）。浏览器里上次自动保存的世界打不开时不会丢：原样留在“世界 → 留着的旧世界…”，能导出成文件、删除。
 
 ## 五分钟上手
@@ -48,11 +50,11 @@
 ```bash
 npm install
 npm run dev        # 开发服务器，默认 http://localhost:5173（.claude/launch.json 里用 5191）
-npm test           # 全部测试（288 个文件、3302 个；含两分钟左右的“和地球比”慢测试）
+npm test           # 全部测试（292 个文件、3349 个，约 17 分钟；含三分钟左右的“和地球比”慢测试）
 npm run test:fast  # 改代码时常跑的那部分（跳过最慢的几个文件）
 npm run golden     # 只跑金标准：提速、重构后结果必须逐值不变
 npm run build      # 查类型后打包
-npm run smoke      # 打包后在无头 Chrome 里走一遍：新建、画一笔、刷新后还在、两个页面（约 4 分钟，要装着 Chrome）
+npm run smoke      # 打包后在无头 Chrome 里走一遍（十六段：保存、出问题时、进度、触摸、离线……约 15 分钟，要装着 Chrome）
 npx tsx tools/generate.ts --seed 3 --out out/seed3   # 命令行批量生成并导出
 npx tsx tools/hash.ts                                 # 各层结果的哈希，核对 Node 与浏览器是否逐值一致
 npx tsx tools/bench.ts --globe                        # 整个星球（新建的类地星球，6.26 万格）加工各步的耗时
@@ -60,4 +62,28 @@ node tools/bench-median.mjs 5 --against main -- --globe   # 与 main 对照，�
 npx tsx tools/realism-report.ts                       # 和地球比：高度、流域、河长、内流区、湖、高原、裂谷湖、海岸
 ```
 
+自动化检查在 `.github/workflows/ci.yml`（推送、PR：查类型、常跑的测试、打包；每晚：全部测试、打包、冒烟）。
+
 更多见 [开发说明](docs/开发说明.md)。
+
+## 许可证
+
+程序本身是 [MIT](LICENSE) 许可证（`Copyright (c) 2026 XLBen`）。
+
+打包出来的 `dist/` 里带着下面这些第三方的库和字体（许可证照各自 `node_modules/*/package.json` 的 `license` 写；原文在打包时收进 `dist/THIRD-PARTY-LICENSES.txt`，跟着程序走）：
+
+| 包 | 版本 | 许可证 |
+| --- | --- | --- |
+| `@preact/signals` | 2.11.3 | MIT |
+| `@preact/signals-core` | 1.14.4 | MIT |
+| `acorn` | 8.18.0 | MIT |
+| `d3-delaunay` | 6.0.4 | ISC |
+| `delaunator` | 5.1.0 | ISC |
+| `fflate` | 0.8.3 | MIT |
+| `lucide-preact` | 1.61.0 | ISC |
+| `lxgw-wenkai-webfont` | 1.7.0 | MIT（网页字体的打包）；字体霞鹜文楷本身是 SIL Open Font License 1.1 |
+| `preact` | 11.0.1 | MIT |
+| `robust-predicates` | 3.0.3 | Unlicense |
+| `zod` | 4.6.7 | MIT |
+
+只在开发、打包、测试时用、不进 `dist/` 的：`typescript`（Apache-2.0），`vite`、`vitest`、`tsx`、`@types/node`、`@types/d3-delaunay`（MIT）。

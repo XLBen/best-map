@@ -266,4 +266,6 @@ export { type SaveFail, type SaveProblem, saveFail, saveProblem, saveRole, stora
 export { type Mishap, closeMishap, mishap, showToastReason, startMishaps, toggleMishapReason } from './state/mishap';
 export { glReason, glState } from './state/gl';
 export { backupOf, backups, deleteBackup, dismissBackups, refreshBackups } from './state/backups';
+// 第一百零一轮：离线能用了没有、有没有新版本等着
+export { offlineReady, reloadForUpdate, startOffline, updateReady } from './state/offline';
 export type { BackupInfo, WorldBackup } from './backups';

@@ -355,3 +355,11 @@ export const UNDO_LIMIT_TEXT = {
   tip: '更早的步骤不能撤销了（为了省内存）',
   history: (n: number) => `前 ${n} 步不能撤销了（为了省内存），世界文件里都还在`,
 } as const;
+
+// 离线（第一百零一轮）：有新版本时顶上的一条、“更多”最下面的一行
+export const OFFLINE_TEXT = {
+  update: '有新版本，重新载入后用上',
+  reload: '重新载入',
+  reloadTip: '先存好这张地图，再打开新版本',
+  ready: '断网时也能打开这个页面',
+} as const;

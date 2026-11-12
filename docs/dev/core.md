@@ -52,7 +52,7 @@
 - `vegetation.ts` 适宜度 / 竞争 / 扩散 / 长在哪里 / 不计水体类型的一遍（baseBiomes）/ 没有生态的陆地格的兜底（`fillBare`，写了高度范围的世界才走）；第八十九轮：场 `shelter`（有遮蔽的海岸，`shelterGetter`：三圈以内陆地的比例按网格记着，陆海变了的格附近作废），红树林用
 - `constraints.ts` 涂生态的反推与“没涂成”的原因
 - `biome-look.ts` 生态在地图上的样子（颜色脚本、花纹与发光的算式，着色器里同一份）；`biome-scripts.ts` 生态的脚本在世界上运行
-- `script.ts` 脚本的运行环境（编译、中英文变量表、辅助函数、安全模式、给看门狗报平安；冻结的 Math 副本）
+- `script.ts` 脚本的运行环境的入口：只有说明和导出（第一百零一轮拆开，原样搬，别处照旧从它引用）。代码在 `script/` 下：`format.ts` 容器与格式、中英文变量表、`codeOnly`；`shadow.ts` 被遮住的全局名字（`SHADOW`、`POISONED`）；`issues.ts` 出错的说明（`ScriptIssue`、`ScriptError`、语法与运行时出错的中文）；`helpers.ts` 脚本里能调的辅助函数与运行状态 `RUN`（别的文件经 `RUN_STATE` 拿它）、冻结的 Math 副本；`editor.ts` 编辑器用的几个（只处理文字）；`compile.ts` 编译、缓存、安全模式的开关、出错时的行号；`inputs.ts` 输入（`worldInputs`、`arrayInputs`）；`run.ts` 运行（`runScript`、`runSetup`、给看门狗报平安）；`purity.ts` 纯度检查。`script-split.test.ts` 钉着导出的名字、文件的大小、不绕成圈
 
 ## 地名、画风、省份
 - `features.ts` 地理要素识别的入口（`detectFeatures`、画的河、用户圈的地名区块）；第八十三轮拆开（照旧导出）：`features-base.ts` 种类与格图工具，`features-terrain.ts` 从地形认的（群岛、海、湖、河、山……，跨几次的记忆），`features-nature.ts` 生态区与物种的地名，`features-names.ts` 起名、前后地物配对留名字

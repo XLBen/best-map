@@ -76,3 +76,8 @@ p.rest-line.open {
 .help-none {
   margin: var(--sp-3) 0;
 }
+
+/* 第一百零一轮：“更多”最下面的一行——断网也打得开；有新版本时是那一句和“重新载入” */
+.offline-line {
+  margin: var(--sp-2) 0 0;
+}

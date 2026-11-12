@@ -1,8 +1,9 @@
 // 冒烟（第九十四轮）：在无头 Chrome 里把打包好的程序真的走一遍——新建 → 画一笔 → 刷新后还在。
 //   node tools/smoke.mjs [--chrome <Chrome 的路径>] [--keep] [--show] [--shots <目录>]
+//     环境变量 MAP2_SMOKE_CHROME_ARGS：另外给 Chrome 的参数（空格隔开；自动化检查的机器上用 --no-sandbox）
 //     --keep：留下临时目录（Chrome 的用户目录）；--show：不用无头，看着它跑；
 //     --shots：把几处界面截成图存进那个目录（第二个页面顶上的那一条、“世界”菜单的第一行），给人看排版
-//     --only 12 / --only 13 / --only 14 / --only 15：新建以后直接走第十二段 / 第十三段 / 第十四段 / 第十五段（改那一段时用，约一两分钟；交差要跑全的）
+//     --only 12 / --only 13 / --only 14 / --only 15 / --only 16：新建以后直接走第十二段 / 第十三段 / 第十四段 / 第十五段 / 第十六段（改那一段时用，约一两分钟；交差要跑全的）
 //   要先打包（npm run build）：用的是 dist/。不进 vitest（要 Chrome）。
 //   做法：自己起一个只绑 127.0.0.1、随机空闲端口的静态服务器（跑完就关；不碰 5191 / 5196），Chrome 开在一个临时的用户目录里，
 //   经调试端口（WebSocket，Node 自带的）点页面、拖鼠标、读浏览器里存的自动保存。
@@ -57,6 +58,11 @@
 //        两指捏合、平移（镜头变了、没有多一步）；画到一半第二指落下（不算）；touchcancel（不算，之后还能画）；长按钉住“这里”；
 //        “多选”开关；768×1024 和 1024×768 下顶栏、底部条、图层、资源库、帮助、向导、问话框都在视口里、没有横向溢出；
 //        宽 390 时最上面说一句“屏幕太窄”。
+//   第一百零一轮加的（接在后面，写在 tools/smoke-offline.mjs）：离线能用。另起一个把 dist/ 放在子路径下的服务器，另开一个存储是空的浏览器环境：
+//    16. 打开一次 → service worker 装好、壳都存下、字体在后台补齐；画一笔、等自动保存；把那个服务器真的停掉 → 刷新 → 页面打开、
+//        世界还在、还能画一笔；在原来的端口上起一份“新版本”→ 旧页面顶上说“有新版本，重新载入后用上”，没有被换掉、照常能画；
+//        另开的页面拿到的就是新版本；旧页面要它那一版的文件还拿得到；点“重新载入”→ 用上新版本、世界还在；再停服务器也打得开。
+//   service worker 在了以后前十五段照旧（它们没有哪一步靠“把请求挡掉”：都是往页面里注入脚本、换网址上的 ? 重新载入）。
 //   退出码：有没过的 1
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -64,6 +70,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { offlineSteps } from './smoke-offline.mjs';
 import { progressSteps } from './smoke-progress.mjs';
 import { safetySteps } from './smoke-safety.mjs';
 import { simpleSteps } from './smoke-simple.mjs';
@@ -99,7 +106,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- 静态服务器（只绑 127.0.0.1，端口让系统挑） ----------
 
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png', '.wasm': 'application/wasm' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png', '.wasm': 'application/wasm', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain; charset=utf-8' };
 const server = createServer((req, res) => {
   const path = decodeURIComponent((req.url ?? '/').split('?')[0]);
   const file = normalize(join(dist, path === '/' ? 'index.html' : path));
@@ -131,6 +138,7 @@ const chrome = spawn(
     '--disable-renderer-backgrounding',
     `--user-data-dir=${profile}`,
     '--remote-debugging-port=0',
+    ...(process.env.MAP2_SMOKE_CHROME_ARGS ?? '').split(' ').filter(Boolean),
     'about:blank',
   ],
   { stdio: 'ignore' },
@@ -394,6 +402,11 @@ try {
   if (only === '15') {
     await touchSteps({ cdp, Page, origin, check, sleep, READY, HEAD });
     console.log(`${failed ? `没过 ${failed} 项` : '都通过'}（只走了第 1、15 段，${((Date.now() - t0) / 1000).toFixed(0)} 秒）`);
+    throw DONE;
+  }
+  if (only === '16') {
+    await offlineSteps({ cdp, Page, dist, tmp: profile, check, sleep, stroke, READY, LAND, HEAD });
+    console.log(`${failed ? `没过 ${failed} 项` : '都通过'}（只走了第 1、16 段，${((Date.now() - t0) / 1000).toFixed(0)} 秒）`);
     throw DONE;
   }
 
@@ -685,6 +698,8 @@ try {
   await simpleSteps({ cdp, Page, origin, check, sleep, READY, HEAD, ASK, clickMenuItem, tmp: profile });
   // ---------- 第一百轮 ----------
   await touchSteps({ cdp, Page, origin, check, sleep, READY, HEAD });
+  // ---------- 第一百零一轮 ----------
+  await offlineSteps({ cdp, Page, dist, tmp: profile, check, sleep, stroke, READY, LAND, HEAD });
   console.log(`${failed ? `没过 ${failed} 项` : '都通过'}（${((Date.now() - t0) / 1000).toFixed(0)} 秒）`);
 } catch (e) {
   if (e !== DONE) {

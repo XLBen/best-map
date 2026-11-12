@@ -30,6 +30,7 @@ import { BACKUP_TEXT, FILE_TEXT, HELP_KEY_TIP, LIBRARY_NOTE, SAVE_TEXT, SIMPLE_T
 import { fullUi, setFullUi } from '../ui-prefs';
 import { fingerPans, penPressure, penSeen, setFingerPans, setPenPressure, touchUi } from '../touch-ui';
 import { fileLine, pickFile, reloadSaved, resumeFileHere, saveNote, stopFileHere, takeOverHere } from '../shell/save-note';
+import { OfflineLine } from '../shell/UpdateBanner';
 import { openLibrary } from '../packs/panel-store';
 import { fileNameOf } from '../../maps';
 import { beforeLeave, currentMap, exportCurrent, mapStatus, openFile, openMaps, saveMap, saveMapAs } from '../maps/store';
@@ -592,6 +593,8 @@ export function MorePanel() {
       >
         <CircleHelp /> 帮助
       </button>
+      {/* 第一百零一轮：有新版本等着时这里也能点（顶上那一条关了以后）；没有时一行灰字说断网也打得开 */}
+      <OfflineLine />
     </>
   );
 }

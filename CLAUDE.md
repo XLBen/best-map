@@ -7,12 +7,12 @@
 
 ```bash
 npx tsc --noEmit                 # 查类型
-npx vitest run                   # 全部测试（约 1700 个，几分钟）
+npx vitest run                   # 全部测试（292 个文件、约 3350 个，约 17 分钟）
 npm run test:fast                # 跳过最慢的几个文件
-npx vitest run core/foo.test.ts  # 单个文件；机器忙时 core/sizing 的“滑块最小值命令都接受”会超时，单独重跑；整套里 `tools/realism.test.ts` 的“类地星球”、`src/ui/speed-r80.test.ts` 的“一串编辑”也常超时，这两个文件单独重跑
+npx vitest run core/foo.test.ts  # 单个文件；机器忙时 core/sizing 的“滑块最小值命令都接受”会超时，单独重跑；整套里 `tools/realism.test.ts` 的“类地星球”、`src/ui/speed-r80.test.ts` 的“一串编辑”也常超时，这两个文件单独重跑；`src/state/progress.test.ts` 的“做过一次”按时间估，机器忙时偶尔差一点，也单独重跑
 npm run golden                   # 只跑金标准
 npm run build                    # 查类型后打包
-npm run smoke                    # 打包后在无头 Chrome 里走一遍：新建、画一笔、刷新后还在、两个页面、打不开先问、计算卡住能取消、画面丢了能恢复、页面出错有自救页、进度与取消、第一次打开一键开始、重新生成前的确认、简单界面与帮助的搜索、触摸与平板（约 13 分钟；--shots <目录> 截图；只跑一段 node tools/smoke.mjs --only 12、13、14 或 15；第十二段“平常画一笔不闪进度条”在机器忙时偶尔不过，重跑）
+npm run smoke                    # 打包后在无头 Chrome 里走一遍：新建、画一笔、刷新后还在、两个页面、打不开先问、计算卡住能取消、画面丢了能恢复、页面出错有自救页、进度与取消、第一次打开一键开始、重新生成前的确认、简单界面与帮助的搜索、触摸与平板、离线（断网刷新、有新版本时不换掉正在用的页面）（约 15 分钟；--shots <目录> 截图；只跑一段 node tools/smoke.mjs --only 12 到 16；第十二段“平常画一笔不闪进度条”在机器忙时偶尔不过，重跑）
 node tools/bench-median.mjs 5 --against <提交> --           # 一块地区的加工各步与旧提交对照，五次中位数（结尾的 -- 不能省：省了只测星球）
 node tools/bench-median.mjs 5 --against <提交> -- --globe   # 整个星球
 node tools/bench-median.mjs 5 --against <提交> -- --library # 带着一整个时代库的世界（small.content 约 300 KB）：同样的加工，另计不重算的几步（libEdit、libUndo……）
@@ -26,14 +26,16 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 
 - `core/` 纯计算（Node 与浏览器共用）：网格、地形、气候、水、生态、地名、省份、命令、引擎 → `docs/dev/core.md`
 - `core/commands/` 各类命令（`commands.ts` 是入口并照旧导出全部）
+- `core/script/` 用户脚本的运行环境（`core/script.ts` 是入口并照旧导出全部）
 - `core/human/` 人文：地形类别、时代文化人口、国家、城市道路地标 → `docs/dev/core-human.md`
 - `core/content/` 内容种类的登记表；`core/packs/` 内置资源包（JSON 与代码）
 - `core/testing/` 测试共用的世界模板（`snapshot`）
-- `src/` 线程、Worker、存储；`src/state/` 主线程状态（`src/state.ts` 照旧导出）→ `docs/dev/src.md`
+- `src/` 线程、Worker、存储；`src/state/` 主线程状态（`src/state.ts` 照旧导出）；`src/offline/` 离线的规则与登记，`src/sw.ts` 是 service worker → `docs/dev/src.md`
 - `src/render/` 渲染器、着色器（`shaders/`）、2D 叠加层（`overlay*.ts`）→ `docs/dev/render.md`
 - `src/ui/` 界面：`defs/` 注册表、`shell/`、`panels/`、`map/`、`tools/`、`river/`、`packs/`、`domain/` 领域逻辑、`archives/` 档案的几页、`components/` → `docs/dev/ui.md`
 - `src/testing/frozen/` 冻结的旧代码参照（测试拿它与现在的比，不要改）
 - `tools/` 命令行、测速、逐字节对照、一键开启 → `docs/dev/tools.md`
+- `public/` 原样进 `dist/` 的 manifest 与图标；`.github/workflows/ci.yml` 自动化检查（还没在 GitHub 上跑过）
 - `docs/` 使用说明、开发说明、更新记录；`docs/dev/` 分篇的开发文档
 
 ## 要改什么，看哪里
@@ -70,6 +72,9 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 | 简单界面 / 完整界面：哪些算常用、藏了东西的地方怎么露、数字键 | 偏好 `src/ui/ui-prefs.ts`（`fullUi`、`restOpen`；键 `map2.lib.allSources`，`packs/lib-prefs.ts` 的两问就是它）；规则 `src/ui/defs/simple-ui.ts`（`WORLD_SIGNS`、`splitSimple`、`shownTools`）；声明里的 `more` / `when`（`defs/tools/<类>.ts`、`defs/layers.ts`、`defs/adjustments.ts`、`packs/page-layout.ts` 的 `HOME_MORE_CARDS`）；`defs/tools/index.ts` 的 `barTools` / `keyTools`（`toolsOf` 还是全部）；部件 `shell/RestLine.tsx`、`ContextBar.tsx` 的 `.bb-rest`，字 `copy.ts` 的 `SIMPLE_TEXT`；整张表钉在 `src/ui/simple-ui.test.ts`；冒烟 `tools/smoke-simple.mjs`；设计见 `docs/dev/history/第99轮.md` |
 | 帮助、`?` 键 | 字 `src/ui/help-data.ts`（新加工具要给它一条 `on('…', '工具 id')`，`help.test.ts` 查着）；搜索、“现在这个工具” `help-search.ts`；组件 `Help.tsx`（搜索框不抢焦点：一打开按 `?` 要能关上）；`src/ui/shell/keys.ts` 的 `isHelpKey`；向导上的入口是 `common.tsx` 的 `ModalHead` 的 `extra` |
 | 触摸、平板、笔；没有键盘做不了的事的按钮 | 手势怎么判定 `src/ui/map/touch.ts`（纯的状态机，阈值是那里有名字的常量），接到工具和镜头上 `map/touch-wire.ts`，`map/input.ts` 只分事件（鼠标那条路不变：`input-mouse.test.ts` 的快照录在第 99 轮上，不重录）；是不是触摸设备、笔的两个偏好、屏幕上的 Shift / Alt `src/ui/touch-ui.ts`（`touchUi()`、`held`，localStorage 的 `map2.touch`）；工具表的 `mods`；粗指针的样式只写在 `src/ui/shell/touch.css`；字 `TOUCH_TEXT`、`HELP_TOUCH`；测试用的假画布 `map/input-rig.ts`；冒烟 `tools/smoke-touch.mjs`；设计见 `docs/dev/history/第100轮.md` |
+| 离线、有新版本、装到桌面 | 规则 `src/offline/sw-core.ts`（`route`、`readPrecache`、`afterActivate`、`pageIsFrom`，纯函数）；service worker `src/sw.ts`（只接线、只引用 sw-core）；页面这一头 `src/offline/register.ts`（`OfflineWatch`）、`src/state/offline.ts`（`offlineReady`、`updateReady`、`reloadForUpdate`）；界面 `src/ui/shell/UpdateBanner.tsx`，文字 `copy.ts` 的 `OFFLINE_TEXT`；打包时的清单、`dist/sw.js`、第三方许可证 `tools/offline-plugin.ts`；manifest、图标在 `public/`（PNG 是照 `icon.svg` 截的）；冒烟 `tools/smoke-offline.mjs`；改完 `npm run build` 再 `node tools/smoke.mjs --only 16`；设计见 `docs/dev/history/第101轮.md` |
+| 用户脚本的运行环境 | 入口 `core/script.ts` 只有说明和导出；代码在 `core/script/`：`format.ts` 格式与变量表、`shadow.ts` 被遮住的名字、`issues.ts` 出错的说明、`helpers.ts` 辅助函数与 `RUN`（别的文件经 `RUN_STATE` 拿）、`editor.ts`、`compile.ts` 编译与行号、`inputs.ts`、`run.ts`、`purity.ts`；`core/script-split.test.ts` 钉着导出的名字、不绕成圈 |
+| 自动化检查 | `.github/workflows/ci.yml`（推送、PR：查类型、`test:fast`、打包；每晚：全部测试、打包、冒烟，最慢的五个文件单独跑）；第一次跑要看的几处在 `docs/dev/tools.md` 的“自动化检查” |
 | 以前的版本（留哪些、记在哪一串上、回到这一份、盖掉地图之前留一份） | 规则 `src/versions.ts`（`thin`、`planDrop`、`addVersion`、`overwriteKeeping`；表 `versions` / `versionDocs`）；接线 `src/state/versions.ts`（`worldId`、`keepVersion`、`versionAfterSave`、`overwriteLinked`）；界面 `src/ui/maps/versions.ts`、`VersionsDialog.tsx`，文字 `VERSION_TEXT`；世界文件的字 `src/doc-text.ts`；设计见 `docs/dev/history/第95轮.md` |
 | 存到电脑上的文件 | 规则 `src/file-save.ts`（`FileSaver`、`FileIo`、`FILE_SAVE_MS`）；接线 `src/state/file-save.ts`；界面 `src/ui/shell/save-note.ts`（`fileLine`、`pickFile`）、`SaveBanner.tsx` 的 `FileBanner`、`ActionsPanel.tsx` 的 `FileStatusLine`，文字 `FILE_TEXT`；真的选择框没法自动点，冒烟里换成浏览器自己管的文件 |
 | 撤销的内存上限 | `core/undo-budget.ts`、`core/engine.ts` 的 `settleUndo` / `trimUndo`（`core/engine.ts` 约 760 行，再加要拆；一步之后的整理已在 `core/engine-fixes.ts`）；界面 `UNDO_LIMIT_TEXT`；量：`node --expose-gc --import tsx tools/undo-bytes.ts [--globe] [--human]` |
@@ -89,6 +94,8 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 - **界面只经 `src/state.ts` 引用状态**：`src/ui/` 里不直接引用 `src/state/*.ts`（`src/ui/layering.test.ts` 查着）。
 - **新加的东西先想算不算常用**：新加工具、底图、“调整”的项、资源库的卡片时在声明里写不写 `more`（每一类常用的工具不超过三个）；藏了东西的地方只用“还有 N 个”在原地展开这一种做法。
 - **鼠标下的样子不变**：粗指针的规则只写在 `shell/touch.css` 的 `@media (pointer: coarse)` 里；给触摸补的按钮只在 `touchUi()` 为真时画。新工具的 `cancel()` 之后不能发命令、预览要去掉（第二根手指落下、`pointercancel`、Esc 都调它）。
+- **打包出来的地址是相对的**（`vite build` 的 `base` 是 `./`）：代码里不写以 `/` 开头的地址，用 `new URL(…, import.meta.url)` 或 `import.meta.env.BASE_URL`；打包用到的 `tools/` 下的新文件要加进 `tools/launch.mjs` 的 `SOURCES`（`tools/launchers.test.ts` 查着）。
+- **service worker 不换掉正在用的页面**：`src/sw.ts` 里不写无条件的 `skipWaiting`，只存清单里、内容对得上的文件；规则写在 `src/offline/sw-core.ts`（纯函数、有测试），`sw.ts` 只接线。
 - 用户是新手：结果要可以预料，界面像 Procreate，控件是连续的（滑块），文字的规矩见 `docs/dev/ui-design.md`。
 
 ## 文档
